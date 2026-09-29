@@ -10,6 +10,12 @@ const els = {
     pomodoroIcon: document.getElementById('pomodoro-icon'),
     pomodoroTime: document.getElementById('pomodoro-time'),
     pomodoroReset: document.getElementById('pomodoro-reset'),
+    pomodoroStatus: document.getElementById('pomodoro-status'),
+    pomodoroDuration: document.getElementById('pomodoro-duration'),
+    pomodoroDurationToggle: document.getElementById('pomodoro-duration-toggle'),
+    pomodoroDurationMenu: document.getElementById('pomodoro-duration-menu'),
+    pomodoroDurationLabel: document.getElementById('pomodoro-duration-label'),
+    pomodoroPresets: [...document.querySelectorAll('[data-pomodoro-minutes]')],
 
     taskForm: document.getElementById('task-form'),
     taskInput: document.getElementById('task-input'),
@@ -55,11 +61,12 @@ const SUBJECTS = {
     'Geral': 'bg-surface-3 text-muted',
     'Matemática A': 'bg-subject-blue/15 text-subject-blue',
     'Biologia': 'bg-subject-green/15 text-subject-green',
-    'História': 'bg-subject-yellow/15 text-subject-yellow',
+    'Português': 'bg-subject-yellow/15 text-subject-yellow',
+    'Aplicações Informáticas (A.I.)': 'bg-subject-cyan/15 text-subject-cyan',
 };
 
 const DEMO_TASKS = [
-    { text: 'Leitura do capítulo 5', subject: 'História', done: true },
+    { text: 'Leitura do capítulo 5', subject: 'Português', done: true },
     { text: 'Resolver exercícios 7 a 12', subject: 'Matemática A', done: true },
     { text: 'Esquema da mitose', subject: 'Biologia', done: false },
     { text: 'Integrais trigonométricas', subject: 'Matemática A', done: false },
@@ -152,15 +159,23 @@ function toast(message, type = 'info', { timeout = 4000 } = {}) {
 
 /* ── Tarefas ──────────────────────────────────────────── */
 
-function setTaskDone(id, done) {
+async function setTaskDone(id, done) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
 
     task.done = done;
-    write(tasksKey(), tasks);
+    await syncTasks();
     renderTasks();
 
     if (currentView === 'disciplinas') renderSubjects();
+}
+
+async function syncTasks() {
+    try {
+        await Vault.save('tasks.json', JSON.stringify(tasks));
+    } catch (e) {
+        console.error('Erro ao sincronizar tarefas:', e);
+    }
 }
 
 function renderTasks() {
@@ -173,7 +188,7 @@ function renderTasks() {
         checkbox.checked = task.done;
         checkbox.ariaLabel = `Marcar "${task.text}" como concluída`;
         checkbox.className = 'task-check h-4 w-4 shrink-0 cursor-pointer accent-brand transition';
-        checkbox.addEventListener('change', () => setTaskDone(task.id, checkbox.checked));
+        checkbox.addEventListener('change', async () => await setTaskDone(task.id, checkbox.checked));
 
         const text = document.createElement('span');
         text.textContent = task.text;
@@ -222,9 +237,9 @@ function renderProgress() {
         : 'Sem tarefas para este dia';
 }
 
-function addTask(text, subject) {
+async function addTask(text, subject) {
     tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, done: false });
-    write(tasksKey(), tasks);
+    await syncTasks();
     renderTasks();
 }
 
@@ -306,8 +321,21 @@ function applyMarkdown(kind) {
 
 /* ── Pomodoro ─────────────────────────────────────────── */
 
-const POMODORO_SECONDS = 25 * 60;
-const pomodoro = { remaining: POMODORO_SECONDS, running: false, timer: null };
+const POMODORO_MINUTES = [15, 25, 50, 90];
+const POMODORO_DEFAULT = 25;
+const POMODORO_KEY = 'study-journal-pomodoro-minutes';
+
+function readPomodoroMinutes() {
+    const saved = Number(read(POMODORO_KEY, POMODORO_DEFAULT));
+    return POMODORO_MINUTES.includes(saved) ? saved : POMODORO_DEFAULT;
+}
+
+const pomodoro = {
+    minutes: readPomodoroMinutes(),
+    remaining: 0,
+    running: false,
+    timer: null,
+};
 
 function formatClock(total) {
     const minutes = Math.floor(total / 60);
@@ -316,20 +344,32 @@ function formatClock(total) {
 }
 
 function renderPomodoro() {
+    const full = pomodoro.minutes * 60;
+
     els.pomodoroTime.textContent = formatClock(pomodoro.remaining);
     els.pomodoroIcon.classList.toggle('running', pomodoro.running);
-    els.pomodoroReset.classList.toggle('hidden', pomodoro.remaining === POMODORO_SECONDS);
+    els.pomodoroReset.classList.toggle('hidden', pomodoro.remaining === full);
+    els.pomodoroDurationLabel.textContent = `${pomodoro.minutes} min`;
+
+    els.pomodoroPresets.forEach((option) => {
+        const selected = Number(option.dataset.pomodoroMinutes) === pomodoro.minutes;
+        option.setAttribute('aria-checked', String(selected));
+        option.classList.toggle('text-fg', selected);
+        option.classList.toggle('text-muted', !selected);
+        option.querySelector('[data-check]').classList.toggle('opacity-0', !selected);
+        option.querySelector('[data-check]').classList.toggle('text-brand-light', selected);
+    });
 }
 
 function tickPomodoro() {
     pomodoro.remaining -= 1;
 
     if (pomodoro.remaining <= 0) {
-        clearInterval(pomodoro.timer);
-        pomodoro.timer = null;
-        pomodoro.running = false;
-        pomodoro.remaining = POMODORO_SECONDS;
+        stopPomodoro();
+        pomodoro.remaining = pomodoro.minutes * 60;
         renderPomodoro();
+        playAlarm();
+        announcePomodoro('Pomodoro concluído. Pausa de 5 minutos.');
         toast('Pomodoro concluído. Pausa de 5 minutos.', 'success');
         return;
     }
@@ -337,25 +377,136 @@ function tickPomodoro() {
     renderPomodoro();
 }
 
+function startPomodoro() {
+    unlockAlarm();
+    if (pomodoro.timer) clearInterval(pomodoro.timer);
+    pomodoro.timer = setInterval(tickPomodoro, 1000);
+    pomodoro.running = true;
+    renderPomodoro();
+    announcePomodoro(`Pomodoro de ${pomodoro.minutes} minutos iniciado.`);
+}
+
+function stopPomodoro() {
+    if (pomodoro.timer) clearInterval(pomodoro.timer);
+    pomodoro.timer = null;
+    pomodoro.running = false;
+}
+
 function togglePomodoro() {
     if (pomodoro.running) {
-        clearInterval(pomodoro.timer);
-        pomodoro.timer = null;
-        pomodoro.running = false;
-    } else {
-        pomodoro.timer = setInterval(tickPomodoro, 1000);
-        pomodoro.running = true;
+        stopPomodoro();
+        renderPomodoro();
+        announcePomodoro('Pomodoro em pausa.');
+        return;
     }
 
-    renderPomodoro();
+    startPomodoro();
 }
 
 function resetPomodoro() {
-    clearInterval(pomodoro.timer);
-    pomodoro.timer = null;
-    pomodoro.running = false;
-    pomodoro.remaining = POMODORO_SECONDS;
+    stopPomodoro();
+    pomodoro.remaining = pomodoro.minutes * 60;
     renderPomodoro();
+}
+
+function announcePomodoro(message) {
+    els.pomodoroStatus.textContent = message;
+}
+
+/* ── Alarme ──────────────────────────────────────────── */
+
+let audioContext = null;
+
+const ALARM_TONE = [
+    [0.00, 0.16, 880],
+    [0.26, 0.16, 880],
+    [0.58, 0.16, 660],
+    [0.84, 0.16, 660],
+    [1.20, 0.40, 880],
+    [1.78, 0.40, 660],
+];
+
+function unlockAlarm() {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+
+    if (!audioContext) audioContext = new AudioCtx();
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => { /* sem gesto o browser bloqueia */ });
+
+    return audioContext;
+}
+
+function playAlarm() {
+    const context = unlockAlarm();
+    if (!context) return;
+
+    const schedule = () => {
+        const start = context.currentTime + 0.05;
+
+        ALARM_TONE.forEach(([offset, duration, frequency]) => {
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            const at = start + offset;
+
+            oscillator.type = 'square';
+            oscillator.frequency.value = frequency;
+
+            gain.gain.setValueAtTime(0.0001, at);
+            gain.gain.exponentialRampToValueAtTime(0.18, at + 0.012);
+            gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+
+            oscillator.connect(gain).connect(context.destination);
+            oscillator.start(at);
+            oscillator.stop(at + duration + 0.02);
+        });
+    };
+
+    if (context.state === 'running') schedule();
+    else context.resume().then(schedule).catch(() => { /* sem gesto o browser bloqueia */ });
+}
+
+function setPomodoroMinutes(minutes) {
+    if (!POMODORO_MINUTES.includes(minutes) || minutes === pomodoro.minutes) return;
+
+    const wasRunning = pomodoro.running;
+    stopPomodoro();
+    pomodoro.minutes = minutes;
+    pomodoro.remaining = minutes * 60;
+    write(POMODORO_KEY, minutes);
+
+    if (wasRunning) startPomodoro();
+    else renderPomodoro();
+
+    announcePomodoro(`Duração do pomodoro: ${minutes} minutos.`);
+    if (wasRunning) toast(`Pomodoro de ${minutes} min. A contagem recomeçou.`, 'info');
+}
+
+/* Menu de duração */
+
+function isDurationMenuOpen() {
+    return !els.pomodoroDurationMenu.hidden;
+}
+
+function openDurationMenu() {
+    els.pomodoroDurationMenu.hidden = false;
+    els.pomodoroDurationToggle.setAttribute('aria-expanded', 'true');
+
+    const active = els.pomodoroPresets.find((option) => option.getAttribute('aria-checked') === 'true');
+    (active ?? els.pomodoroPresets[0]).focus();
+}
+
+function closeDurationMenu({ focusToggle = false } = {}) {
+    if (!isDurationMenuOpen()) return;
+
+    els.pomodoroDurationMenu.hidden = true;
+    els.pomodoroDurationToggle.setAttribute('aria-expanded', 'false');
+    if (focusToggle) els.pomodoroDurationToggle.focus();
+}
+
+function movePresetFocus(step) {
+    const current = els.pomodoroPresets.indexOf(document.activeElement);
+    const next = (current + step + els.pomodoroPresets.length) % els.pomodoroPresets.length;
+    els.pomodoroPresets[next].focus();
 }
 
 /* ── Vault (Obsidian) ─────────────────────────────────── */
@@ -395,6 +546,7 @@ async function ensureVault() {
         const result = await Vault.requestPermission();
         if (result.ok) {
             renderVault('ligado');
+            syncDayFromVault();
             return true;
         }
     }
@@ -403,6 +555,7 @@ async function ensureVault() {
         const result = await Vault.connect();
         if (result.ok) {
             renderVault('ligado');
+            syncDayFromVault();
             return true;
         }
         if (result.reason === 'cancelado') return false;
@@ -414,7 +567,7 @@ async function ensureVault() {
     return false;
 }
 
-function showConflict({ path, current }, retry) {
+function showConflict({ name, path, current }, retry) {
     const overlay = document.createElement('div');
     overlay.className = 'fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm';
 
@@ -427,7 +580,7 @@ function showConflict({ path, current }, retry) {
 
     const message = document.createElement('p');
     message.className = 'text-sm text-muted';
-    message.textContent = `O conteúdo de ${path} mudou desde o último guardado aqui. Se guardares, a versão do Obsidian é substituída.`;
+    message.textContent = `O conteúdo de ${path} mudou desde o último guardado aqui. Podes trazer a versão do Obsidian para o editor, ou guardar a daqui por cima dela.`;
 
     const preview = document.createElement('pre');
     preview.className = 'scroll-area max-h-56 overflow-auto rounded-xl border border-line bg-surface-2 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted';
@@ -451,7 +604,16 @@ function showConflict({ path, current }, retry) {
         await retry(true);
     });
 
-    actions.append(cancel, force);
+    const useVault = document.createElement('button');
+    useVault.type = 'button';
+    useVault.className = 'rounded-xl border border-brand bg-brand/15 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand';
+    useVault.textContent = 'Usar a versão do Obsidian';
+    useVault.addEventListener('click', () => {
+        overlay.remove();
+        adoptVaultVersion(name, current);
+    });
+
+    actions.append(cancel, useVault, force);
     card.append(title, message, preview, actions);
     overlay.append(card);
 
@@ -491,12 +653,70 @@ async function persistToVault(force = false) {
     toast('Erro ao escrever no vault.', 'error');
 }
 
+/* ── Importação do Obsidian ───────────────────────────── */
+
+const VAULT_SYNC_INTERVAL = 10000;
+let vaultSyncTimer = null;
+
+/* O Obsidian manda: se o ficheiro do dia mudou fora do site, essa versão
+   substitui o que está no editor. Exceção: se nunca escrevemos aquele
+   ficheiro (sem shadow) e o editor já tem texto, não se arrisca apagar —
+   o conflito fica para o diálogo de gravação. */
+async function syncDayFromVault() {
+    if (lastVaultState !== 'ligado') return;
+    if (document.activeElement === els.notes) return;
+
+    const key = dayKey(selected);
+    const result = await Vault.load(`${key}.md`);
+
+    if (!result.ok || !result.existe || !result.mudou) return;
+    if (!result.conhecido && els.notes.value.trim()) return;
+    if (key !== dayKey(selected)) return;
+    if (result.content === els.notes.value) {
+        await Vault.mark(`${key}.md`, result.content);
+        return;
+    }
+
+    els.notes.value = result.content;
+    els.wordCount.textContent = String(countWords(result.content));
+    commitNotes();
+    await Vault.mark(`${key}.md`, result.content);
+
+    toast('Notas actualizadas a partir do Obsidian.', 'info');
+}
+
+function startVaultSync() {
+    if (vaultSyncTimer) return;
+    vaultSyncTimer = setInterval(syncDayFromVault, VAULT_SYNC_INTERVAL);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') syncDayFromVault();
+    });
+
+    window.addEventListener('focus', () => syncDayFromVault());
+
+    /* Se a importação foi adiada por o editor estar focado, corre aqui. */
+    els.notes.addEventListener('focusout', () => setTimeout(syncDayFromVault, 0));
+}
+
+/* Traz a versão do vault para o editor sem gravar por cima do ficheiro. */
+async function adoptVaultVersion(name, content) {
+    els.notes.value = content;
+    els.wordCount.textContent = String(countWords(content));
+    commitNotes();
+    await Vault.mark(name, content);
+
+    toast('A usar a versão do Obsidian.', 'success');
+}
+
 /* ── Navegação de vistas ──────────────────────────────── */
 
 const VIEW_LABELS = {
     painel: 'Painel',
     calendario: 'Calendário',
     disciplinas: 'Disciplinas',
+    pdfs: 'PDFs',
+    semanal: 'Semanal',
     definicoes: 'Definições',
 };
 
@@ -523,6 +743,8 @@ function showView(view) {
     if (view === 'calendario') renderCalendar();
     if (view === 'disciplinas') renderSubjects();
     if (view === 'definicoes') renderSettings();
+    if (view === 'pdfs') Pdfs.ligar();
+    if (view === 'semanal') Weekly.ligar();
 
     document.title = `${VIEW_LABELS[view]} · StudyJournal`;
     window.scrollTo({ top: 0 });
@@ -619,7 +841,7 @@ function shiftMonth(delta) {
     renderCalendar();
 }
 
-function openDay(date) {
+async function openDay(date) {
     if (date.getTime() > today.getTime()) {
         toast('Ainda não chegaste a esse dia.', 'warn');
         return;
@@ -629,7 +851,7 @@ function openDay(date) {
     selected = startOfDay(date);
     calCursor = new Date(selected.getFullYear(), selected.getMonth(), 1);
 
-    loadDay();
+    await loadDay();
     showView('painel');
 }
 
@@ -721,7 +943,7 @@ function renderSubjects() {
             checkbox.checked = task.done;
             checkbox.ariaLabel = task.text;
             checkbox.className = 'mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-brand';
-            checkbox.addEventListener('change', () => setTaskDone(task.id, checkbox.checked));
+            checkbox.addEventListener('change', async () => await setTaskDone(task.id, checkbox.checked));
 
             const text = document.createElement('span');
             text.textContent = task.text;
@@ -804,7 +1026,7 @@ function renderSettings() {
 }
 
 function exportData() {
-    const payload = { app: 'study-journal', exportedAt: new Date().toISOString(), days: {} };
+    const payload = { app: 'study-journal', exportedAt: new Date().toISOString(), days: {}, semanal: {} };
 
     daysWithData().forEach((key) => {
         payload.days[key] = {
@@ -813,7 +1035,13 @@ function exportData() {
         };
     });
 
-    if (!Object.keys(payload.days).length) {
+    payload.semanal = {
+        fixos: Weekly.fixos ? Weekly.fixos() : [],
+        dinamicos: Weekly.dinamicos ? Weekly.dinamicos() : [],
+        semanaAtual: Weekly.semanaAtual ? Weekly.semanaAtual() : '',
+    };
+
+    if (!Object.keys(payload.days).length && !payload.semanal.fixos.length && !payload.semanal.dinamicos.length) {
         toast('Não há nada para exportar.', 'warn');
         return;
     }
@@ -825,7 +1053,7 @@ function exportData() {
     link.click();
 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`Exportado ${Object.keys(payload.days).length} dias.`, 'success');
+    toast(`Exportado ${Object.keys(payload.days).length} dias e dados semanais.`, 'success');
 }
 
 async function importData(file) {
@@ -843,10 +1071,23 @@ async function importData(file) {
             count += 1;
         });
 
-        if (!count) throw new Error('sem dias');
+        if (payload.semanal) {
+            if (Array.isArray(payload.semanal.fixos)) {
+                localStorage.setItem('study-journal-semanal-fixo', JSON.stringify(payload.semanal.fixos));
+            }
+            if (Array.isArray(payload.semanal.dinamicos) && payload.semanal.semanaAtual) {
+                localStorage.setItem(`study-journal-semanal-dinamico-${payload.semanal.semanaAtual}`, JSON.stringify(payload.semanal.dinamicos));
+                localStorage.setItem('study-journal-semanal-dinamico-atual', payload.semanal.semanaAtual);
+            }
+        }
 
-        loadDay();
-        toast(`Importado ${count} dias.`, 'success');
+        if (!count && (!payload.semanal || (!payload.semanal.fixos.length && !payload.semanal.dinamicos.length))) {
+            throw new Error('sem dias');
+        }
+
+        await loadDay();
+        if (window.Weekly && Weekly.ligar) Weekly.ligar();
+        toast(`Importado ${count} dias e dados semanais.`, 'success');
     } catch {
         toast('Ficheiro inválido — esperava um export do StudyJournal.', 'error');
     }
@@ -886,10 +1127,35 @@ function renderDate() {
     els.dayNext.disabled = selected.getTime() >= today.getTime();
 }
 
-function loadDay() {
-    tasks = read(tasksKey(), []);
+async function loadDay() {
+    // 1. Carregar Tarefas
+    const taskResult = await Vault.load('tasks.json');
+    const localTasks = read(tasksKey(), []);
 
-    els.notes.value = read(notesKey(), '');
+    if (taskResult.ok && taskResult.existe) {
+        try {
+            tasks = JSON.parse(taskResult.content);
+        } catch {
+            tasks = localTasks;
+        }
+    } else {
+        tasks = localTasks;
+        if (localTasks.length > 0) {
+            const handle = await Vault.localHandle();
+            if (handle) {
+                await syncTasks();
+            }
+        }
+    }
+
+    // 2. Carregar Notas (Tenta o Vault primeiro, senão local)
+    const noteResult = await Vault.load(`${dayKey(selected)}.md`);
+    if (noteResult.ok && noteResult.existe) {
+        els.notes.value = noteResult.content;
+    } else {
+        els.notes.value = read(notesKey(), '');
+    }
+
     els.wordCount.textContent = String(countWords(els.notes.value));
     setSaveStatus('');
 
@@ -901,7 +1167,7 @@ function loadDay() {
     if (currentView === 'definicoes') renderSettings();
 }
 
-function shiftDay(delta) {
+async function shiftDay(delta) {
     const next = startOfDay(selected);
     next.setDate(next.getDate() + delta);
 
@@ -909,7 +1175,7 @@ function shiftDay(delta) {
 
     commitNotes();
     selected = next;
-    loadDay();
+    await loadDay();
 }
 
 /* ── Arranque ─────────────────────────────────────────── */
@@ -939,13 +1205,55 @@ function bind() {
     els.pomodoro.addEventListener('click', togglePomodoro);
     els.pomodoroReset.addEventListener('click', resetPomodoro);
 
-    els.taskForm.addEventListener('submit', (event) => {
+    els.pomodoroDurationToggle.addEventListener('click', () => {
+        if (isDurationMenuOpen()) closeDurationMenu();
+        else openDurationMenu();
+    });
+
+    els.pomodoroDurationMenu.addEventListener('click', (event) => {
+        const option = event.target.closest('[data-pomodoro-minutes]');
+        if (!option) return;
+
+        setPomodoroMinutes(Number(option.dataset.pomodoroMinutes));
+        closeDurationMenu({ focusToggle: true });
+    });
+
+    els.pomodoroDurationMenu.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            movePresetFocus(1);
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            movePresetFocus(-1);
+        } else if (event.key === 'Home') {
+            event.preventDefault();
+            els.pomodoroPresets[0].focus();
+        } else if (event.key === 'End') {
+            event.preventDefault();
+            els.pomodoroPresets[els.pomodoroPresets.length - 1].focus();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            closeDurationMenu({ focusToggle: true });
+        } else if (event.key === 'Tab') {
+            closeDurationMenu();
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!els.pomodoroDuration.contains(event.target)) closeDurationMenu();
+    });
+
+    document.addEventListener('focusin', (event) => {
+        if (!els.pomodoroDuration.contains(event.target)) closeDurationMenu();
+    });
+
+    els.taskForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
         const text = els.taskInput.value.trim();
         if (!text) return;
 
-        addTask(text, els.taskSubject.value);
+        await addTask(text, els.taskSubject.value);
         els.taskInput.value = '';
         els.taskInput.focus();
     });
@@ -1020,9 +1328,16 @@ function bind() {
     window.addEventListener('beforeunload', commitNotes);
 }
 
-seed();
-bind();
-loadDay();
-renderPomodoro();
-showView('painel');
-refreshVault();
+async function init() {
+    seed();
+    bind();
+    await refreshVault();
+    await loadDay();
+    resetPomodoro();
+    showView('painel');
+    startVaultSync();
+    syncDayFromVault();
+}
+
+init();
+Pdfs.carregar();
