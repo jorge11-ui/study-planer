@@ -377,26 +377,21 @@ window.Vault = (() => {
             }
         }
 
-        if ((await resolveProbe()) === 'ok') {
-            try {
-                const content = await remoteRead(name);
-                if (content === null) return { ok: true, existe: false };
+        try {
+            const content = await remoteRead(name);
+            if (content === null) return { ok: true, existe: false };
 
-                const shadow = await getShadow(name);
-                return {
-                    ok: true,
-                    existe: true,
-                    content,
-                    mudou: !shadow || content !== shadow.content,
-                    conhecido: Boolean(shadow),
-                };
-            } catch (error) {
-                return { ok: false, reason: 'erro', error };
-            }
+            const shadow = await getShadow(name);
+            return {
+                ok: true,
+                existe: true,
+                content,
+                mudou: !shadow || content !== shadow.content,
+                conhecido: Boolean(shadow),
+            };
+        } catch (error) {
+            return { ok: false, reason: 'offline', error };
         }
-
-        if (supported()) return { ok: false, reason: 'desligado' };
-        return { ok: false, reason: 'incompativel' };
     }
 
     /* Regista `content` como última versão conhecida, sem tocar no ficheiro.

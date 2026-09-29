@@ -216,6 +216,9 @@ function renderTasks() {
             tasks = tasks.filter((t) => t.id !== task.id);
             write(tasksKey(), tasks);
             renderTasks();
+            if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+                window.GitHubSync.sync(false).catch(() => {});
+            }
         });
 
         const li = document.createElement('li');
@@ -241,6 +244,9 @@ async function addTask(text, subject) {
     tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, done: false });
     await syncTasks();
     renderTasks();
+    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+        window.GitHubSync.sync(false).catch(() => {});
+    }
 }
 
 /* ── Notas ────────────────────────────────────────────── */
@@ -265,6 +271,10 @@ function commitNotes() {
 
     const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     setSaveStatus(`guardado às ${time}`);
+
+    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+        window.GitHubSync.sync(false).catch(() => {});
+    }
 }
 
 function onNotesInput() {
@@ -663,26 +673,30 @@ let vaultSyncTimer = null;
    ficheiro (sem shadow) e o editor já tem texto, não se arrisca apagar —
    o conflito fica para o diálogo de gravação. */
 async function syncDayFromVault() {
-    if (lastVaultState !== 'ligado') return;
+    // No telemóvel (modo remoto), ignoramos a verificação de estado 'ligado'
+    // e tentamos ler do servidor sempre que possível.
     if (document.activeElement === els.notes) return;
 
     const key = dayKey(selected);
-    const result = await Vault.load(`${key}.md`);
+    try {
+        const result = await Vault.load(`${key}.md`);
+        if (!result.ok || !result.existe || !result.mudou) return;
+        if (!result.conhecido && els.notes.value.trim()) return;
+        if (key !== dayKey(selected)) return;
+        if (result.content === els.notes.value) {
+            await Vault.mark(`${key}.md`, result.content);
+            return;
+        }
 
-    if (!result.ok || !result.existe || !result.mudou) return;
-    if (!result.conhecido && els.notes.value.trim()) return;
-    if (key !== dayKey(selected)) return;
-    if (result.content === els.notes.value) {
+        els.notes.value = result.content;
+        els.wordCount.textContent = String(countWords(result.content));
+        commitNotes();
         await Vault.mark(`${key}.md`, result.content);
-        return;
+
+        toast('Notas actualizadas a partir do Obsidian.', 'info');
+    } catch (e) {
+        console.error('Erro na sync automática:', e);
     }
-
-    els.notes.value = result.content;
-    els.wordCount.textContent = String(countWords(result.content));
-    commitNotes();
-    await Vault.mark(`${key}.md`, result.content);
-
-    toast('Notas actualizadas a partir do Obsidian.', 'info');
 }
 
 function startVaultSync() {
@@ -1279,7 +1293,9 @@ function bind() {
     els.vaultChip.addEventListener('click', async () => {
         const state = await Vault.status();
         if (state === 'ligado') {
-            toast(`As notas vão para ${Vault.FOLDER}/<data>.md no vault.`, 'info');
+            toast('Sincronizando...', 'info');
+            await syncDayFromVault();
+            toast(`Atualizado do vault!`, 'success');
             return;
         }
         await ensureVault();
@@ -1318,6 +1334,100 @@ function bind() {
     });
     els.clearDay.addEventListener('click', clearSelectedDay);
 
+    // GitHub Sync UI
+    const githubToken = document.getElementById('github-token');
+    const githubGist = document.getElementById('github-gist');
+    const githubSave = document.getElementById('github-save');
+    const githubSyncNow = document.getElementById('github-sync-now');
+    const githubDisconnect = document.getElementById('github-disconnect');
+    const githubNotConfigured = document.getElementById('github-not-configured');
+    const githubConfigured = document.getElementById('github-configured');
+    const githubStatus = document.getElementById('github-status');
+    const githubLastSync = document.getElementById('github-last-sync');
+
+    function atualizarUIEstados() {
+        const cfg = GitHubSync.configurado();
+        if (githubNotConfigured) githubNotConfigured.hidden = cfg;
+        if (githubConfigured) githubConfigured.hidden = !cfg;
+        if (cfg) {
+            if (githubToken) githubToken.value = GitHubSync.getToken();
+            if (githubGist) githubGist.value = GitHubSync.getGistId();
+            const last = localStorage.getItem('study-journal-github-last-sync');
+            if (githubLastSync && last) {
+                const d = new Date(last);
+                githubLastSync.textContent = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+            }
+        }
+    }
+
+    if (githubSave) {
+        githubSave.addEventListener('click', async () => {
+            const token = githubToken?.value?.trim();
+            const gistId = githubGist?.value?.trim() || null;
+            if (!token) {
+                toast('Insere o Personal Access Token.', 'warn');
+                return;
+            }
+            GitHubSync.setConfig(token, gistId);
+            atualizarUIEstados();
+            const res = await GitHubSync.sync(true);
+            if (res.ok) {
+                toast('Configurado e sincronizado.', 'success');
+            } else {
+                toast(`Erro: ${res.error || 'desconhecido'}`, 'error');
+            }
+        });
+    }
+
+    if (githubSyncNow) {
+        githubSyncNow.addEventListener('click', async () => {
+            const res = await GitHubSync.sync(true);
+            if (res.ok) {
+                toast('Sincronizado.', 'success');
+                atualizarUIEstados();
+            } else {
+                toast(`Erro: ${res.error || 'desconhecido'}`, 'error');
+            }
+        });
+    }
+
+    if (githubDisconnect) {
+        githubDisconnect.addEventListener('click', async () => {
+            const ok = await askConfirm({
+                title: 'Desligar sincronização GitHub?',
+                message: 'Remove o token e o Gist ID guardados. Os dados locais não são apagados.',
+                confirmLabel: 'Desligar',
+            });
+            if (!ok) return;
+            GitHubSync.clearConfig();
+            atualizarUIEstados();
+            toast('GitHub desligado.', 'info');
+        });
+    }
+
+    // Listener de eventos de sync para atualizar UI
+    if (window.GitHubSync && window.GitHubSync.onSync) {
+        window.GitHubSync.onSync((tipo) => {
+            if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
+                atualizarUIEstados();
+                if (currentView === 'definicoes') {
+                    const last = localStorage.getItem('study-journal-github-last-sync');
+                    if (githubLastSync && last) {
+                        const d = new Date(last);
+                        githubLastSync.textContent = d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+                    }
+                    if (githubStatus) githubStatus.textContent = 'Sincronizado';
+                }
+            } else if (tipo === 'sync-error') {
+                if (githubStatus) githubStatus.textContent = 'Erro';
+            } else if (tipo === 'sync-start') {
+                if (githubStatus) githubStatus.textContent = 'A sincronizar...';
+            }
+        });
+    }
+
+    atualizarUIEstados();
+
     document.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
@@ -1337,6 +1447,13 @@ async function init() {
     showView('painel');
     startVaultSync();
     syncDayFromVault();
+
+    // Callback para sync GitHub quando Weekly salva
+    window.onWeeklySave = () => {
+        if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+            window.GitHubSync.sync(false).catch(() => {});
+        }
+    };
 }
 
 init();

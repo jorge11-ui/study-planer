@@ -85,6 +85,7 @@ window.Weekly = (() => {
     function salvar() {
         escreverFixos();
         escreverDinamicos(CHAVE_DINAMICO_PREFIXO + semanaAtual, dinamicos);
+        if (window.onWeeklySave) window.onWeeklySave();
     }
 
     function normalizarEvento(e) {
