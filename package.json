@@ -1,0 +1,20 @@
+{
+  "name": "study-journal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "serve.js",
+  "scripts": {
+    "start": "node serve.js",
+    "build": "tailwindcss -i src/input.css -o app.css",
+    "dev": "tailwindcss -i src/input.css -o app.css --watch",
+    "check": "node --check serve.js && node --check src/app.js && node --check src/vault.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

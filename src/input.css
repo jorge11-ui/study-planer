@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+@theme {
+    /* Superfícies */
+    --color-canvas: #111317;
+    --color-surface: #171a1f;
+    --color-surface-2: #1e2228;
+    --color-surface-3: #272c34;
+    --color-line: #262b33;
+    --color-line-soft: #1f242b;
+
+    /* Texto */
+    --color-fg: #e8eaed;
+    --color-muted: #9aa3af;
+    --color-faint: #6b7280;
+
+    /* Marca — barra de cabeçalho azul escura original */
+    --color-brand: #4f46e5;
+    --color-brand-dark: #4338ca;
+    --color-brand-light: #818cf8;
+
+    /* Ações */
+    --color-mint: #10b981;
+    --color-mint-dark: #059669;
+
+    /* Disciplinas */
+    --color-subject-blue: #3b82f6;
+    --color-subject-green: #22c55e;
+    --color-subject-yellow: #eab308;
+    --color-subject-rose: #f43f5e;
+    --color-subject-violet: #a78bfa;
+    --color-subject-cyan: #06b6d4;
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 28px -16px rgb(0 0 0 / 0.7);
+    --shadow-pop: 0 8px 24px -6px rgb(0 0 0 / 0.6);
+}
+
+@layer base {
+    * {
+        border-color: var(--color-line);
+    }
+
+    /* O atributo hidden perde para display:flex vindo das utilitários */
+    [hidden] {
+        display: none !important;
+    }
+
+    body {
+        transition: background-color 0.3s ease;
+    }
+
+    textarea,
+    .scroll-area {
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-line) transparent;
+    }
+
+    textarea::-webkit-scrollbar {
+        width: 10px;
+    }
+
+    textarea::-webkit-scrollbar-thumb {
+        background-color: var(--color-line);
+        border: 3px solid transparent;
+        background-clip: content-box;
+        border-radius: 999px;
+    }
+}
+
+/* Fica em @layer components para que qualquer utilitário Tailwind
+   aplicado no mesmo elemento continue a ganhar. */
+@layer components {
+    .icon {
+        width: 1.125rem;
+        height: 1.125rem;
+        flex-shrink: 0;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.75;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .field {
+        @apply rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm text-fg transition
+            placeholder:text-faint
+            focus:border-brand focus:ring-2 focus:ring-brand/30 focus:outline-none;
+    }
+
+    .btn-mint {
+        @apply flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-medium text-emerald-950
+            shadow-[0_1px_2px_rgb(0_0_0/0.4)] transition
+            hover:bg-mint-dark hover:shadow-pop
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint
+            active:translate-y-px;
+    }
+
+    .chip {
+        @apply inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    }
+
+    /* Navegação */
+    .nav-item {
+        @apply grid h-11 w-11 place-items-center rounded-xl text-faint transition
+            hover:bg-surface-2 hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+    }
+
+    .nav-item-active {
+        @apply bg-brand text-white hover:bg-brand hover:text-white;
+        box-shadow: 0 2px 8px -2px rgb(79 70 229 / 0.6);
+    }
+
+    .nav-mobile {
+        @apply flex flex-1 flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-medium text-faint transition
+            hover:bg-surface-2 hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+    }
+
+    .nav-mobile-active {
+        @apply bg-brand/15 text-white;
+    }
+
+    .icon-btn {
+        @apply grid h-8 w-8 place-items-center rounded-lg text-muted transition
+            hover:bg-surface-3 hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+    }
+
+    .btn-soft {
+        @apply rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-medium text-fg transition
+            hover:border-line hover:bg-surface-3
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+    }
+
+    .btn-soft-danger {
+        @apply text-subject-rose hover:text-subject-rose focus-visible:outline-subject-rose;
+    }
+
+    .task-item {
+        animation: slide-in 0.2s ease-out;
+    }
+
+    .toast {
+        animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .running {
+        animation: pulse-tomato 2s ease-in-out infinite;
+    }
+
+    /* O botão de apagar nunca fica invisível em ecrãs táteis */
+    @media (hover: none) {
+        .task-remove {
+            opacity: 1;
+        }
+    }
+}
+
+@keyframes slide-in {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes pulse-tomato {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.65; transform: scale(0.92); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
