@@ -3,28 +3,11 @@ window.Weekly = (() => {
     const CHAVE_DINAMICO_PREFIXO = 'study-journal-semanal-dinamico-';
     const CHAVE_DINAMICO_ATUAL = 'study-journal-semanal-dinamico-atual';
 
-    const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-    const DIAS_COMPLETOS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+    const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex'];
+    const DIAS_COMPLETOS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
     const HORA_INICIO = 6;
     const HORA_FIM = 24;
-    const PASSO_HORAS = 0.5; // slots de 30 em 30 minutos
-    const PX_POR_HORA = 48; // altura em px de 1h de bloco
-    const SLOTS = [];
-    for (let h = HORA_INICIO; h < HORA_FIM; h = Math.round((h + PASSO_HORAS) * 2) / 2) {
-        SLOTS.push(h);
-    }
-
-    function fmtHora(h) {
-        const hh = Math.floor(h);
-        const mm = (h % 1) ? '30' : '00';
-        return `${String(hh).padStart(2, '0')}:${mm}`;
-    }
-
-    function fmtDuracao(d) {
-        if (d < 1) return '30 min';
-        const h = Math.floor(d);
-        return (d % 1) ? `${h}h30` : `${h}h`;
-    }
+    const HORAS = Array.from({ length: HORA_FIM - HORA_INICIO }, (_, i) => HORA_INICIO + i);
 
     const TEXTOS = {
         fixo: 'Fixo (recorrente)',
@@ -35,16 +18,6 @@ window.Weekly = (() => {
         apagar: 'Apagar',
         salvar: 'Salvar',
         cancelar: 'Cancelar',
-    };
-
-    const COR_MAP = {
-        brand: '--color-brand',
-        blue: '--color-subject-blue',
-        green: '--color-subject-green',
-        yellow: '--color-subject-yellow',
-        cyan: '--color-subject-cyan',
-        rose: '--color-subject-rose',
-        purple: '--color-subject-violet',
     };
 
     let fixos = [];
@@ -61,18 +34,9 @@ window.Weekly = (() => {
         const d = new Date(date);
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        d.setDate(diff);
-        d.setHours(0, 0, 0, 0);
-        return d.toISOString().slice(0, 10);
-    }
-
-    function getWeekNumber(date) {
-        const d = new Date(date);
-        d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-        const yearStart = new Date(d.getFullYear(), 0, 1);
-        const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-        return weekNo;
+        const monday = new Date(d.setDate(diff));
+        monday.setHours(0, 0, 0, 0);
+        return monday.toISOString().slice(0, 10);
     }
 
     function lerFixos() {
@@ -113,7 +77,7 @@ window.Weekly = (() => {
 
     function carregar() {
         fixos = lerFixos().map(normalizarEvento);
-        semanaAtual = semanaAtual || semanaKey();
+        semanaAtual = semanaKey();
         localStorage.setItem(CHAVE_DINAMICO_ATUAL, semanaAtual);
         dinamicos = lerDinamicos(CHAVE_DINAMICO_PREFIXO + semanaAtual).map(normalizarEvento);
     }
@@ -141,66 +105,37 @@ window.Weekly = (() => {
         return `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
     }
 
-    function semanaAnterior() {
-        const inicio = new Date(semanaAtual);
-        inicio.setDate(inicio.getDate() - 7);
-        mudarSemana(inicio);
+    function horaParaMinutos(hora) {
+        return hora * 60;
     }
 
-    function semanaSeguinte() {
-        const inicio = new Date(semanaAtual);
-        inicio.setDate(inicio.getDate() + 7);
-        mudarSemana(inicio);
+    function minutosParaHora(min) {
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
 
-    function mudarSemana(novaData) {
-        const key = semanaKey(novaData);
-        if (key === semanaAtual) return;
-        
-        salvar();
-        semanaAtual = key;
-        localStorage.setItem(CHAVE_DINAMICO_ATUAL, semanaAtual);
-        dinamicos = lerDinamicos(CHAVE_DINAMICO_PREFIXO + semanaAtual).map(normalizarEvento);
-        render();
+    function slotKey(dia, hora) {
+        return `${dia}-${hora}`;
     }
 
-    function irParaSemanaAtual() {
-        mudarSemana(new Date());
+    function getEventosNoSlot(dia, hora) {
+        const fixosSlot = fixos.filter(e => e.dia === dia && e.hora <= hora && hora < e.hora + e.duracao);
+        const dinamicosSlot = dinamicos.filter(e => e.dia === dia && e.hora <= hora && hora < e.hora + e.duracao);
+        return { fixos: fixosSlot, dinamicos: dinamicosSlot };
     }
 
     function render() {
         const tbody = document.getElementById('week-body');
         const label = document.getElementById('week-label');
-        const weekNumber = document.getElementById('week-number');
         const empty = document.getElementById('week-empty');
-        const btnPrev = document.getElementById('week-prev');
-        const btnNext = document.getElementById('week-next');
-        const btnToday = document.getElementById('week-today');
 
         if (label) {
             const inicio = new Date(semanaAtual);
             const fim = new Date(inicio);
-            fim.setDate(fim.getDate() + 6);
+            fim.setDate(fim.getDate() + 4);
             const fmt = d => d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
             label.textContent = `${fmt(inicio)} – ${fmt(fim)}`;
-        }
-
-        if (weekNumber) {
-            const inicio = new Date(semanaAtual);
-            weekNumber.textContent = `Semana ${getWeekNumber(inicio)}`;
-        }
-
-        const hoje = new Date();
-        const inicioSemana = new Date(semanaAtual);
-        const fimSemana = new Date(inicioSemana);
-        fimSemana.setDate(fimSemana.getDate() + 6);
-        const isCurrentWeek = hoje >= inicioSemana && hoje <= fimSemana;
-
-        if (btnPrev) btnPrev.disabled = false;
-        if (btnNext) btnNext.disabled = false;
-        if (btnToday) {
-            btnToday.hidden = isCurrentWeek;
-            btnToday.setAttribute('aria-pressed', String(isCurrentWeek));
         }
 
         if (!tbody) return;
@@ -208,49 +143,46 @@ window.Weekly = (() => {
         let temEventos = false;
         let html = '';
 
-        for (const hora of SLOTS) {
-            const horaLabel = fmtHora(hora);
+        for (const hora of HORAS) {
+            const horaLabel = `${String(hora).padStart(2, '0')}:00`;
             html += `<tr><th class="sticky left-0 w-16 px-2 py-1 text-right text-[10px] font-medium text-faint bg-surface border-r border-line">${horaLabel}</th>`;
 
-            for (let dia = 1; dia <= 7; dia++) {
-                const fixosQueComecam = fixos.filter(e => e.dia === dia && e.hora === hora);
-                const dinamicosQueComecam = dinamicos.filter(e => e.dia === dia && e.hora === hora);
-                
-                let cellHtml = '';
-                if (fixosQueComecam.length > 0 || dinamicosQueComecam.length > 0) {
-                    const fixosHtml = fixosQueComecam.map(e => {
-                        const varCor = COR_MAP[e.cor] || '--color-brand';
-                        return `
-                        <div class="week-block week-block-fixo" style="background: var(${varCor}); height: ${e.duracao * PX_POR_HORA}px;" 
-                             data-id="${e.id}" data-layer="fixo" data-dia="${dia}" data-hora="${e.hora}" title="${e.titulo}${e.notas ? ': ' + e.notas : ''}">
-                             <span class="week-block-title">${e.titulo}</span>
-                             ${e.duracao > 1 ? `<span class="week-block-duracao">${fmtDuracao(e.duracao)}</span>` : ''}
-                        </div>
-                        `;
-                    }).join('');
+            for (let dia = 1; dia <= 5; dia++) {
+                const eventos = getEventosNoSlot(dia, hora);
+                const temFixo = eventos.fixos.length > 0;
+                const temDinamico = eventos.dinamicos.length > 0;
+                const isTop = eventos.fixos[0]?.hora === hora || (!temFixo && eventos.dinamicos[0]?.hora === hora);
 
-                    const dinamicosHtml = dinamicosQueComecam.map(e => {
-                        const varCor = COR_MAP[e.cor] || '--color-brand';
-                        return `
-                        <div class="week-block week-block-dinamico" style="border-color: var(${varCor}); height: ${e.duracao * PX_POR_HORA}px;" 
-                             data-id="${e.id}" data-layer="dinamico" data-dia="${dia}" data-hora="${e.hora}" draggable="true" title="${e.titulo}${e.notas ? ': ' + e.notas : ''}">
-                             <span class="week-block-title">${e.titulo}</span>
-                             ${e.duracao > 1 ? `<span class="week-block-duracao">${fmtDuracao(e.duracao)}</span>` : ''}
+                let cellHtml = '';
+                if (temFixo || temDinamico) {
+                    const fixosHtml = eventos.fixos.map(e => `
+                        <div class="week-block week-block-fixo" style="background: var(--${e.cor}); grid-row: span ${e.duracao};" 
+                             data-id="${e.id}" data-layer="fixo" data-dia="${dia}" data-hora="${e.hora}" title="${e.titulo}${e.notas ? ': ' + e.notas : ''}">
+                            <span class="week-block-title">${e.titulo}</span>
+                            ${e.duracao > 1 ? `<span class="week-block-duracao">${e.duracao}h</span>` : ''}
                         </div>
-                        `;
-                    }).join('');
+                    `).join('');
+
+                    const dinamicosHtml = eventos.dinamicos.map(e => `
+                        <div class="week-block week-block-dinamico" style="border-color: var(--${e.cor}); grid-row: span ${e.duracao};" 
+                             data-id="${e.id}" data-layer="dinamico" data-dia="${dia}" data-hora="${e.hora}" draggable="true" title="${e.titulo}${e.notas ? ': ' + e.notas : ''}">
+                            <span class="week-block-title">${e.titulo}</span>
+                            ${e.duracao > 1 ? `<span class="week-block-duracao">${e.duracao}h</span>` : ''}
+                        </div>
+                    `).join('');
 
                     cellHtml = `<div class="week-cell-content">${fixosHtml}${dinamicosHtml}</div>`;
                     temEventos = true;
                 }
 
-                const cellDate = new Date(inicioSemana);
+                const today = new Date();
+                const semanaInicio = new Date(semanaAtual);
+                const cellDate = new Date(semanaInicio);
                 cellDate.setDate(cellDate.getDate() + dia - 1);
-                const isToday = cellDate.toDateString() === hoje.toDateString();
-                const isWeekend = dia === 6 || dia === 7;
+                const isToday = cellDate.toDateString() === today.toDateString();
 
-                html += `<td class="week-cell relative min-h-6 p-0.5 border-r border-line ${isToday ? 'bg-brand/5' : ''} ${isWeekend ? 'bg-surface-2/50' : ''}" 
-                          data-dia="${dia}" data-hora="${hora}" ${isToday ? 'data-hoje="true"' : ''} ${isWeekend ? 'data-fim-semana="true"' : ''}>
+                html += `<td class="week-cell relative min-h-12 p-0.5 border-r border-line ${isToday ? 'bg-brand/5' : ''}" 
+                          data-dia="${dia}" data-hora="${hora}" ${isToday ? 'data-hoje="true"' : ''}>
                     ${cellHtml}
                 </td>`;
             }
@@ -272,10 +204,8 @@ window.Weekly = (() => {
         const layerFixo = dlg.querySelector('[data-week-layer="fixo"]');
         const layerDinamico = dlg.querySelector('[data-week-layer="dinamico"]');
         const horaSelect = dlg.querySelector('#week-hora');
-        const diaSelect = dlg.querySelector('#week-dia');
 
-        horaSelect.innerHTML = SLOTS.map(h => `<option value="${h}">${fmtHora(h)}</option>`).join('');
-        diaSelect.innerHTML = DIAS.map((d, i) => `<option value="${i + 1}">${DIAS_COMPLETOS[i]}</option>`).join('');
+        horaSelect.innerHTML = HORAS.map(h => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
 
         if (evento) {
             editandoId = evento.id;
@@ -379,86 +309,9 @@ window.Weekly = (() => {
     function ligarOuvintes() {
         const tbody = document.getElementById('week-body');
         const dlg = document.getElementById('week-form');
-        const btnPrev = document.getElementById('week-prev');
-        const btnNext = document.getElementById('week-next');
-        const btnToday = document.getElementById('week-today');
-
-        if (btnPrev && !btnPrev.dataset.bound) {
-            btnPrev.dataset.bound = 'true';
-            btnPrev.addEventListener('click', semanaAnterior);
-        }
-        if (btnNext && !btnNext.dataset.bound) {
-            btnNext.dataset.bound = 'true';
-            btnNext.addEventListener('click', semanaSeguinte);
-        }
-        if (btnToday && !btnToday.dataset.bound) {
-            btnToday.dataset.bound = 'true';
-            btnToday.addEventListener('click', irParaSemanaAtual);
-        }
 
         if (tbody && !tbody.dataset.weekBound) {
             tbody.dataset.weekBound = 'true';
-
-            let resizeData = null;
-
-            const startResize = (e) => {
-                const block = e.target.closest('.week-block');
-                if (!block) return;
-
-                const rect = block.getBoundingClientRect();
-                const offsetY = e.clientY - rect.top;
-                if (offsetY < rect.height - 15) return;
-
-                e.preventDefault();
-                e.stopPropagation();
-
-                const id = block.dataset.id;
-                const layer = block.dataset.layer;
-                const lista = layer === 'dinamico' ? dinamicos : fixos;
-                const evento = lista.find(e => e.id === id);
-
-                if (!evento) return;
-
-                resizeData = {
-                    evento,
-                    layer,
-                    startY: e.clientY,
-                    startDuracao: evento.duracao,
-                    blockElement: block,
-                };
-
-                document.addEventListener('mousemove', onResizeMove);
-                document.addEventListener('mouseup', onResizeEnd);
-            };
-
-            const onResizeMove = (e) => {
-                if (!resizeData) return;
-                const deltaY = e.clientY - resizeData.startY;
-                const deltaDuracao = Math.round((deltaY / PX_POR_HORA) * 2) / 2;
-                const novaDuracao = Math.max(0.5, resizeData.startDuracao + deltaDuracao);
-
-                if (novaDuracao !== resizeData.evento.duracao) {
-                    resizeData.evento.duracao = novaDuracao;
-                    resizeData.blockElement.style.height = `${novaDuracao * PX_POR_HORA}px`;
-                    const duracaoEl = resizeData.blockElement.querySelector('.week-block-duracao');
-                    if (duracaoEl) {
-                        duracaoEl.textContent = fmtDuracao(novaDuracao);
-                        duracaoEl.style.display = novaDuracao > 1 ? 'block' : 'none';
-                    }
-                }
-            };
-
-            const onResizeEnd = () => {
-                if (resizeData) {
-                    salvar();
-                    render();
-                    resizeData = null;
-                }
-                document.removeEventListener('mousemove', onResizeMove);
-                document.removeEventListener('mouseup', onResizeEnd);
-            };
-
-            tbody.addEventListener('mousedown', startResize);
 
             tbody.addEventListener('click', (e) => {
                 const cell = e.target.closest('.week-cell');
@@ -524,80 +377,6 @@ window.Weekly = (() => {
                 render();
                 toast('Compromisso movido.', 'success');
             });
-
-            tbody.addEventListener('keydown', (e) => {
-                const cell = e.target.closest('.week-cell');
-                const block = e.target.closest('.week-block');
-                const target = block || cell;
-                if (!target) return;
-
-                const dia = Number(target.dataset.dia);
-                const hora = Number(target.dataset.hora);
-
-                let novoDia = dia;
-                let novaHora = hora;
-
-                switch (e.key) {
-                    case 'ArrowRight':
-                        e.preventDefault();
-                        novoDia = Math.min(7, dia + 1);
-                        break;
-                    case 'ArrowLeft':
-                        e.preventDefault();
-                        novoDia = Math.max(1, dia - 1);
-                        break;
-                    case 'ArrowDown':
-                        e.preventDefault();
-                        novaHora = Math.min(HORA_FIM - PASSO_HORAS, Math.round((hora + PASSO_HORAS) * 2) / 2);
-                        break;
-                    case 'ArrowUp':
-                        e.preventDefault();
-                        novaHora = Math.max(HORA_INICIO, Math.round((hora - PASSO_HORAS) * 2) / 2);
-                        break;
-                    case 'Enter':
-                    case ' ':
-                        if (block) {
-                            e.preventDefault();
-                            const id = block.dataset.id;
-                            const layer = block.dataset.layer;
-                            const lista = layer === 'dinamico' ? dinamicos : fixos;
-                            const evento = lista.find(ev => ev.id === id);
-                            if (evento) abrirFormulario(evento);
-                        } else if (cell) {
-                            e.preventDefault();
-                            abrirFormulario(null, dia, hora);
-                        }
-                        break;
-                    case 'Delete':
-                    case 'Backspace':
-                        if (block) {
-                            e.preventDefault();
-                            const id = block.dataset.id;
-                            const layer = block.dataset.layer;
-                            const lista = layer === 'dinamico' ? dinamicos : fixos;
-                            const idx = lista.findIndex(ev => ev.id === id);
-                            if (idx !== -1 && confirm('Apagar este compromisso?')) {
-                                lista.splice(idx, 1);
-                                salvar();
-                                render();
-                                toast('Compromisso apagado.', 'success');
-                            }
-                        }
-                        break;
-                }
-
-                if (novoDia !== dia || novaHora !== hora) {
-                    const nextCell = tbody.querySelector(`[data-dia="${novoDia}"][data-hora="${novaHora}"]`);
-                    if (nextCell) nextCell.focus({ preventScroll: true });
-                }
-            });
-
-            for (let i = 0; i <= 7; i++) {
-                for (const h of SLOTS) {
-                    const cell = tbody.querySelector(`[data-dia="${i}"][data-hora="${h}"]`);
-                    if (cell) cell.setAttribute('tabindex', '0');
-                }
-            }
         }
 
         if (dlg && !dlg.dataset.weekBound) {
@@ -646,15 +425,5 @@ window.Weekly = (() => {
         ligarOuvintes();
     }
 
-    return { 
-        carregar, 
-        ligar, 
-        render, 
-        fixos: () => fixos, 
-        dinamicos: () => dinamicos, 
-        semanaAtual: () => semanaAtual,
-        semanaAnterior,
-        semanaSeguinte,
-        irParaSemanaAtual
-    };
+    return { carregar, ligar, render, fixos: () => fixos, dinamicos: () => dinamicos, semanaAtual: () => semanaAtual };
 })();

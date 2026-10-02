@@ -1,50 +1,45 @@
 @import "tailwindcss";
 
 @theme {
-    /* Superfícies — quase sem camadas. O fundo e os painéis diferem sobretudo
-       pelo fio, não por elevação, o que dá o aspecto liso tipo Notion. */
-    --color-canvas: #181818;
-    --color-surface: #1b1b1b;
-    --color-surface-2: #232323;
-    --color-surface-3: #2b2b2b;
-    --color-line: #2e2e2e;
-    --color-line-soft: #242424;
-
-    /* Texto */
-    --color-fg: #e6e6e6;
-    --color-muted: #8f8f8f;
-    --color-faint: #656565;
-
-    /* Marca — indigo dessaturado, usado com parcimónia */
-    --color-brand: #5a63c8;
-    --color-brand-dark: #4a52b0;
-    --color-brand-light: #9ba1ee;
-
-    /* Ações */
-    --color-mint: #52bd8a;
-    --color-mint-dark: #43a374;
-
-    /* Disciplinas — tonalidades calmas, sem gritar */
-    --color-subject-blue: #7ba3f0;
-    --color-subject-green: #85c78c;
-    --color-subject-yellow: #d4b25f;
-    --color-subject-rose: #dd7f95;
-    --color-subject-violet: #a89ae4;
-    --color-subject-cyan: #6cbfd2;
-
-    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-    --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
-
-    /* Cantos mais fechados */
-    --radius-md: 0.3125rem;
-    --radius-lg: 0.375rem;
-    --radius-xl: 0.5rem;
-    --radius-2xl: 0.625rem;
-
-    /* Sombras quase nulas — a definição vem do fio */
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow-pop: 0 4px 14px -6px rgb(0 0 0 / 0.55);
+    /* Light mode (default) */
+    --color-canvas: #fafafa;
+    --color-surface: #ffffff;
+    --color-surface-2: #f5f5f5;
+    --color-surface-3: #e5e5e5;
+    --color-line: #e5e5e5;
+    --color-line-soft: #d4d4d4;
+    --color-fg: #1a1a1a;
+    --color-muted: #737373;
+    --color-faint: #a3a3a3;
+    --color-brand: #b8860b;
+    --color-brand-dark: #996b00;
+    --color-brand-light: #e6b800;
+    --color-mint: #5a9c5a;
+    --color-mint-dark: #457d45;
+    --color-heatmap-0: #ebedf0;
+    --color-heatmap-1: #9be9a8;
+    --color-heatmap-2: #40c463;
+    --color-heatmap-3: #30a14e;
+    --color-heatmap-4: #216e39;
+    --color-subject-blue: #4a7cc7;
+    --color-subject-green: #5a9c5a;
+    --color-subject-yellow: #b8860b;
+    --color-subject-rose: #c46a7a;
+    --color-subject-violet: #7c6aa8;
+    --color-subject-cyan: #4aa8b0;
+    --font-sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --text-base: 1.0625rem; /* 17px */
+    --text-lg: 1.125rem;    /* 18px */
+    --text-xl: 1.25rem;     /* 20px */
+    --text-2xl: 1.5rem;     /* 24px */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.03);
+    --shadow-pop: 0 4px 12px -4px rgb(0 0 0 / 0.08);
 }
 
 @layer base {
@@ -52,13 +47,25 @@
         border-color: var(--color-line);
     }
 
-    /* O atributo hidden perde para display:flex vindo das utilitários */
     [hidden] {
         display: none !important;
     }
 
+    html {
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-size: var(--text-base);
+    }
+
     body {
-        transition: background-color 0.3s ease;
+        background: var(--color-canvas);
+        color: var(--color-fg);
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+        transition: background-color 0.2s ease, color 0.2s ease;
+        font-size: var(--text-base);
+        line-height: 1.6;
     }
 
     textarea,
@@ -68,19 +75,60 @@
     }
 
     textarea::-webkit-scrollbar {
-        width: 10px;
+        width: 8px;
     }
 
     textarea::-webkit-scrollbar-thumb {
-        background-color: var(--color-line);
-        border: 3px solid transparent;
+        background-color: var(--color-line-soft);
+        border: 2px solid transparent;
         background-clip: content-box;
         border-radius: 999px;
     }
+
+    ::selection {
+        background: var(--color-brand-light);
+        color: var(--color-fg);
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-brand);
+        outline-offset: 2px;
+    }
+
+    /* Dark mode */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --color-canvas: #0a0a0a;
+            --color-surface: #171717;
+            --color-surface-2: #1f1f1f;
+            --color-surface-3: #2a2a2a;
+            --color-line: #2a2a2a;
+            --color-line-soft: #3a3a3a;
+            --color-fg: #fafafa;
+            --color-muted: #a3a3a3;
+            --color-faint: #737373;
+            --color-brand: #e6b800;
+            --color-brand-dark: #cc9900;
+            --color-brand-light: #f5d03b;
+            --color-mint: #6ec66e;
+            --color-mint-dark: #5a9c5a;
+            --color-heatmap-0: #21262d;
+            --color-heatmap-1: #0e4429;
+            --color-heatmap-2: #006d32;
+            --color-heatmap-3: #26a641;
+            --color-heatmap-4: #39d353;
+            --color-subject-blue: #7aa0e6;
+            --color-subject-green: #7ec77e;
+            --color-subject-yellow: #e6b800;
+            --color-subject-rose: #e68a9a;
+            --color-subject-violet: #a89ae6;
+            --color-subject-cyan: #6ed0d8;
+            --shadow-card: 0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.2);
+            --shadow-pop: 0 4px 12px -4px rgb(0 0 0 / 0.4);
+        }
+    }
 }
 
-/* Fica em @layer components para que qualquer utilitário Tailwind
-   aplicado no mesmo elemento continue a ganhar. */
 @layer components {
     .icon {
         width: 1.125rem;
@@ -94,85 +142,152 @@
     }
 
     .field {
-        @apply rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm text-fg transition
+        @apply rounded-lg border border-line bg-surface px-3 py-2.5 text-base text-fg transition
             placeholder:text-faint
-            focus:border-brand focus:ring-2 focus:ring-brand/25 focus:outline-none;
-    }
-
-    .btn-mint {
-        @apply flex items-center gap-2 rounded-xl bg-mint px-4 py-2 text-sm font-medium text-emerald-950
-            shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition
-            hover:bg-mint-dark hover:shadow-none
-            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint
-            active:translate-y-px;
+            focus:border-brand focus:ring-2 focus:ring-brand/15 focus:outline-none;
     }
 
     .btn-primary {
-        @apply flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white transition
-            hover:bg-brand-dark hover:shadow-none
+        @apply inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-base font-medium text-white transition
+            hover:bg-brand-dark
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
-            active:translate-y-px;
+            active:scale-[0.98];
+    }
+
+    .btn-secondary {
+        @apply inline-flex items-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-base font-medium text-fg transition
+            hover:bg-surface-2
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
+            active:scale-[0.98];
+    }
+
+    .btn-ghost {
+        @apply inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-base font-medium text-muted transition
+            hover:bg-surface-2 hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand
+            active:scale-[0.98];
+    }
+
+    .btn-danger {
+        @apply inline-flex items-center gap-2 rounded-lg border border-subject-rose/30 bg-subject-rose/10 px-4 py-2.5 text-base font-medium text-subject-rose transition
+            hover:bg-subject-rose/20
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-subject-rose
+            active:scale-[0.98];
     }
 
     .chip {
-        @apply inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide;
+        @apply inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide;
     }
 
-    /* Navegação — o activo distingue-se pelo fundo e por um filete lateral,
-       sem halo colorido nem sombra saturada. */
     .nav-item {
-        @apply grid h-11 w-11 place-items-center rounded-xl text-faint transition
-            hover:bg-surface-3 hover:text-fg
-            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+        @apply grid h-10 w-10 place-items-center rounded-lg text-faint transition
+            hover:bg-surface-2 hover:text-fg;
+    }
+
+    .nav-item-wide {
+        @apply flex items-center gap-2.5 h-10 px-3 rounded-lg text-faint transition
+            hover:bg-surface-2 hover:text-fg;
     }
 
     .nav-item-active {
-        @apply bg-surface-3 text-fg hover:bg-surface-3 hover:text-fg;
-        box-shadow: inset 2px 0 0 var(--color-brand-light);
+        @apply bg-surface-2 text-fg;
+        box-shadow: inset 2px 0 0 var(--color-brand);
     }
 
     .nav-mobile {
-        @apply flex flex-1 flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-medium text-faint transition
-            hover:bg-surface-3 hover:text-fg
-            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+        @apply flex flex-1 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium text-faint transition
+            hover:bg-surface-2 hover:text-fg;
     }
 
     .nav-mobile-active {
-        @apply bg-surface-3 text-fg;
-        box-shadow: inset 0 -2px 0 var(--color-brand-light);
+        @apply bg-surface-2 text-fg;
+        box-shadow: inset 0 -2px 0 var(--color-brand);
     }
 
     .icon-btn {
         @apply grid h-8 w-8 place-items-center rounded-lg text-muted transition
-            hover:bg-surface-3 hover:text-fg
-            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+            hover:bg-surface-2 hover:text-fg;
     }
 
-    .btn-soft {
-        @apply rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-medium text-fg transition
-            hover:border-line hover:bg-surface-3 hover:text-fg
-            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+    .card {
+        @apply rounded-xl border border-line bg-surface shadow-card transition
+            hover:shadow-pop;
     }
 
-    .btn-soft-danger {
-        @apply text-subject-rose hover:text-subject-rose focus-visible:outline-subject-rose;
+    .card-header {
+        @apply flex items-center gap-2 mb-4;
     }
 
-    /* ── Galeria de PDFs ────────────────────────────────── */
+    .card-title {
+        @apply text-base font-semibold text-fg;
+    }
 
+    .section-label {
+        @apply text-[11px] font-medium uppercase tracking-wide text-muted;
+    }
+
+    .heatmap-grid {
+        @apply grid grid-cols-[repeat(auto-fill,minmax(10px,1fr))] gap-1;
+    }
+
+    .heatmap-square {
+        @apply w-2.5 h-2.5 rounded transition-colors hover:ring-1 hover:ring-brand/30;
+    }
+
+    /* Consistência mensal (estilo GitHub): cada dia é um botão com o número */
+    .heatmap-day {
+        @apply grid aspect-square place-items-center rounded-md text-[11px] font-semibold tabular-nums transition;
+    }
+
+    .heatmap-day:not(:disabled):hover {
+        outline: 2px solid var(--color-brand);
+        outline-offset: 1px;
+    }
+
+    .heatmap-day:disabled {
+        cursor: default;
+        opacity: 0.55;
+    }
+
+    .heatmap-day[data-hoje="true"] {
+        box-shadow: inset 0 0 0 2px var(--color-brand);
+    }
+
+    .heatmap-day[data-n="0"] span { color: var(--color-faint); }
+    .heatmap-day[data-n="1"] span { color: #1a1a1a; }
+    .heatmap-day[data-n="2"] span,
+    .heatmap-day[data-n="3"] span { color: #ffffff; }
+    .heatmap-day[data-n="4"] span { color: #ffffff; }
+
+    @media (prefers-color-scheme: dark) {
+        .heatmap-day[data-n="4"] span { color: #062d1a; }
+    }
+
+    [data-theme="dark"] .heatmap-day[data-n="4"] span { color: #062d1a; }
+
+    #heatmap-next:disabled {
+        opacity: 0.3;
+        cursor: default;
+    }
+
+    .review-item {
+        @apply flex items-center justify-between p-2 rounded-lg bg-surface-2 border border-line text-xs transition hover:bg-surface-3;
+    }
+
+    /* PDF Gallery */
     .pdf-filter {
-        @apply rounded-full border border-line bg-surface-2 px-3 py-1 text-[11px] font-medium text-muted transition
-            hover:border-line hover:bg-surface-3 hover:text-fg
+        @apply rounded-full border border-line bg-surface px-3 py-1 text-[11px] font-medium text-muted transition
+            hover:border-brand/50 hover:bg-brand/5 hover:text-brand
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
     }
 
     .pdf-filter[aria-pressed='true'] {
-        @apply border-brand bg-brand/20 text-white;
+        @apply border-brand bg-brand/10 text-brand;
     }
 
     .pdf-card {
-        @apply flex flex-col overflow-hidden rounded-2xl border border-line bg-surface-2 transition
-            hover:border-line hover:shadow-card
+        @apply flex flex-col overflow-hidden rounded-xl border border-line bg-surface transition
+            hover:border-brand/30 hover:shadow-pop
             focus-within:border-brand;
     }
 
@@ -181,29 +296,23 @@
     }
 
     .pdf-card-preview {
-        @apply relative grid aspect-[4/3] place-items-center overflow-hidden border-b border-line bg-surface-3;
-        background-image: linear-gradient(135deg, rgb(90 99 200 / 0.16), transparent 60%);
-    }
-
-    .pdf-card-thumb {
-        @apply h-full w-full object-cover;
-        object-position: top center;
+        @apply relative grid aspect-[4/3] place-items-center overflow-hidden border-b border-line bg-surface-2;
     }
 
     .pdf-card-icon {
-        @apply h-11 w-11 text-faint;
+        @apply h-10 w-10 text-muted;
     }
 
     .pdf-card-format {
-        @apply absolute bottom-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-white;
+        @apply absolute bottom-2 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-white;
     }
 
     .pdf-card-body {
-        @apply flex flex-1 flex-col gap-2 p-3.5;
+        @apply flex flex-1 flex-col gap-1.5 p-3;
     }
 
     .pdf-card-title {
-        @apply line-clamp-2 text-sm font-semibold leading-snug text-fg;
+        @apply line-clamp-2 text-base font-medium leading-snug text-fg;
     }
 
     .pdf-card-meta {
@@ -211,15 +320,15 @@
     }
 
     .pdf-card-category {
-        @apply rounded-md bg-brand/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-light;
+        @apply rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand;
     }
 
     .pdf-card-actions {
-        @apply mt-auto flex gap-1.5 pt-1;
+        @apply mt-auto flex gap-1 pt-1;
     }
 
     .pdf-action {
-        @apply inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold no-underline transition
+        @apply inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium no-underline transition
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
     }
 
@@ -232,25 +341,23 @@
     }
 
     .pdf-action-secondary {
-        @apply border border-line bg-surface text-fg hover:bg-surface-3;
+        @apply border border-line bg-surface text-fg hover:bg-surface-2;
     }
 
     .pdf-action-danger {
-        @apply flex-none border border-line bg-surface text-subject-rose transition hover:bg-surface-3
+        @apply flex-none border border-line bg-surface text-subject-rose transition hover:bg-subject-rose/10
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-subject-rose;
     }
 
-    /* Formulário de adição */
-
     .pdf-kind {
-        @apply flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-2 px-3 py-2
+        @apply flex items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2
             text-xs font-medium text-muted transition
-            hover:bg-surface-3 hover:text-fg
+            hover:bg-surface-2 hover:text-fg
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
     }
 
     .pdf-kind[aria-pressed='true'] {
-        @apply border-brand bg-brand/20 text-white;
+        @apply border-brand bg-brand/10 text-brand;
     }
 
     .pdf-label {
@@ -258,10 +365,32 @@
     }
 
     .task-item {
+        @apply flex items-start gap-3 rounded-lg border border-line bg-surface p-3 transition
+            hover:border-brand/30 hover:shadow-card;
         animation: slide-in 0.2s ease-out;
     }
 
+    .task-item.completed {
+        @apply opacity-60;
+    }
+
+    .task-check {
+        @apply mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-brand transition;
+    }
+
+    .task-remove {
+        @apply shrink-0 rounded-lg p-1 text-faint opacity-0 transition hover:bg-surface-2 hover:text-subject-rose;
+    }
+
+    .task-item:hover .task-remove,
+    @media (hover: none) {
+        .task-remove {
+            opacity: 1;
+        }
+    }
+
     .toast {
+        @apply pointer-events-auto flex items-start gap-2.5 rounded-lg border px-4 py-3 text-base shadow-pop;
         animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
@@ -269,27 +398,137 @@
         animation: pulse-tomato 2s ease-in-out infinite;
     }
 
-    /* O botão de apagar nunca fica invisível em ecrãs táteis */
-    @media (hover: none) {
-        .task-remove {
-            opacity: 1;
-        }
+    /* Widget Pomodoro: separadores de modo */
+    .pomo-tab {
+        @apply rounded-full px-2 py-1.5 text-[11px] font-semibold text-muted transition
+            hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+    }
+
+    .pomo-tab[aria-selected='true'] {
+        @apply bg-surface-3 text-fg shadow-card;
+    }
+
+    /* Widget Pomodoro: duração do foco */
+    .pomo-min {
+        @apply rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums text-faint transition
+            hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+    }
+
+    .pomo-min[aria-pressed='true'] {
+        @apply bg-surface-3 text-fg;
+    }
+
+    /* Exames: sub-navegação por separadores */
+    .exame-tab {
+        @apply flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-muted transition
+            hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand;
+    }
+
+    .exame-tab[aria-selected='true'] {
+        @apply bg-surface-3 text-fg shadow-card;
+    }
+
+    .exame-badge {
+        @apply min-w-5 rounded-full bg-brand/15 px-1.5 py-0.5 text-center text-[10px] font-bold tabular-nums text-brand;
+    }
+
+    /* Weekly */
+    .week-kind {
+        @apply flex items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2
+            text-xs font-medium text-muted transition
+            hover:bg-surface-2 hover:text-fg
+            focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+    }
+
+    .week-kind[aria-pressed='true'] {
+        @apply border-brand bg-brand/10 text-brand;
+    }
+
+    .week-label {
+        @apply text-[11px] font-medium text-muted;
+    }
+
+    .week-cell {
+        @apply relative min-h-6 border-r border-line;
+        height: 24px;
+    }
+
+    .week-cell[aria-hoje="true"] {
+        @apply bg-brand/5;
+    }
+
+    .week-cell.drag-over {
+        @apply bg-brand/10 ring-2 ring-brand ring-offset-2 ring-offset-surface;
+    }
+
+    .week-cell-content {
+        @apply absolute inset-0 flex flex-col gap-0.5 p-0.5;
+        display: grid;
+        grid-template-rows: repeat(var(--duracao, 1), 1fr);
+    }
+
+    .week-block {
+        @apply absolute left-1 right-1 top-0 rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight truncate select-none transition
+            hover:shadow-sm cursor-grab active:cursor-grabbing;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+        z-index: 10;
+    }
+
+    .week-block-fixo {
+        @apply text-white;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+
+    .week-block-dinamico {
+        @apply text-fg bg-surface border-2;
+        background: linear-gradient(135deg, var(--cor-bg, transparent) 0%, transparent 100%);
+    }
+
+    .week-block-dinamico[style*="brand"] { --cor-bg: var(--color-brand); }
+    .week-block-dinamico[style*="blue"] { --cor-bg: var(--color-subject-blue); }
+    .week-block-dinamico[style*="green"] { --cor-bg: var(--color-subject-green); }
+    .week-block-dinamico[style*="yellow"] { --cor-bg: var(--color-subject-yellow); }
+    .week-block-dinamico[style*="cyan"] { --cor-bg: var(--color-subject-cyan); }
+    .week-block-dinamico[style*="rose"] { --cor-bg: var(--color-subject-rose); }
+    .week-block-dinamico[style*="purple"] { --cor-bg: var(--color-subject-violet); }
+
+    .week-block-fixo {
+        @apply text-white;
+    }
+
+    .week-block-title {
+        @apply block truncate;
+    }
+
+    .week-block-duracao {
+        @apply absolute bottom-0.5 right-0.5 text-[9px] opacity-70;
+    }
+
+    .week-block.dragging {
+        @apply opacity-50 rotate-1 scale-102;
+    }
+
+    #week-empty {
+        @apply text-center py-8 text-muted;
     }
 }
 
 @keyframes slide-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes toast-in {
-    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes pulse-tomato {
     0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.65; transform: scale(0.92); }
+    50% { opacity: 0.7; transform: scale(0.96); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -302,9 +541,7 @@
     }
 }
 
-/* Visualizador de PDF em ecrã inteiro.
-   Fica fora de @layer de propósito: o <dialog> leva utilities utilitárias
-   (largura e max-width) que, dentro de uma layer, ganhavam a esta regra. */
+/* Fullscreen PDF viewer */
 .pdf-viewer-max {
     width: 100vw;
     max-width: 100vw;
@@ -319,125 +556,133 @@
     height: calc(100vh - 3.1rem);
 }
 
-/* ── Cabeçalho liso ────────────────────────────────────────
-   Fora de qualquer @layer: é a única forma de ganhar às
-   utilitários Tailwind (bg-brand, shadow-[…]) sem !important.
-   Passa a ter o fundo da página e um fio por baixo, em vez da
-   barra de marca saturada. */
+/* Header - minimal */
 body > header.sticky {
-    background: var(--color-canvas);
+    background: var(--color-surface);
     border-bottom: 1px solid var(--color-line);
     box-shadow: none;
 }
 
-/* ── Calendário Semanal ───────────────────────────────────── */
-
-.week-kind {
-    @apply flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-2 px-3 py-2
-        text-xs font-medium text-muted transition
-        hover:bg-surface-3 hover:text-fg
-        focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+/* Layout adjustments */
+main {
+    @apply flex-1;
 }
 
-.week-kind[aria-pressed='true'] {
-    @apply border-brand bg-brand/20 text-white;
+/* Scrollbar for webkit */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
 }
 
-.week-label {
-    @apply text-[11px] font-medium text-muted;
+::-webkit-scrollbar-track {
+    background: transparent;
 }
 
-#week-grid {
-    table-layout: fixed;
+::-webkit-scrollbar-thumb {
+    background: var(--color-line-soft);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
 }
 
-#week-grid th,
-#week-grid td {
-    @apply border-r border-line;
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted);
 }
 
-#week-grid th:last-child,
-#week-grid td:last-child {
-    border-right: 0;
+/* Dialogs */
+dialog {
+    @apply rounded-2xl border border-line bg-surface shadow-pop;
 }
 
-#week-grid tbody tr:last-child td {
-    border-bottom: 0;
+dialog::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
 }
 
-.week-cell {
-    @apply relative min-h-12;
-    height: 48px;
+/* Manual theme toggle support */
+[data-theme="light"] {
+    --color-canvas: #fafafa;
+    --color-surface: #ffffff;
+    --color-surface-2: #f5f5f5;
+    --color-surface-3: #e5e5e5;
+    --color-line: #e5e5e5;
+    --color-line-soft: #d4d4d4;
+    --color-fg: #1a1a1a;
+    --color-muted: #737373;
+    --color-faint: #a3a3a3;
+    --color-brand: #b8860b;
+    --color-brand-dark: #996b00;
+    --color-brand-light: #e6b800;
+    --color-mint: #5a9c5a;
+    --color-mint-dark: #457d45;
+    --color-heatmap-0: #ebedf0;
+    --color-heatmap-1: #9be9a8;
+    --color-heatmap-2: #40c463;
+    --color-heatmap-3: #30a14e;
+    --color-heatmap-4: #216e39;
+    --color-subject-blue: #4a7cc7;
+    --color-subject-green: #5a9c5a;
+    --color-subject-yellow: #b8860b;
+    --color-subject-rose: #c46a7a;
+    --color-subject-violet: #7c6aa8;
+    --color-subject-cyan: #4aa8b0;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.03);
+    --shadow-pop: 0 4px 12px -4px rgb(0 0 0 / 0.08);
 }
 
-.week-cell[aria-hoje="true"] {
-    @apply bg-brand/5;
+[data-theme="dark"] {
+    --color-canvas: #0a0a0a;
+    --color-surface: #171717;
+    --color-surface-2: #1f1f1f;
+    --color-surface-3: #2a2a2a;
+    --color-line: #2a2a2a;
+    --color-line-soft: #3a3a3a;
+    --color-fg: #fafafa;
+    --color-muted: #a3a3a3;
+    --color-faint: #737373;
+    --color-brand: #e6b800;
+    --color-brand-dark: #cc9900;
+    --color-brand-light: #f5d03b;
+    --color-mint: #6ec66e;
+    --color-mint-dark: #5a9c5a;
+    --color-heatmap-0: #21262d;
+    --color-heatmap-1: #0e4429;
+    --color-heatmap-2: #006d32;
+    --color-heatmap-3: #26a641;
+    --color-heatmap-4: #39d353;
+    --color-subject-blue: #7aa0e6;
+    --color-subject-green: #7ec77e;
+    --color-subject-yellow: #e6b800;
+    --color-subject-rose: #e68a9a;
+    --color-subject-violet: #a89ae6;
+    --color-subject-cyan: #6ed0d8;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px rgb(0 0 0 / 0.2);
+    --shadow-pop: 0 4px 12px -4px rgb(0 0 0 / 0.4);
 }
 
-.week-cell.drag-over {
-    @apply bg-brand/10 ring-2 ring-brand ring-offset-2 ring-offset-surface;
+/* ── Vista Exames sem bordas (a pedido) ─────────────────────
+   Fora de qualquer @layer de propósito: sem camada, ganha sempre
+   às utilitários Tailwind sem precisar de !important. */
+#view-exames .border {
+    border-width: 0;
 }
 
-.week-cell-content {
-    @apply absolute inset-0 flex flex-col gap-0.5 p-0.5;
-    display: grid;
-    grid-template-rows: repeat(var(--duracao, 1), 1fr);
+#view-exames table th,
+#view-exames table td {
+    border-width: 0;
 }
 
-.week-block {
-    @apply relative rounded-sm px-1.5 py-0.5 text-[10px] font-medium leading-tight truncate select-none transition
-        hover:shadow-sm;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+#view-exames .field {
+    border-color: transparent;
+    background-color: var(--color-surface-3);
 }
 
-.week-block:focus-visible {
-    @apply outline-2 outline-offset-1 outline-brand;
+#view-exames .btn-soft,
+#view-exames .pdf-filter {
+    border-color: transparent;
+    background-color: var(--color-surface-3);
 }
 
-.week-block-fixo {
-    @apply text-white shadow-[0_1px_3px_rgba(0,0,0,0.4)];
-}
-
-.week-block-dinamico {
-    @apply text-fg bg-surface border-2;
-    background: linear-gradient(135deg, var(--cor-bg, transparent) 0%, transparent 100%);
-}
-
-.week-block-dinamico[style*="brand"] { --cor-bg: var(--brand); }
-.week-block-dinamico[style*="blue"] { --cor-bg: var(--subject-blue); }
-.week-block-dinamico[style*="green"] { --cor-bg: var(--subject-green); }
-.week-block-dinamico[style*="yellow"] { --cor-bg: var(--subject-yellow); }
-.week-block-dinamico[style*="cyan"] { --cor-bg: var(--subject-cyan); }
-.week-block-dinamico[style*="rose"] { --cor-bg: var(--subject-rose); }
-.week-block-dinamico[style*="purple"] { --cor-bg: #a855f7; }
-
-.week-block-title {
-    @apply block truncate;
-}
-
-.week-block-duracao {
-    @apply absolute bottom-0.5 right-0.5 text-[9px] opacity-70;
-}
-
-.week-block.dragging {
-    @apply opacity-50 rotate-1 scale-102;
-}
-
-.week-kind {
-    @apply flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-2 px-3 py-2
-        text-xs font-medium text-muted transition
-        hover:bg-surface-3 hover:text-fg
-        focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
-}
-
-.week-kind[aria-pressed='true'] {
-    @apply border-brand bg-brand/20 text-white;
-}
-
-.week-label {
-    @apply text-[11px] font-medium text-muted;
-}
-
-#week-empty {
-    @apply text-center py-8;
+#view-exames #exames-track-body tr:nth-child(even) {
+    background-color: var(--color-surface-2);
 }

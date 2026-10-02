@@ -22,6 +22,7 @@ const els = {
     taskSubject: document.getElementById('task-subject'),
     taskList: document.getElementById('task-list'),
     taskEmpty: document.getElementById('task-empty'),
+    clearDone: document.getElementById('clear-done'),
     progressLabel: document.getElementById('progress-label'),
     progressFill: document.getElementById('progress-fill'),
 
@@ -60,6 +61,7 @@ const els = {
 const SUBJECTS = {
     'Geral': 'bg-surface-3 text-muted',
     'Matemática A': 'bg-subject-blue/15 text-subject-blue',
+    'FQA': 'bg-subject-violet/15 text-subject-violet',
     'Biologia': 'bg-subject-green/15 text-subject-green',
     'Português': 'bg-subject-yellow/15 text-subject-yellow',
     'Aplicações Informáticas (A.I.)': 'bg-subject-cyan/15 text-subject-cyan',
@@ -78,6 +80,293 @@ const DEMO_NOTES = `# Integrais Definidas
 * Área sob a curva
 **Dúvida:** Como resolver integrais trigonométricas complexas?
 [ ] Pesquisar exemplos online.`;
+
+/* ── Sistema de Revisão e Estatísticas ───────────────── */
+
+const ReviewSystem = {
+    KEY: 'study-journal-reviews',
+    KEY_V2: 'study-journal-reviews-v2',
+
+    ler() {
+        return read(this.KEY, {});
+    },
+
+    escrever(dados) {
+        write(this.KEY, dados);
+    },
+
+    lerV2() {
+        const lista = read(this.KEY_V2, null);
+        if (Array.isArray(lista)) return lista;
+        return this.migrar();
+    },
+
+    escreverV2(lista) {
+        write(this.KEY_V2, lista);
+    },
+
+    uid() {
+        return `rev-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    },
+
+    hojeChave() {
+        return dayKey(new Date());
+    },
+
+    somarDias(chave, dias) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(chave);
+        const base = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date();
+        base.setDate(base.getDate() + dias);
+        return dayKey(base);
+    },
+
+    migrar() {
+        try {
+            if (localStorage.getItem(this.KEY_V2) !== null) return read(this.KEY_V2, []);
+        } catch { return []; }
+        const antigo = this.ler();
+        const hoje = this.hojeChave();
+        const lista = Object.keys(antigo)
+            .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k))
+            .map((dia) => ({
+                id: this.uid(), dia, titulo: `Nota de ${dia}`, texto: '',
+                intervalo: 1, repeticoes: 0, ease: 2.5, proxima: hoje,
+                criadaEm: new Date().toISOString(), origem: 'migracao-v1',
+            }));
+        this.escreverV2(lista);
+        return lista;
+    },
+
+    marcar(dia, titulo = '') {
+        const lista = this.lerV2();
+        const amanha = this.somarDias(this.hojeChave(), 1);
+        const atual = lista.find((c) => c.dia === dia && !c.origemId);
+        if (atual) {
+            atual.proxima = amanha;
+            if (titulo && !atual.titulo) atual.titulo = titulo;
+        } else {
+            lista.unshift({
+                id: this.uid(), dia, titulo: titulo || `Nota de ${dia}`, texto: '',
+                intervalo: 1, repeticoes: 0, ease: 2.5, proxima: amanha,
+                criadaEm: new Date().toISOString(), origem: 'nota',
+            });
+        }
+        this.escreverV2(lista);
+        return lista;
+    },
+
+    criarAPartirDeDuvida(duvida) {
+        if (!duvida) return null;
+        const lista = this.lerV2();
+        if (duvida.id && lista.some((c) => c.origemId === duvida.id)) return lista;
+        lista.unshift({
+            id: this.uid(), dia: '', origemId: duvida.id || '',
+            titulo: String(duvida.titulo || 'Dúvida').slice(0, 120),
+            texto: `${duvida.disciplina || ''} — ${duvida.texto || ''}`.slice(0, 300),
+            intervalo: 1, repeticoes: 0, ease: 2.5, proxima: this.hojeChave(),
+            criadaEm: new Date().toISOString(), origem: 'duvida',
+        });
+        this.escreverV2(lista);
+        return lista;
+    },
+
+    obterParaHoje() {
+        const hoje = this.hojeChave();
+        return this.lerV2()
+            .filter((c) => (c.proxima || hoje) <= hoje)
+            .sort((a, b) => String(a.proxima).localeCompare(String(b.proxima)));
+    },
+
+    responder(id, grade) {
+        const lista = this.lerV2();
+        const carta = lista.find((c) => c.id === id);
+        if (!carta) return null;
+        const g = Number(grade);
+        if (g <= 0) {
+            carta.repeticoes = 0;
+            carta.intervalo = 1;
+            carta.ease = Math.max(1.3, Number(carta.ease || 2.5) - 0.2);
+        } else if (g === 1) {
+            const atual = Number(carta.intervalo || 1);
+            carta.intervalo = carta.repeticoes <= 0 ? 1 : carta.repeticoes === 1 ? 3 : Math.max(2, Math.round(atual * Number(carta.ease || 2.5) * 0.8));
+            carta.repeticoes = Number(carta.repeticoes || 0) + 1;
+        } else {
+            const atual = Number(carta.intervalo || 1);
+            if (carta.repeticoes <= 0) carta.intervalo = 1;
+            else if (carta.repeticoes === 1) carta.intervalo = 3;
+            else if (carta.repeticoes === 2) carta.intervalo = 7;
+            else carta.intervalo = Math.max(2, Math.round(atual * Number(carta.ease || 2.5)));
+            carta.repeticoes = Number(carta.repeticoes || 0) + 1;
+            carta.ease = Math.min(2.8, Number(carta.ease || 2.5) + 0.08);
+        }
+        carta.proxima = this.somarDias(this.hojeChave(), carta.intervalo);
+        carta.revistaEm = new Date().toISOString();
+        this.escreverV2(lista);
+        return carta;
+    }
+};
+
+const StudyStats = {
+    calcularAtividade(date) {
+        const key = dayKey(date);
+        let score = 0;
+
+        // Blocos de estudo (pomodoros): 1 ponto por bloco
+        const history = read(POMODORO_HISTORY_KEY, {});
+        score += (history[key] || 0);
+
+        // Tarefas concluídas: +0.1 cada
+        const tasks = read(`study-journal-tasks-${key}`, []);
+        const done = tasks.filter(t => t.done).length;
+        score += done * 0.1;
+
+        return score;
+    },
+
+    renderHeatmap() {
+        const grid = document.getElementById('heatmap');
+        if (!grid) return;
+
+        // Não deixa avançar além do mês atual
+        const mesAtual = new Date(today.getFullYear(), today.getMonth(), 1);
+        if (heatmapCursor > mesAtual) heatmapCursor = new Date(mesAtual);
+
+        const monthEl = document.getElementById('heatmap-month');
+        if (monthEl) {
+            monthEl.textContent = heatmapCursor.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+        }
+        const nextBtn = document.getElementById('heatmap-next');
+        if (nextBtn) nextBtn.disabled = heatmapCursor >= mesAtual;
+
+        const weekEl = document.getElementById('heatmap-weekdays');
+        if (weekEl && !weekEl.childElementCount) {
+            ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].forEach((l) => {
+                const d = document.createElement('div');
+                d.textContent = l;
+                weekEl.append(d);
+            });
+        }
+
+        grid.replaceChildren();
+
+        const ano = heatmapCursor.getFullYear();
+        const mes = heatmapCursor.getMonth();
+        // Semana começa à segunda
+        const offset = (new Date(ano, mes, 1).getDay() + 6) % 7;
+        const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+
+        for (let i = 0; i < offset; i += 1) grid.append(document.createElement('div'));
+
+        for (let dia = 1; dia <= diasNoMes; dia += 1) {
+            const data = new Date(ano, mes, dia);
+            const futuro = startOfDay(data) > today;
+            const score = futuro ? 0 : StudyStats.calcularAtividade(data);
+
+            let nivel = 0;
+            if (!futuro) {
+                if (score >= 5) nivel = 4;
+                else if (score >= 3) nivel = 3;
+                else if (score >= 1) nivel = 2;
+                else if (score > 0) nivel = 1;
+            }
+
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'heatmap-day';
+            cell.dataset.n = String(nivel);
+            cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
+            cell.title = `${data.toLocaleDateString('pt-PT')}: ${score} pts`;
+            if (startOfDay(data).getTime() === today.getTime()) cell.dataset.hoje = 'true';
+
+            const num = document.createElement('span');
+            num.textContent = String(dia);
+            cell.append(num);
+
+            if (futuro) {
+                cell.disabled = true;
+            } else {
+                cell.setAttribute('aria-label', `Abrir dia ${data.toLocaleDateString('pt-PT')}`);
+                cell.addEventListener('click', () => openDay(data));
+            }
+
+            grid.append(cell);
+        }
+    },
+
+    renderReviewQueue() {
+        const queue = document.getElementById('review-queue');
+        if (!queue) return;
+        queue.replaceChildren();
+
+        const vencidas = ReviewSystem.obterParaHoje();
+        if (vencidas.length === 0) {
+            queue.innerHTML = '<p class="text-xs text-center py-4 text-faint">Tudo em dia! 🎉</p>';
+            return;
+        }
+
+        const info = document.createElement('p');
+        info.className = 'text-[11px] text-faint';
+        info.textContent = `${vencidas.length} ${vencidas.length === 1 ? 'carta vencida' : 'cartas vencidas'} · intervalos 1-3-7-14-30 dias`;
+        queue.append(info);
+
+        vencidas.slice(0, 6).forEach((carta) => {
+            const item = document.createElement('div');
+            item.className = 'review-item flex flex-col gap-1.5 rounded-xl border border-line-soft bg-surface-2 p-2.5';
+
+            const top = document.createElement('div');
+            top.className = 'flex items-center gap-2';
+            const titulo = document.createElement('span');
+            titulo.className = 'min-w-0 flex-1 truncate text-xs font-medium text-fg';
+            titulo.textContent = carta.titulo || (carta.dia ? `Nota de ${carta.dia}` : 'Revisão');
+            titulo.title = titulo.textContent;
+            const quando = document.createElement('span');
+            quando.className = 'shrink-0 text-[10px] tabular-nums text-faint';
+            quando.textContent = carta.dia || `x${carta.intervalo || 1}`;
+            top.append(titulo, quando);
+
+            const texto = document.createElement('p');
+            texto.className = 'line-clamp-2 text-[11px] leading-relaxed text-muted';
+            texto.textContent = carta.texto || (carta.dia ? `Rever notas de ${carta.dia}` : '');
+
+            const acoes = document.createElement('div');
+            acoes.className = 'flex flex-wrap gap-1.5';
+            if (carta.dia) {
+                const abrir = document.createElement('button');
+                abrir.type = 'button';
+                abrir.className = 'btn-soft px-2 py-0.5 text-[10px]';
+                abrir.textContent = 'Abrir';
+                abrir.addEventListener('click', () => abrirDiaChave(carta.dia));
+                acoes.append(abrir);
+            }
+            [['0', 'Falhei'], ['1', 'Quase'], ['2', 'Lembrei']].forEach(([grade, rotulo]) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = grade === '2' ? 'btn-mint px-2 py-0.5 text-[10px]' : 'btn-soft px-2 py-0.5 text-[10px]';
+                b.textContent = rotulo;
+                b.addEventListener('click', () => {
+                    ReviewSystem.responder(carta.id, grade);
+                    StudyStats.renderReviewQueue();
+                    if (grade === '2') toast('Boa! Próxima dentro de alguns dias.', 'success');
+                });
+                acoes.append(b);
+            });
+
+            item.append(top);
+            if ((carta.texto || '').trim()) item.append(texto);
+            item.append(acoes);
+            queue.append(item);
+        });
+
+        if (vencidas.length > 6) {
+            const mais = document.createElement('button');
+            mais.type = 'button';
+            mais.className = 'text-center text-[11px] text-muted transition hover:text-fg';
+            mais.textContent = `Ver restantes no modo Estudar (${vencidas.length - 6} mais)`;
+            mais.addEventListener('click', abrirReviewFocus);
+            queue.append(mais);
+        }
+    }
+};
 
 /* ── Datas ────────────────────────────────────────────── */
 
@@ -171,11 +460,22 @@ async function setTaskDone(id, done) {
 }
 
 async function syncTasks() {
+    let saved = null;
     try {
-        await Vault.save('tasks.json', JSON.stringify(tasks));
+        saved = await Vault.save('tasks.json', JSON.stringify(tasks));
+        if (saved && !saved.ok && saved.reason === 'conflito') {
+            // O ficheiro mudou fora da app (ex.: editado no Obsidian):
+            // esta versão é a mais fresca, grava por cima e avisa.
+            saved = await Vault.save('tasks.json', JSON.stringify(tasks), { force: true });
+            if (saved && saved.ok) toast('Vault atualizado com a versão deste browser.', 'info');
+        }
     } catch (e) {
         console.error('Erro ao sincronizar tarefas:', e);
     }
+    if (saved && !saved.ok) {
+        toast('Não foi possível gravar no vault — as tarefas ficaram só neste browser.', 'warn');
+    }
+    write(tasksKey(), tasks);
 }
 
 function renderTasks() {
@@ -212,9 +512,9 @@ function renderTasks() {
         remove.ariaLabel = `Apagar tarefa: ${task.text}`;
         remove.innerHTML = '<svg class="icon h-4 w-4"><use href="#i-trash"/></svg>';
         remove.className = 'task-remove shrink-0 rounded-lg p-1 text-faint opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 hover:bg-surface-3 hover:text-subject-rose focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-subject-rose';
-        remove.addEventListener('click', () => {
+        remove.addEventListener('click', async () => {
             tasks = tasks.filter((t) => t.id !== task.id);
-            write(tasksKey(), tasks);
+            await syncTasks();
             renderTasks();
             if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
                 window.GitHubSync.sync(false).catch(() => {});
@@ -233,17 +533,37 @@ function renderTasks() {
 function renderProgress() {
     const total = tasks.length;
     const done = tasks.filter((t) => t.done).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
 
-    els.progressFill.style.width = total ? `${(done / total) * 100}%` : '0%';
+    els.progressFill.style.width = `${pct}%`;
     els.progressLabel.textContent = total
-        ? `${done} de ${total} ${total === 1 ? 'tarefa concluída' : 'tarefas concluídas'}`
+        ? `${done} de ${total} ${total === 1 ? 'tarefa concluída' : 'tarefas concluídas'} · ${pct}%`
         : 'Sem tarefas para este dia';
+
+    if (els.clearDone) {
+        els.clearDone.classList.toggle('hidden', done === 0);
+        els.clearDone.classList.toggle('inline-flex', done > 0);
+    }
 }
 
 async function addTask(text, subject) {
     tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, done: false });
     await syncTasks();
     renderTasks();
+    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+        window.GitHubSync.sync(false).catch(() => {});
+    }
+}
+
+async function clearDone() {
+    const done = tasks.filter((t) => t.done).length;
+    if (!done) return;
+
+    tasks = tasks.filter((t) => !t.done);
+    await syncTasks();
+    renderTasks();
+
+    toast(done === 1 ? 'Tarefa concluída apagada.' : `${done} tarefas concluídas apagadas.`, 'success');
     if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
         window.GitHubSync.sync(false).catch(() => {});
     }
@@ -275,11 +595,17 @@ function commitNotes() {
     if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
         window.GitHubSync.sync(false).catch(() => {});
     }
+    StudyStats.renderHeatmap();
 }
 
 function onNotesInput() {
     els.wordCount.textContent = String(countWords(els.notes.value));
     setSaveStatus('a guardar…');
+
+    const vista = document.getElementById('notes-preview');
+    if (vista && !vista.hidden && window.NotasPro) {
+        vista.innerHTML = window.NotasPro.renderMarkdownLite(els.notes.value) || '<p class="text-xs text-faint">Nada para pré-visualizar.</p>';
+    }
 
     clearTimeout(saveTimer);
     saveTimer = setTimeout(commitNotes, 800);
@@ -334,32 +660,53 @@ function applyMarkdown(kind) {
 const POMODORO_MINUTES = [15, 25, 50, 90];
 const POMODORO_DEFAULT = 25;
 const POMODORO_KEY = 'study-journal-pomodoro-minutes';
+const POMODORO_HISTORY_KEY = 'study-journal-pomodoro-history';
+const POMO_MODE_KEY = 'study-journal-pomodoro-mode';
+const POMO_STATE_KEY = 'study-journal-pomodoro-state';
+const POMO_PAUSA_CURTA = 5;
+const POMO_PAUSA_LONGA = 15;
+const POMO_MODES = ['foco', 'curta', 'longa'];
+const POMO_LABELS = { foco: 'Foco', curta: 'Pausa curta', longa: 'Pausa longa' };
 
 function readPomodoroMinutes() {
     const saved = Number(read(POMODORO_KEY, POMODORO_DEFAULT));
     return POMODORO_MINUTES.includes(saved) ? saved : POMODORO_DEFAULT;
 }
 
+function readPomoMode() {
+    const saved = read(POMO_MODE_KEY, 'foco');
+    return POMO_MODES.includes(saved) ? saved : 'foco';
+}
+
 const pomodoro = {
     minutes: readPomodoroMinutes(),
+    mode: readPomoMode(),
     remaining: 0,
     running: false,
     timer: null,
+    deadline: null,
 };
 
+function minutosDoModo(mode) {
+    if (mode === 'curta') return POMO_PAUSA_CURTA;
+    if (mode === 'longa') return POMO_PAUSA_LONGA;
+    return pomodoro.minutes;
+}
+
 function formatClock(total) {
-    const minutes = Math.floor(total / 60);
-    const seconds = total % 60;
+    const safe = Math.max(0, Math.ceil(total));
+    const minutes = Math.floor(safe / 60);
+    const seconds = safe % 60;
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function renderPomodoro() {
     const full = pomodoro.minutes * 60;
 
-    els.pomodoroTime.textContent = formatClock(pomodoro.remaining);
-    els.pomodoroIcon.classList.toggle('running', pomodoro.running);
-    els.pomodoroReset.classList.toggle('hidden', pomodoro.remaining === full);
-    els.pomodoroDurationLabel.textContent = `${pomodoro.minutes} min`;
+    if (els.pomodoroTime) els.pomodoroTime.textContent = formatClock(pomodoro.remaining);
+    if (els.pomodoroIcon) els.pomodoroIcon.classList.toggle('running', pomodoro.running);
+    if (els.pomodoroReset) els.pomodoroReset.classList.toggle('hidden', pomodoro.remaining === full);
+    if (els.pomodoroDurationLabel) els.pomodoroDurationLabel.textContent = `${pomodoro.minutes} min`;
 
     els.pomodoroPresets.forEach((option) => {
         const selected = Number(option.dataset.pomodoroMinutes) === pomodoro.minutes;
@@ -369,37 +716,166 @@ function renderPomodoro() {
         option.querySelector('[data-check]').classList.toggle('opacity-0', !selected);
         option.querySelector('[data-check]').classList.toggle('text-brand-light', selected);
     });
+
+    renderPomoWidget();
 }
 
-function tickPomodoro() {
-    pomodoro.remaining -= 1;
+function renderPomoWidget() {
+    const big = document.getElementById('pomo-big');
+    if (!big) return;
 
-    if (pomodoro.remaining <= 0) {
-        stopPomodoro();
-        pomodoro.remaining = pomodoro.minutes * 60;
+    const full = minutosDoModo(pomodoro.mode) * 60;
+    big.textContent = formatClock(pomodoro.remaining);
+    big.style.color = pomodoro.running ? 'var(--color-brand-light)' : '';
+
+    const bar = document.getElementById('pomo-bar');
+    if (bar) bar.style.width = full ? `${((full - pomodoro.remaining) / full) * 100}%` : '0%';
+
+    const label = document.getElementById('pomo-start-label');
+    if (label) label.textContent = pomodoro.running ? 'Pausa' : (pomodoro.remaining < full ? 'Continuar' : 'Começar');
+
+    const use = document.getElementById('pomo-start-use');
+    if (use) use.setAttribute('href', pomodoro.running ? '#i-pause' : '#i-play');
+
+    document.querySelectorAll('[data-pomo-mode]').forEach((tab) => {
+        tab.setAttribute('aria-selected', String(tab.dataset.pomoMode === pomodoro.mode));
+    });
+
+    document.querySelectorAll('[data-pomo-minutes]').forEach((btn) => {
+        btn.setAttribute('aria-pressed', String(Number(btn.dataset.pomoMinutes) === pomodoro.minutes));
+    });
+}
+
+function setModoPomodoro(mode) {
+    if (!POMO_MODES.includes(mode) || (mode === pomodoro.mode && !pomodoro.running)) {
         renderPomodoro();
-        playAlarm();
-        announcePomodoro('Pomodoro concluído. Pausa de 5 minutos.');
-        toast('Pomodoro concluído. Pausa de 5 minutos.', 'success');
         return;
     }
 
+    stopPomodoro();
+    pomodoro.mode = mode;
+    write(POMO_MODE_KEY, mode);
+    pomodoro.remaining = minutosDoModo(mode) * 60;
+    renderPomodoro();
+    savePomoState();
+    announcePomodoro(`${POMO_LABELS[mode]}: ${formatClock(pomodoro.remaining)}.`);
+}
+
+function skipPomodoro() {
+    const eraFoco = pomodoro.mode === 'foco';
+    setModoPomodoro(eraFoco ? 'curta' : 'foco');
+    toast(eraFoco ? 'Foco saltado. Pausa curta de 5 min.' : 'Pausa saltada. De volta ao foco.', 'info');
+}
+
+function tickPomodoro() {
+    if (!pomodoro.deadline) return;
+    const restam = Math.max(0, Math.ceil((pomodoro.deadline - Date.now()) / 1000));
+
+    if (restam <= 0) {
+        pomodoro.remaining = 0;
+        renderPomodoro();
+        stopPomodoro();
+        playAlarm();
+        concluirPomodoro();
+        return;
+    }
+
+    if (restam === pomodoro.remaining) return;
+    pomodoro.remaining = restam;
+    renderPomodoro();
+    savePomoState();
+}
+
+function concluirPomodoro() {
+    const eraFoco = pomodoro.mode === 'foco';
+
+    if (eraFoco) {
+        // Só o foco conta como sessão de estudo no heatmap
+        const history = read(POMODORO_HISTORY_KEY, {});
+        const key = dayKey(new Date());
+        history[key] = (history[key] || 0) + 1;
+        write(POMODORO_HISTORY_KEY, history);
+        StudyStats.renderHeatmap();
+    }
+
+    setModoPomodoro(eraFoco ? 'curta' : 'foco');
+    toast(eraFoco ? 'Pomodoro concluído! Pausa curta de 5 min.' : 'Pausa terminada. De volta ao foco!', 'success');
+}
+
+function savePomoState() {
+    try {
+        localStorage.setItem(POMO_STATE_KEY, JSON.stringify({
+            mode: pomodoro.mode,
+            minutes: pomodoro.minutes,
+            running: pomodoro.running,
+            remaining: pomodoro.remaining,
+            deadline: pomodoro.running ? pomodoro.deadline : null,
+        }));
+    } catch { /* silencioso: gravação por segundo não pode incomodar */ }
+}
+
+function restorePomoState() {
+    let s = null;
+    try {
+        s = JSON.parse(localStorage.getItem(POMO_STATE_KEY));
+    } catch { s = null; }
+
+    if (s && POMO_MODES.includes(s.mode)) {
+        pomodoro.mode = s.mode;
+        write(POMO_MODE_KEY, s.mode);
+    }
+    if (s && POMODORO_MINUTES.includes(Number(s.minutes))) {
+        pomodoro.minutes = Number(s.minutes);
+        write(POMODORO_KEY, pomodoro.minutes);
+    }
+
+    const full = minutosDoModo(pomodoro.mode) * 60;
+
+    if (s && s.running && s.deadline) {
+        const restam = Math.ceil((s.deadline - Date.now()) / 1000);
+        if (restam <= 0) {
+            // Terminou com a página fechada: conclui a sessão sem alarme
+            pomodoro.remaining = 0;
+            pomodoro.running = false;
+            renderPomodoro();
+            concluirPomodoro();
+            return;
+        }
+        pomodoro.remaining = restam;
+        pomodoro.running = false;
+        renderPomodoro();
+        startPomodoro();
+        announcePomodoro('Temporizador retomado após recarregar.');
+        return;
+    }
+
+    const pausado = Number(s?.remaining);
+    pomodoro.remaining = (Number.isFinite(pausado) && pausado >= 0) ? Math.min(pausado, full) : full;
+    pomodoro.running = false;
     renderPomodoro();
 }
 
 function startPomodoro() {
     unlockAlarm();
     if (pomodoro.timer) clearInterval(pomodoro.timer);
-    pomodoro.timer = setInterval(tickPomodoro, 1000);
+    if (!(pomodoro.remaining > 0)) pomodoro.remaining = minutosDoModo(pomodoro.mode) * 60;
+    pomodoro.deadline = Date.now() + pomodoro.remaining * 1000;
+    pomodoro.timer = setInterval(tickPomodoro, 250);
     pomodoro.running = true;
     renderPomodoro();
-    announcePomodoro(`Pomodoro de ${pomodoro.minutes} minutos iniciado.`);
+    savePomoState();
+    announcePomodoro(`${POMO_LABELS[pomodoro.mode]} de ${minutosDoModo(pomodoro.mode)} min iniciado.`);
 }
 
 function stopPomodoro() {
     if (pomodoro.timer) clearInterval(pomodoro.timer);
     pomodoro.timer = null;
+    if (pomodoro.running && pomodoro.deadline) {
+        pomodoro.remaining = Math.max(0, Math.ceil((pomodoro.deadline - Date.now()) / 1000));
+    }
+    pomodoro.deadline = null;
     pomodoro.running = false;
+    savePomoState();
 }
 
 function togglePomodoro() {
@@ -415,8 +891,10 @@ function togglePomodoro() {
 
 function resetPomodoro() {
     stopPomodoro();
-    pomodoro.remaining = pomodoro.minutes * 60;
+    pomodoro.deadline = null;
+    pomodoro.remaining = minutosDoModo(pomodoro.mode) * 60;
     renderPomodoro();
+    savePomoState();
 }
 
 function announcePomodoro(message) {
@@ -476,47 +954,23 @@ function playAlarm() {
 }
 
 function setPomodoroMinutes(minutes) {
-    if (!POMODORO_MINUTES.includes(minutes) || minutes === pomodoro.minutes) return;
+    if (!POMODORO_MINUTES.includes(minutes)) return;
+    if (minutes === pomodoro.minutes && pomodoro.mode === 'foco') return;
 
     const wasRunning = pomodoro.running;
     stopPomodoro();
     pomodoro.minutes = minutes;
+    pomodoro.mode = 'foco';
     pomodoro.remaining = minutes * 60;
     write(POMODORO_KEY, minutes);
+    write(POMO_MODE_KEY, 'foco');
 
     if (wasRunning) startPomodoro();
     else renderPomodoro();
+    savePomoState();
 
     announcePomodoro(`Duração do pomodoro: ${minutes} minutos.`);
     if (wasRunning) toast(`Pomodoro de ${minutes} min. A contagem recomeçou.`, 'info');
-}
-
-/* Menu de duração */
-
-function isDurationMenuOpen() {
-    return !els.pomodoroDurationMenu.hidden;
-}
-
-function openDurationMenu() {
-    els.pomodoroDurationMenu.hidden = false;
-    els.pomodoroDurationToggle.setAttribute('aria-expanded', 'true');
-
-    const active = els.pomodoroPresets.find((option) => option.getAttribute('aria-checked') === 'true');
-    (active ?? els.pomodoroPresets[0]).focus();
-}
-
-function closeDurationMenu({ focusToggle = false } = {}) {
-    if (!isDurationMenuOpen()) return;
-
-    els.pomodoroDurationMenu.hidden = true;
-    els.pomodoroDurationToggle.setAttribute('aria-expanded', 'false');
-    if (focusToggle) els.pomodoroDurationToggle.focus();
-}
-
-function movePresetFocus(step) {
-    const current = els.pomodoroPresets.indexOf(document.activeElement);
-    const next = (current + step + els.pomodoroPresets.length) % els.pomodoroPresets.length;
-    els.pomodoroPresets[next].focus();
 }
 
 /* ── Vault (Obsidian) ─────────────────────────────────── */
@@ -675,7 +1129,7 @@ let vaultSyncTimer = null;
 async function syncDayFromVault() {
     // No telemóvel (modo remoto), ignoramos a verificação de estado 'ligado'
     // e tentamos ler do servidor sempre que possível.
-    if (document.activeElement === els.notes) return;
+    if (!els.notes || document.activeElement === els.notes) return;
 
     const key = dayKey(selected);
     try {
@@ -731,6 +1185,7 @@ const VIEW_LABELS = {
     disciplinas: 'Disciplinas',
     pdfs: 'PDFs',
     semanal: 'Semanal',
+    exames: 'Exames Nacionais',
     definicoes: 'Definições',
 };
 
@@ -739,6 +1194,7 @@ const WEEKDAYS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
 /* Todas as vistas num único ficheiro, trocadas pela navegação lateral. */
 function showView(view) {
     currentView = view;
+    write('study-journal-view', view);
 
     document.querySelectorAll('[data-panel]').forEach((panel) => {
         panel.hidden = panel.dataset.panel !== view;
@@ -754,11 +1210,16 @@ function showView(view) {
         else button.removeAttribute('aria-current');
     });
 
+    if (view === 'painel') {
+        StudyStats.renderHeatmap();
+        StudyStats.renderReviewQueue();
+    }
     if (view === 'calendario') renderCalendar();
     if (view === 'disciplinas') renderSubjects();
     if (view === 'definicoes') renderSettings();
     if (view === 'pdfs') Pdfs.ligar();
     if (view === 'semanal') Weekly.ligar();
+    if (view === 'exames' && window.Exames) window.Exames.ligar();
 
     document.title = `${VIEW_LABELS[view]} · StudyJournal`;
     window.scrollTo({ top: 0 });
@@ -767,6 +1228,7 @@ function showView(view) {
 /* ── Calendário ───────────────────────────────────────── */
 
 let calCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+let heatmapCursor = new Date(today.getFullYear(), today.getMonth(), 1);
 
 function daysWithData() {
     const set = new Set();
@@ -802,9 +1264,7 @@ function renderCalendar() {
         });
     }
 
-    const withData = daysWithData();
     const first = new Date(calCursor.getFullYear(), calCursor.getMonth(), 1);
-    // Semana começa à segunda
     const offset = (first.getDay() + 6) % 7;
 
     els.calGrid.replaceChildren();
@@ -817,37 +1277,224 @@ function renderCalendar() {
         const inMonth = date.getMonth() === calCursor.getMonth();
         const isToday = date.getTime() === today.getTime();
         const isSelected = date.getTime() === selected.getTime();
-        const hasData = withData.has(key);
 
-        const cell = document.createElement('button');
-        cell.type = 'button';
-        cell.className = 'relative grid aspect-square place-items-center rounded-xl border text-sm transition';
+        const tasks = read(`study-journal-tasks-${key}`, []);
+        const notes = read(`study-journal-notes-${key}`, '');
+        const hasData = tasks.length > 0 || notes.trim() !== '';
+
+        const cell = document.createElement('div');
+        cell.className = 'relative min-h-[100px] p-1 rounded-xl border transition';
+        cell.dataset.dateKey = key;
         cell.ariaLabel = date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-        if (!inMonth) cell.classList.add('border-transparent', 'text-faint/40', 'hover:text-faint');
-        if (inMonth && hasData) cell.classList.add('bg-surface-3', 'text-fg', 'hover:bg-line');
-        if (inMonth && !hasData) cell.classList.add('border-transparent', 'text-muted', 'hover:bg-surface-2');
-        if (isToday) cell.classList.add('border-brand/60', 'font-semibold', 'text-brand-light');
-        if (isSelected) {
-            cell.classList.remove('text-brand-light', 'text-muted', 'text-fg', 'bg-surface-3');
-            cell.classList.add('border-brand', 'bg-brand', 'text-white', 'font-semibold');
+        if (!inMonth) {
+            cell.classList.add('bg-transparent', 'border-transparent', 'text-faint/40');
+        } else if (isSelected) {
+            cell.classList.add('border-brand', 'bg-brand/5');
+        } else if (isToday) {
+            cell.classList.add('border-brand/60', 'bg-brand/5');
+        } else {
+            cell.classList.add('border-line', 'bg-surface', 'hover:bg-surface-2', 'hover:border-brand/30');
         }
 
-        cell.classList.add('focus-visible:outline-2', 'focus-visible:outline-offset-1', 'focus-visible:outline-brand');
-
-        const number = document.createElement('span');
+        // Day number
+        const number = document.createElement('div');
+        number.className = 'text-sm font-medium';
         number.textContent = String(date.getDate());
+        if (!inMonth) number.classList.add('text-faint/40');
+        else if (isToday) number.classList.add('text-brand');
+        else if (isSelected) number.classList.add('text-brand');
+        else number.classList.add('text-fg');
         cell.append(number);
 
-        if (hasData && !isSelected) {
-            const dot = document.createElement('span');
-            dot.className = `absolute bottom-1.5 h-1 w-1 rounded-full ${inMonth ? 'bg-brand-light' : 'bg-faint/40'}`;
-            cell.append(dot);
+        // Tasks container
+        const tasksContainer = document.createElement('div');
+        tasksContainer.className = 'mt-1 flex flex-col gap-1 min-h-[70px]';
+        tasksContainer.dataset.tasksContainer = 'true';
+
+        // Show up to 3 tasks inline
+        const displayTasks = tasks.slice(0, 3);
+        displayTasks.forEach(task => {
+            const taskEl = createCalendarTaskElement(task, key, date);
+            tasksContainer.append(taskEl);
+        });
+
+        // Show "+N more" if more tasks
+        if (tasks.length > 3) {
+            const moreEl = document.createElement('div');
+            moreEl.className = 'text-[10px] text-muted text-center py-0.5';
+            moreEl.textContent = `+${tasks.length - 3} mais`;
+            moreEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showDayTasksDialog(date, key);
+            });
+            tasksContainer.append(moreEl);
         }
 
-        cell.addEventListener('click', () => openDay(date));
+        // Show notes indicator
+        if (notes.trim()) {
+            const notesEl = document.createElement('div');
+            notesEl.className = 'text-[10px] text-brand/70 text-center py-0.5 border-t border-brand/20 mt-1';
+            notesEl.innerHTML = '<svg class="icon inline h-3 w-3 mr-0.5"><use href="#i-file-text"/></svg> Notas';
+            notesEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showDayTasksDialog(date, key);
+            });
+            tasksContainer.append(notesEl);
+        }
+
+        // Add task button (shows on hover or for empty days)
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'add-task-btn absolute bottom-1 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-brand/10 text-brand opacity-0 transition hover:opacity-100 group-hover:opacity-100 flex items-center justify-center';
+        addBtn.innerHTML = '<svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>';
+        addBtn.title = 'Adicionar tarefa';
+        addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showInlineTaskForm(cell, key, date);
+        });
+        tasksContainer.append(addBtn);
+
+        cell.append(tasksContainer);
+        cell.classList.add('group');
+
+        // Click on cell (not task/add btn) to select day
+        cell.addEventListener('click', (e) => {
+            if (e.target.closest('.calendar-task') || e.target.closest('.add-task-btn')) return;
+            selected = startOfDay(date);
+            renderCalendar();
+        });
+
         els.calGrid.append(cell);
     }
+}
+
+function createCalendarTaskElement(task, key, date) {
+    const el = document.createElement('div');
+    el.className = 'calendar-task flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium truncate cursor-pointer transition hover:shadow-sm';
+    el.style.backgroundColor = `var(${SUBJECTS[task.subject]?.replace('bg-', '').replace(' text-muted', '') || '--color-brand'})`;
+    el.style.color = task.subject === 'Geral' ? 'var(--color-fg)' : 'white';
+    el.dataset.taskId = task.id;
+    el.title = task.text;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'h-3 w-3 shrink-0 accent-current opacity-80';
+    checkbox.checked = task.done;
+    checkbox.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const tasks = read(`study-journal-tasks-${key}`, []);
+        const t = tasks.find(x => x.id === task.id);
+        if (t) {
+            t.done = e.target.checked;
+            write(`study-journal-tasks-${key}`, tasks);
+            renderCalendar();
+        }
+    });
+
+    const text = document.createElement('span');
+    text.className = 'truncate flex-1';
+    text.textContent = task.text;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'shrink-0 p-0.5 rounded text-current/70 hover:text-current hover:bg-current/20 transition opacity-0 group-hover:opacity-100';
+    deleteBtn.innerHTML = '<svg class="icon h-3 w-3"><use href="#i-trash"/></svg>';
+    deleteBtn.title = 'Apagar tarefa';
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm('Apagar esta tarefa?')) {
+            const tasks = read(`study-journal-tasks-${key}`, []).filter(t => t.id !== task.id);
+            write(`study-journal-tasks-${key}`, tasks);
+            renderCalendar();
+        }
+    });
+
+    el.append(checkbox, text, deleteBtn);
+    el.classList.add('group');
+
+    el.addEventListener('click', (e) => {
+        if (e.target === checkbox) return;
+        showDayTasksDialog(date, key);
+    });
+
+    return el;
+}
+
+function showInlineTaskForm(cell, key, date) {
+    // Use a modal dialog instead of inline form to avoid z-index/overflow issues
+    const dlg = document.createElement('dialog');
+    dlg.className = 'm-auto w-[min(22rem,90vw)] rounded-2xl border border-line bg-surface p-0 shadow-pop';
+    dlg.innerHTML = `
+        <form class="flex flex-col" novalidate>
+            <div class="flex items-center gap-3 border-b border-line px-4 py-3">
+                <h3 class="flex-1 text-sm font-semibold">Nova tarefa para ${date.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}</h3>
+                <button type="button" class="icon-btn" aria-label="Fechar">
+                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <div class="flex flex-col gap-3 p-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[11px] font-medium text-muted" for="inline-task-title">Tarefa</label>
+                    <input id="inline-task-title" type="text" placeholder="Tarefa..." class="field text-sm" required autocomplete="off">
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[11px] font-medium text-muted" for="inline-task-subject">Disciplina</label>
+                    <select id="inline-task-subject" class="field text-sm">
+                        <option>Geral</option>
+                        <option>Matemática A</option>
+                        <option>Biologia</option>
+                        <option>Português</option>
+                        <option>Aplicações Informáticas (A.I.)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-4 py-3">
+                <button type="button" class="btn-soft text-sm" data-cancel>Cancelar</button>
+                <button type="submit" class="btn-primary text-sm">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                    <span>Adicionar</span>
+                </button>
+            </div>
+        </form>
+    `;
+    document.body.append(dlg);
+
+    const input = dlg.querySelector('#inline-task-title');
+    const cancelBtn = dlg.querySelector('[data-cancel]');
+    const closeBtn = dlg.querySelector('button[aria-label="Fechar"]');
+
+    const close = () => {
+        dlg.close();
+        dlg.remove();
+    };
+
+    cancelBtn.addEventListener('click', close);
+    closeBtn.addEventListener('click', close);
+    dlg.addEventListener('click', (e) => {
+        if (e.target === dlg) close();
+    });
+
+    dlg.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const title = input.value.trim();
+        const subject = dlg.querySelector('#inline-task-subject').value;
+        if (!title) return;
+
+        const tasks = read(`study-journal-tasks-${key}`, []);
+        tasks.push({ 
+            id: `${Date.now()}-${tasks.length}`, 
+            text: title, 
+            subject, 
+            done: false 
+        });
+        write(`study-journal-tasks-${key}`, tasks);
+        close();
+        renderCalendar();
+    });
+
+    dlg.showModal();
+    input.focus();
 }
 
 function shiftMonth(delta) {
@@ -855,18 +1502,186 @@ function shiftMonth(delta) {
     renderCalendar();
 }
 
+function shiftHeatmap(delta) {
+    heatmapCursor = new Date(heatmapCursor.getFullYear(), heatmapCursor.getMonth() + delta, 1);
+    StudyStats.renderHeatmap();
+}
+
 async function openDay(date) {
-    if (date.getTime() > today.getTime()) {
-        toast('Ainda não chegaste a esse dia.', 'warn');
+    const key = dayKey(date);
+    showDayTasksDialog(date, key);
+}
+
+function showDayTasksDialog(date, key) {
+    const dlg = document.getElementById('day-tasks-dlg');
+    if (!dlg) return createDayTasksDialog(date, key);
+    
+    dlg.dataset.dateKey = key;
+    dlg.querySelector('#day-tasks-date').textContent = date.toLocaleDateString('pt-PT', { 
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
+    });
+    renderDayTasksInDialog(key);
+    dlg.showModal();
+}
+
+function createDayTasksDialog(date, key) {
+    const dlg = document.createElement('dialog');
+    dlg.id = 'day-tasks-dlg';
+    dlg.dataset.dateKey = key;
+    dlg.className = 'm-auto w-[min(28rem,94vw)] rounded-2xl border border-line bg-surface p-0 shadow-pop';
+    dlg.innerHTML = `
+        <div class="flex flex-col">
+            <div class="flex items-center gap-3 border-b border-line px-4 py-3">
+                <h3 class="flex-1 text-sm font-semibold" id="day-tasks-date"></h3>
+                <button type="button" class="icon-btn" aria-label="Fechar">
+                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <div id="day-tasks-list" class="flex flex-col gap-2 p-4 max-h-[60vh] overflow-auto"></div>
+            <div class="border-t border-line px-4 py-3">
+                <form id="day-tasks-add-form" class="flex flex-col gap-2">
+                    <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
+                        <input id="day-tasks-title" type="text" placeholder="Nova tarefa..." class="field w-full text-sm" autocomplete="off" required>
+                        <select id="day-tasks-subject" class="field w-full sm:w-auto text-sm">
+                            <option>Geral</option>
+                            <option>Matemática A</option>
+                            <option>Biologia</option>
+                            <option>Português</option>
+                            <option>Aplicações Informáticas (A.I.)</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button type="submit" class="btn-primary text-sm">
+                            <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                            <span>Adicionar</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+    document.body.append(dlg);
+    bindDayTasksDialog(dlg);
+    dlg.showModal();
+    dlg.querySelector('#day-tasks-title').focus();
+}
+
+function bindDayTasksDialog(dlg) {
+    dlg.addEventListener('click', (e) => {
+        if (e.target === dlg.querySelector('button[aria-label="Fechar"]') || e.target === dlg) {
+            dlg.close();
+        }
+    });
+    dlg.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const key = dlg.dataset.dateKey;
+        const title = dlg.querySelector('#day-tasks-title').value.trim();
+        const subject = dlg.querySelector('#day-tasks-subject').value;
+        
+        if (!title) return;
+        
+        const tasks = read(`study-journal-tasks-${key}`, []);
+        tasks.push({ 
+            id: `${Date.now()}-${tasks.length}`, 
+            text: title, 
+            subject, 
+            done: false 
+        });
+        write(`study-journal-tasks-${key}`, tasks);
+        
+        // Update vault if connected
+        if (window.Vault && Vault.supported()) {
+            const allTasks = {};
+            daysWithData().forEach(k => {
+                allTasks[k] = read(`study-journal-tasks-${k}`, []);
+            });
+            await Vault.save('tasks.json', JSON.stringify(allTasks));
+        }
+        
+        dlg.querySelector('#day-tasks-title').value = '';
+        renderDayTasksInDialog(key);
+        
+        // Update calendar dots
+        if (currentView === 'calendario') renderCalendar();
+    });
+}
+
+function renderDayTasksInDialog(key) {
+    const container = document.getElementById('day-tasks-list');
+    if (!container) return;
+    
+    const tasks = read(`study-journal-tasks-${key}`, []);
+    const notes = read(`study-journal-notes-${key}`, '');
+    
+    container.innerHTML = '';
+    
+    if (notes.trim()) {
+        const noteCard = document.createElement('div');
+        noteCard.className = 'rounded-lg bg-brand/5 border border-brand/20 p-3';
+        noteCard.innerHTML = `
+            <div class="flex items-center gap-1.5 text-xs font-medium text-brand mb-1">
+                <svg class="icon h-3.5 w-3.5"><use href="#i-file-text"/></svg>
+                Notas
+            </div>
+            <p class="text-sm text-fg whitespace-pre-wrap">${escapeHtml(notes)}</p>
+        `;
+        container.appendChild(noteCard);
+    }
+    
+    if (tasks.length === 0 && !notes.trim()) {
+        container.innerHTML = '<p class="text-center py-6 text-sm text-muted">Sem tarefas nem notas para este dia.</p>';
         return;
     }
+    
+    tasks.forEach(task => {
+        const taskEl = document.createElement('div');
+        taskEl.className = `flex items-start gap-2.5 rounded-lg border border-line bg-surface p-2.5 transition hover:border-brand/30 ${task.done ? 'opacity-50' : ''}`;
+        taskEl.innerHTML = `
+            <input type="checkbox" class="task-check mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-brand" ${task.done ? 'checked' : ''} data-id="${task.id}">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm ${task.done ? 'line-through text-muted' : 'text-fg'}">${escapeHtml(task.text)}</p>
+                <span class="chip ${SUBJECTS[task.subject] ?? SUBJECTS['Geral']}">${task.subject}</span>
+            </div>
+            <button type="button" class="task-remove shrink-0 rounded-lg p-1 text-faint opacity-0 hover:opacity-100 hover:bg-surface-2 hover:text-subject-rose" data-id="${task.id}" aria-label="Apagar tarefa">
+                <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
+            </button>
+        `;
+        container.appendChild(taskEl);
+    });
+    
+    // Bind checkboxes and remove buttons
+    const dlg = document.getElementById('day-tasks-dlg');
+    container.querySelectorAll('.task-check').forEach(cb => {
+        cb.addEventListener('change', async (e) => {
+            const key = dlg?.dataset.dateKey;
+            const id = e.target.dataset.id;
+            const tasks = read(`study-journal-tasks-${key}`, []);
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                task.done = e.target.checked;
+                write(`study-journal-tasks-${key}`, tasks);
+                renderDayTasksInDialog(key);
+                if (currentView === 'calendario') renderCalendar();
+            }
+        });
+    });
+    
+    container.querySelectorAll('.task-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const key = dlg?.dataset.dateKey;
+            const id = e.target.closest('button').dataset.id;
+            const tasks = read(`study-journal-tasks-${key}`, []).filter(t => t.id !== id);
+            write(`study-journal-tasks-${key}`, tasks);
+            renderDayTasksInDialog(key);
+            if (currentView === 'calendario') renderCalendar();
+        });
+    });
+}
 
-    commitNotes();
-    selected = startOfDay(date);
-    calCursor = new Date(selected.getFullYear(), selected.getMonth(), 1);
-
-    await loadDay();
-    showView('painel');
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 /* ── Disciplinas ──────────────────────────────────────── */
@@ -1055,7 +1870,10 @@ function exportData() {
         semanaAtual: Weekly.semanaAtual ? Weekly.semanaAtual() : '',
     };
 
-    if (!Object.keys(payload.days).length && !payload.semanal.fixos.length && !payload.semanal.dinamicos.length) {
+    payload.exames = window.Exames ? window.Exames.lerTudo() : null;
+    payload.reviewsV2 = ReviewSystem.lerV2();
+
+    if (!Object.keys(payload.days).length && !payload.semanal.fixos.length && !payload.semanal.dinamicos.length && !payload.exames && !payload.reviewsV2.length) {
         toast('Não há nada para exportar.', 'warn');
         return;
     }
@@ -1095,12 +1913,21 @@ async function importData(file) {
             }
         }
 
-        if (!count && (!payload.semanal || (!payload.semanal.fixos.length && !payload.semanal.dinamicos.length))) {
+        if (payload.exames && window.Exames) {
+            window.Exames.escreverTudo(payload.exames);
+        }
+
+        if (Array.isArray(payload.reviewsV2)) {
+            ReviewSystem.escreverV2(payload.reviewsV2);
+        }
+
+        if (!count && (!payload.semanal || (!payload.semanal.fixos.length && !payload.semanal.dinamicos.length)) && !payload.exames && !(payload.reviewsV2 && payload.reviewsV2.length)) {
             throw new Error('sem dias');
         }
 
         await loadDay();
         if (window.Weekly && Weekly.ligar) Weekly.ligar();
+        if (window.Exames && window.Exames.ligar) window.Exames.ligar();
         toast(`Importado ${count} dias e dados semanais.`, 'success');
     } catch {
         toast('Ficheiro inválido — esperava um export do StudyJournal.', 'error');
@@ -1138,7 +1965,7 @@ function renderDate() {
         month: 'short',
     });
 
-    els.dayNext.disabled = selected.getTime() >= today.getTime();
+    // els.dayNext.disabled = selected.getTime() >= today.getTime();
 }
 
 async function loadDay() {
@@ -1185,11 +2012,61 @@ async function shiftDay(delta) {
     const next = startOfDay(selected);
     next.setDate(next.getDate() + delta);
 
-    if (next.getTime() > today.getTime()) return;
-
     commitNotes();
     selected = next;
     await loadDay();
+}
+
+/* ── Navegação externa (pesquisa) e foco de revisão ─── */
+
+async function abrirDiaChave(chave) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(chave || '');
+    if (!m) return;
+    commitNotes();
+    selected = startOfDay(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    showView('painel');
+    await loadDay();
+    if (window.NotasPro) window.NotasPro.renderTagsNota();
+    els.notes.focus();
+}
+
+let reviewFocusIds = [];
+let reviewFocusPos = 0;
+
+function abrirReviewFocus() {
+    reviewFocusIds = ReviewSystem.obterParaHoje().map((c) => c.id);
+    reviewFocusPos = 0;
+    if (!reviewFocusIds.length) {
+        toast('Nada vencido. Volta amanhã!', 'info');
+        return;
+    }
+    mostrarReviewFocus();
+    document.getElementById('review-focus')?.showModal();
+}
+
+function mostrarReviewFocus() {
+    const carta = ReviewSystem.lerV2().find((c) => c.id === reviewFocusIds[reviewFocusPos]);
+    if (!carta) {
+        document.getElementById('review-focus')?.close();
+        StudyStats.renderReviewQueue();
+        return;
+    }
+    document.getElementById('review-focus-title').textContent = carta.titulo || (carta.dia ? `Nota de ${carta.dia}` : 'Revisão');
+    document.getElementById('review-focus-body').textContent = carta.texto || (carta.dia ? `Abre o dia ${carta.dia} e tenta explicar por palavras tuas.` : '');
+    document.getElementById('review-focus-count').textContent = `${reviewFocusPos + 1} / ${reviewFocusIds.length} · intervalo ${carta.intervalo || 1}d`;
+}
+
+function responderReviewFocus(grade) {
+    const id = reviewFocusIds[reviewFocusPos];
+    if (id) ReviewSystem.responder(id, grade);
+    reviewFocusPos += 1;
+    if (reviewFocusPos >= reviewFocusIds.length) {
+        document.getElementById('review-focus')?.close();
+        toast('Sessão de revisão concluída!', 'success');
+    } else {
+        mostrarReviewFocus();
+    }
+    StudyStats.renderReviewQueue();
 }
 
 /* ── Arranque ─────────────────────────────────────────── */
@@ -1216,49 +2093,19 @@ function bind() {
     els.calPrev.addEventListener('click', () => shiftMonth(-1));
     els.calNext.addEventListener('click', () => shiftMonth(1));
 
-    els.pomodoro.addEventListener('click', togglePomodoro);
-    els.pomodoroReset.addEventListener('click', resetPomodoro);
+    document.getElementById('heatmap-prev')?.addEventListener('click', () => shiftHeatmap(-1));
+    document.getElementById('heatmap-next')?.addEventListener('click', () => shiftHeatmap(1));
 
-    els.pomodoroDurationToggle.addEventListener('click', () => {
-        if (isDurationMenuOpen()) closeDurationMenu();
-        else openDurationMenu();
+    document.querySelectorAll('[data-pomo-mode]').forEach((tab) => {
+        tab.addEventListener('click', () => setModoPomodoro(tab.dataset.pomoMode));
     });
 
-    els.pomodoroDurationMenu.addEventListener('click', (event) => {
-        const option = event.target.closest('[data-pomodoro-minutes]');
-        if (!option) return;
+    document.getElementById('pomo-start')?.addEventListener('click', togglePomodoro);
+    document.getElementById('pomo-reset2')?.addEventListener('click', resetPomodoro);
+    document.getElementById('pomo-skip')?.addEventListener('click', skipPomodoro);
 
-        setPomodoroMinutes(Number(option.dataset.pomodoroMinutes));
-        closeDurationMenu({ focusToggle: true });
-    });
-
-    els.pomodoroDurationMenu.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            movePresetFocus(1);
-        } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            movePresetFocus(-1);
-        } else if (event.key === 'Home') {
-            event.preventDefault();
-            els.pomodoroPresets[0].focus();
-        } else if (event.key === 'End') {
-            event.preventDefault();
-            els.pomodoroPresets[els.pomodoroPresets.length - 1].focus();
-        } else if (event.key === 'Escape') {
-            event.preventDefault();
-            closeDurationMenu({ focusToggle: true });
-        } else if (event.key === 'Tab') {
-            closeDurationMenu();
-        }
-    });
-
-    document.addEventListener('click', (event) => {
-        if (!els.pomodoroDuration.contains(event.target)) closeDurationMenu();
-    });
-
-    document.addEventListener('focusin', (event) => {
-        if (!els.pomodoroDuration.contains(event.target)) closeDurationMenu();
+    document.querySelectorAll('[data-pomo-minutes]').forEach((btn) => {
+        btn.addEventListener('click', () => setPomodoroMinutes(Number(btn.dataset.pomoMinutes)));
     });
 
     els.taskForm.addEventListener('submit', async (event) => {
@@ -1271,6 +2118,10 @@ function bind() {
         els.taskInput.value = '';
         els.taskInput.focus();
     });
+
+    if (els.clearDone) {
+        els.clearDone.addEventListener('click', clearDone);
+    }
 
     els.notes.addEventListener('input', onNotesInput);
 
@@ -1289,6 +2140,29 @@ function bind() {
     });
 
     els.saveNotes.addEventListener('click', () => persistToVault());
+
+    const markReviewBtn = document.getElementById('mark-review');
+    if (markReviewBtn) {
+        markReviewBtn.addEventListener('click', () => {
+            const key = dayKey(selected);
+            const primeira = (els.notes.value.split('\n').find((l) => l.trim()) || `Nota de ${key}`).slice(0, 120);
+            ReviewSystem.marcar(key, primeira);
+            StudyStats.renderReviewQueue();
+            toast('Nota marcada para revisão futura.', 'success');
+        });
+    }
+
+    document.getElementById('review-focus-btn')?.addEventListener('click', abrirReviewFocus);
+    document.querySelectorAll('[data-review-close]').forEach((b) => {
+        if (b.dataset.bound) return;
+        b.dataset.bound = '1';
+        b.addEventListener('click', () => document.getElementById('review-focus')?.close());
+    });
+    document.querySelectorAll('[data-review-grade]').forEach((b) => {
+        if (b.dataset.bound) return;
+        b.dataset.bound = '1';
+        b.addEventListener('click', () => responderReviewFocus(b.dataset.reviewGrade));
+    });
 
     els.vaultChip.addEventListener('click', async () => {
         const state = await Vault.status();
@@ -1432,29 +2306,206 @@ function bind() {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
             persistToVault();
+            return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+            event.preventDefault();
+            if (window.NotasPro) window.NotasPro.abrirPaleta();
         }
     });
 
     window.addEventListener('beforeunload', commitNotes);
+    window.addEventListener('beforeunload', savePomoState);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && pomodoro.running) tickPomodoro();
+    });
+    window.addEventListener('focus', () => {
+        if (pomodoro.running) tickPomodoro();
+    });
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const sunIcon = document.getElementById('theme-icon-sun');
+    const moonIcon = document.getElementById('theme-icon-moon');
+    if (sunIcon && moonIcon) {
+        if (theme === 'dark') {
+            sunIcon.classList.add('hidden');
+            moonIcon.classList.remove('hidden');
+        } else {
+            sunIcon.classList.remove('hidden');
+            moonIcon.classList.add('hidden');
+        }
+    }
+}
+
+function initTheme() {
+    const toggle = document.getElementById('theme-toggle');
+    if (!toggle) return;
+
+    const saved = localStorage.getItem('study-journal-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    applyTheme(theme);
+
+    toggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('study-journal-theme', next);
+        applyTheme(next);
+    });
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('study-journal-theme')) {
+            applyTheme(e.matches ? 'dark' : 'light');
+        }
+    });
 }
 
 async function init() {
+    initTheme();
     seed();
     bind();
     await refreshVault();
     await loadDay();
-    resetPomodoro();
-    showView('painel');
+    restorePomoState();
+    const vistaGuardada = read('study-journal-view', 'painel');
+    showView(VIEW_LABELS[vistaGuardada] ? vistaGuardada : 'painel');
     startVaultSync();
     syncDayFromVault();
 
+    // Check for public read-only mode (GitHub Gist)
+    if (window.GitHubSync && window.GitHubSync.isPublicReadOnly && window.GitHubSync.isPublicReadOnly()) {
+        applyReadOnlyMode();
+    }
+
+    // Inicializar stats no painel
+    ReviewSystem.migrar();
+    StudyStats.renderHeatmap();
+    StudyStats.renderReviewQueue();
+    if (window.NotasPro) window.NotasPro.ligar();
+
     // Callback para sync GitHub quando Weekly salva
     window.onWeeklySave = () => {
-        if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+        if (window.GitHubSync && window.GitHubSync.hasWriteAccess && window.GitHubSync.hasWriteAccess()) {
             window.GitHubSync.sync(false).catch(() => {});
         }
     };
 }
+
+function applyReadOnlyMode() {
+    document.body.dataset.readonly = 'true';
+
+    // Show read-only badge
+    const badge = document.getElementById('readonly-badge');
+    if (badge) badge.classList.remove('hidden');
+
+    // Hide write-only elements
+    document.querySelectorAll('.write-only').forEach(el => el.classList.add('hidden'));
+
+    // Make notes readonly
+    const notes = document.getElementById('journal-text');
+    if (notes) notes.readOnly = true;
+
+    // Disable task checkboxes in painel
+    document.querySelectorAll('#task-list .task-check').forEach(cb => {
+        cb.disabled = true;
+        cb.classList.add('opacity-50', 'cursor-not-allowed');
+    });
+
+    // Hide save notes button
+    const saveNotes = document.getElementById('save-notes');
+    if (saveNotes) saveNotes.classList.add('hidden');
+
+    // Update vault chip to show read-only
+    const vaultLabel = document.getElementById('vault-label');
+    const vaultDot = document.getElementById('vault-dot');
+    if (vaultLabel) vaultLabel.textContent = '📱 Modo leitura';
+    if (vaultDot) vaultDot.className = 'h-1.5 w-1.5 rounded-full bg-faint';
+
+    // Disable calendar add-task buttons
+    document.querySelectorAll('.add-task-btn').forEach(btn => btn.classList.add('hidden'));
+
+    // Disable task checkboxes in calendar
+    document.querySelectorAll('.calendar-task input[type="checkbox"]').forEach(cb => {
+        cb.disabled = true;
+        cb.classList.add('opacity-50', 'cursor-not-allowed');
+    });
+
+    // Weekly: disable drag/drop, click-to-add (handled by Weekly module if it checks)
+    // The Weekly module will need to check GitHubSync.isPublicReadOnly()
+
+    // Settings: update GitHub section
+    updateSettingsForReadOnly();
+}
+
+function updateSettingsForReadOnly() {
+    // GitHub Sync section
+    const githubNotConfigured = document.getElementById('github-not-configured');
+    const githubConfigured = document.getElementById('github-configured');
+    const githubSave = document.getElementById('github-save');
+    const githubSyncNow = document.getElementById('github-sync-now');
+    const githubDisconnect = document.getElementById('github-disconnect');
+    const githubToken = document.getElementById('github-token');
+    const githubGist = document.getElementById('github-gist');
+    const githubStatus = document.getElementById('github-status');
+    const githubLastSync = document.getElementById('github-last-sync');
+
+    if (githubNotConfigured) githubNotConfigured.hidden = true;
+    if (githubConfigured) githubConfigured.hidden = false;
+
+    // Show read-only status
+    if (githubStatus) {
+        githubStatus.textContent = '📱 Modo leitura (Gist público)';
+        githubStatus.className = 'flex items-center gap-2 text-xs text-muted';
+        githubStatus.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-faint"></span> Modo leitura (Gist público)';
+    }
+    if (githubLastSync) githubLastSync.textContent = '';
+
+    // Hide write actions
+    if (githubSave) githubSave.hidden = true;
+    if (githubSyncNow) githubSyncNow.hidden = true;
+    if (githubDisconnect) githubDisconnect.hidden = true;
+    if (githubToken) githubToken.hidden = true;
+    if (githubGist) githubGist.hidden = true;
+
+    // Add public Gist config button
+    const githubSection = document.querySelector('#view-definicoes .rounded-xl.border-line-soft.bg-surface-2:has(#github-token)');
+    if (githubSection && !document.getElementById('public-gist-config-btn')) {
+        const btn = document.createElement('button');
+        btn.id = 'public-gist-config-btn';
+        btn.type = 'button';
+        btn.className = 'btn-secondary mt-2';
+        btn.textContent = 'Configurar Gist Público';
+        btn.addEventListener('click', configurePublicGist);
+        githubSection.append(btn);
+    }
+
+    // Hide export/import/clear day
+    const exportData = document.getElementById('export-data');
+    const importData = document.getElementById('import-data');
+    const clearDay = document.getElementById('clear-day');
+    if (exportData) exportData.hidden = true;
+    if (importData) importData.hidden = true;
+    if (clearDay) clearDay.hidden = true;
+}
+
+function configurePublicGist() {
+    const gistId = prompt('Cole o ID do Gist público (ex: abc123...):');
+    if (gistId && gistId.trim()) {
+        window.GitHubSync.setPublicGist(gistId.trim());
+        toast('Gist público configurado. Recarregando...', 'success');
+        setTimeout(() => location.reload(), 1000);
+    }
+}
+
+window.StudyJournal = {
+    abrirDia: abrirDiaChave,
+    irAExames() { showView('exames'); },
+    irAPainel() { showView('painel'); },
+};
+window.ReviewSystem = ReviewSystem;
 
 init();
 Pdfs.carregar();

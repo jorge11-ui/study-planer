@@ -2,13 +2,11 @@ const GitHubSync = (() => {
     const CHAVE_TOKEN = 'study-journal-github-token';
     const CHAVE_GIST = 'study-journal-gist-id';
     const CHAVE_ULTIMO_SYNC = 'study-journal-github-last-sync';
-    const CHAVE_PUBLIC_READONLY = 'study-journal-github-public-readonly';
     const API_BASE = 'https://api.github.com/gists';
     const SYNC_INTERVAL_MS = 60000;
 
     let token = '';
     let gistId = '';
-    let publicReadOnly = false;
     let syncTimer = null;
     let aSyncando = false;
     let listeners = [];
@@ -17,21 +15,17 @@ const GitHubSync = (() => {
         listeners.forEach(cb => cb(tipo, detalhes));
     }
 
-    function getHeaders(includeAuth = true) {
-        const headers = {
+    function getHeaders() {
+        return {
+            'Authorization': `token ${token}`,
             'Accept': 'application/vnd.github.v3+json',
             'Content-Type': 'application/json',
         };
-        if (includeAuth && token) {
-            headers['Authorization'] = `token ${token}`;
-        }
-        return headers;
     }
 
     function carregarConfig() {
         token = localStorage.getItem(CHAVE_TOKEN) || '';
         gistId = localStorage.getItem(CHAVE_GIST) || '';
-        publicReadOnly = localStorage.getItem(CHAVE_PUBLIC_READONLY) === 'true';
     }
 
     function salvarConfig(novoToken, novoGistId) {
@@ -45,52 +39,22 @@ const GitHubSync = (() => {
         }
     }
 
-    function setPublicGist(gistIdValue) {
-        gistId = gistIdValue;
-        publicReadOnly = true;
-        localStorage.setItem(CHAVE_GIST, gistIdValue);
-        localStorage.setItem(CHAVE_PUBLIC_READONLY, 'true');
-        // Clear token if it exists (not needed for public read-only)
-        token = '';
-        localStorage.removeItem(CHAVE_TOKEN);
-        pararAutoSync();
-    }
-
-    function clearPublicReadOnly() {
-        publicReadOnly = false;
-        localStorage.removeItem(CHAVE_PUBLIC_READONLY);
-    }
-
     function limparConfig() {
         token = '';
         gistId = '';
-        publicReadOnly = false;
         localStorage.removeItem(CHAVE_TOKEN);
         localStorage.removeItem(CHAVE_GIST);
         localStorage.removeItem(CHAVE_ULTIMO_SYNC);
-        localStorage.removeItem(CHAVE_PUBLIC_READONLY);
-        pararAutoSync();
     }
 
     function configurado() {
-        // Configured if we have a gistId (with or without token)
-        return !!gistId;
-    }
-
-    function isPublicReadOnly() {
-        return publicReadOnly && !!gistId && !token;
-    }
-
-    function hasWriteAccess() {
         return !!token && !!gistId;
     }
 
     async function criarGistInicial() {
-        if (!hasWriteAccess()) throw new Error('GitHub não configurado para escrita');
-
         const payload = {
             description: 'StudyJournal Sync',
-            public: true, // Public so phone can read without auth
+            public: false,
             files: {
                 'study-journal-data.json': {
                     content: JSON.stringify({
@@ -122,19 +86,13 @@ const GitHubSync = (() => {
     async function lerGist() {
         if (!configurado()) throw new Error('GitHub não configurado');
 
-        // For public read-only, fetch without auth
-        const headers = getHeaders(hasWriteAccess());
-
-        const resp = await fetch(`${API_BASE}/${gistId}`, { headers });
+        const resp = await fetch(`${API_BASE}/${gistId}`, { headers: getHeaders() });
 
         if (resp.status === 404) {
-            if (hasWriteAccess()) {
-                const novoId = await criarGistInicial();
-                gistId = novoId;
-                localStorage.setItem(CHAVE_GIST, novoId);
-                return await lerGist();
-            }
-            throw new Error('Gist não encontrado (404)');
+            const novoId = await criarGistInicial();
+            gistId = novoId;
+            localStorage.setItem(CHAVE_GIST, novoId);
+            return await lerGist();
         }
 
         if (!resp.ok) {
@@ -151,7 +109,7 @@ const GitHubSync = (() => {
     }
 
     async function escreverGist(dados, sha) {
-        if (!hasWriteAccess()) throw new Error('Sem permissão de escrita (modo leitura)');
+        if (!configurado()) throw new Error('GitHub não configurado');
 
         const payload = {
             description: 'StudyJournal Sync',
@@ -212,25 +170,7 @@ const GitHubSync = (() => {
             semanaAtual: localStorage.getItem('study-journal-semanal-dinamico-atual') || '',
         };
 
-        const lerJson = (chave, fallback) => {
-            try {
-                const raw = localStorage.getItem(chave);
-                return raw === null ? fallback : JSON.parse(raw);
-            } catch { return fallback; }
-        };
-
-        return {
-            days,
-            semanal,
-            exames: {
-                foco: lerJson('study-journal-exames-foco', null),
-                recursos: lerJson('study-journal-exames-recursos', null),
-                track: lerJson('study-journal-exames-track', null),
-                duvidas: lerJson('study-journal-exames-duvidas', null),
-                dataAlvo: lerJson('study-journal-exames-data-alvo', null),
-            },
-            reviewsV2: lerJson('study-journal-reviews-v2', null),
-        };
+        return { days, semanal };
     }
 
     function aplicarDadosRemotos(remoto) {
@@ -249,20 +189,10 @@ const GitHubSync = (() => {
                 localStorage.setItem('study-journal-semanal-dinamico-atual', remoto.semanal.semanaAtual);
             }
         }
-        if (remoto.exames) {
-            if (remoto.exames.foco) localStorage.setItem('study-journal-exames-foco', JSON.stringify(remoto.exames.foco));
-            if (Array.isArray(remoto.exames.recursos)) localStorage.setItem('study-journal-exames-recursos', JSON.stringify(remoto.exames.recursos));
-            if (Array.isArray(remoto.exames.track)) localStorage.setItem('study-journal-exames-track', JSON.stringify(remoto.exames.track));
-            if (Array.isArray(remoto.exames.duvidas)) localStorage.setItem('study-journal-exames-duvidas', JSON.stringify(remoto.exames.duvidas));
-            if (typeof remoto.exames.dataAlvo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(remoto.exames.dataAlvo)) localStorage.setItem('study-journal-exames-data-alvo', JSON.stringify(remoto.exames.dataAlvo));
-        }
-        if (Array.isArray(remoto.reviewsV2)) {
-            localStorage.setItem('study-journal-reviews-v2', JSON.stringify(remoto.reviewsV2));
-        }
     }
 
     async function sync(pullFirst = true) {
-        if (!hasWriteAccess() || aSyncando) return { ok: false, reason: 'no_write_access_or_syncing' };
+        if (!configurado() || aSyncando) return { ok: false, reason: 'not_configured_or_syncing' };
         aSyncando = true;
         notificar('sync-start');
 
@@ -291,19 +221,7 @@ const GitHubSync = (() => {
         }
     }
 
-    async function fetchPublicData() {
-        if (!configurado()) throw new Error('GitHub não configurado');
-        const headers = getHeaders(false); // No auth for public read
-        const resp = await fetch(`${API_BASE}/${gistId}`, { headers });
-        if (!resp.ok) throw new Error(`Erro ao ler Gist público: ${resp.status}`);
-        const data = await resp.json();
-        const arquivo = data.files['study-journal-data.json'];
-        if (!arquivo) throw new Error('Ficheiro não encontrado no Gist');
-        return JSON.parse(arquivo.content);
-    }
-
     function iniciarAutoSync() {
-        if (!hasWriteAccess()) return;
         if (syncTimer) return;
         syncTimer = setInterval(() => sync(), SYNC_INTERVAL_MS);
     }
@@ -319,20 +237,15 @@ const GitHubSync = (() => {
     }
 
     carregarConfig();
-    if (hasWriteAccess()) iniciarAutoSync();
+    if (configurado()) iniciarAutoSync();
 
     return {
         configurado,
-        isPublicReadOnly,
-        hasWriteAccess,
         getToken: () => token,
         getGistId: () => gistId,
         setConfig: salvarConfig,
-        setPublicGist,
-        clearPublicReadOnly,
         clearConfig: limparConfig,
         sync,
-        fetchPublicData,
         onSync,
         iniciarAutoSync,
         pararAutoSync,

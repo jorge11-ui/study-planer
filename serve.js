@@ -130,7 +130,24 @@ async function api(req, res, url) {
     }
 
     if (route === '/file' && req.method === 'PUT') {
-        return json(res, 403, { ok: false, reason: 'read-only' });
+        const name = url.searchParams.get('name') ?? '';
+        if (!DAY_NAME.test(name) && !CONFIG_NAME.test(name)) return json(res, 400, { ok: false, reason: 'nome' });
+
+        const folder = vaultFolder();
+        if (!folder) return json(res, 503, { ok: false, reason: 'sem-vault' });
+
+        try {
+            const body = await readBody(req);
+            const { content } = JSON.parse(body);
+            if (typeof content !== 'string') return json(res, 400, { ok: false, reason: 'conteudo' });
+
+            const filePath = path.join(folder, name);
+            fs.writeFileSync(filePath, content, 'utf8');
+            json(res, 200, { ok: true, path: `${FOLDER}/${name}` });
+        } catch (error) {
+            json(res, 500, { ok: false, reason: 'erro' });
+        }
+        return;
     }
 
     json(res, 404, { ok: false, reason: 'rota' });

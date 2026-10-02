@@ -111,7 +111,7 @@ window.Vault = (() => {
         try {
             for (const item of list) {
                 try {
-                    const response = await fetch(`${API}/file?name=${encodeURIComponent(item.name)}`, {
+                    const response = await fetch(`${API}/file`, {
                         method: 'PUT',
                         headers: { 'content-type': 'application/json' },
                         body: JSON.stringify({ name: item.name, content: item.content }),
@@ -299,7 +299,7 @@ window.Vault = (() => {
         try {
             current = await remoteRead(name);
         } catch (error) {
-            if (error && error.name === 'TypeError' && error.message && error.message.includes('fetch')) {
+            if (error && error.name === 'TypeError') {
                 enqueue(name, content);
                 return { ok: true, path: `${FOLDER}/${name}`, pendente: true };
             }
@@ -314,7 +314,7 @@ window.Vault = (() => {
 
         let response;
         try {
-            response = await fetch(`${API}/file?name=${encodeURIComponent(name)}`, {
+            response = await fetch(`${API}/file`, {
                 method: 'PUT',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ name, content }),

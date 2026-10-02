@@ -868,7 +868,6 @@ window.Pdfs = (() => {
     document.addEventListener('keydown', tratarTecla);
 
     function ligar() {
-        libertarUrls();
         ligarOuvintes();
         desenhar();
     }
