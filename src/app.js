@@ -206,21 +206,38 @@ const ReviewSystem = {
     }
 };
 
+const HEATMAP_MINUTOS_POR_TAREFA = 3;
+const HEATMAP_NIVEIS = [150, 90, 40];
+let historicoMinutosOk = false;
+
+function migrarHistoricoMinutos() {
+    if (historicoMinutosOk) return;
+    historicoMinutosOk = true;
+    try {
+        if (localStorage.getItem('study-journal-pomodoro-history-v2')) return;
+        const history = read(POMODORO_HISTORY_KEY, {});
+        Object.keys(history).forEach((k) => {
+            const sessoes = Math.max(0, Math.round(Number(history[k] || 0)));
+            history[k] = sessoes * 25;
+        });
+        write(POMODORO_HISTORY_KEY, history);
+        localStorage.setItem('study-journal-pomodoro-history-v2', '1');
+    } catch { /* sem migração: o heatmap usa os valores como estão */ }
+}
+
+function lerEsforcoDoDia(date) {
+    migrarHistoricoMinutos();
+    const key = dayKey(date);
+    const history = read(POMODORO_HISTORY_KEY, {});
+    const foco = Math.max(0, Number(history[key] || 0));
+    const tasks = read(`study-journal-tasks-${key}`, []);
+    const concluidas = tasks.filter((t) => t.done).length;
+    return { foco, concluidas, total: foco + concluidas * HEATMAP_MINUTOS_POR_TAREFA };
+}
+
 const StudyStats = {
     calcularAtividade(date) {
-        const key = dayKey(date);
-        let score = 0;
-
-        // Blocos de estudo (pomodoros): 1 ponto por bloco
-        const history = read(POMODORO_HISTORY_KEY, {});
-        score += (history[key] || 0);
-
-        // Tarefas concluídas: +0.1 cada
-        const tasks = read(`study-journal-tasks-${key}`, []);
-        const done = tasks.filter(t => t.done).length;
-        score += done * 0.1;
-
-        return score;
+        return lerEsforcoDoDia(date).total;
     },
 
     renderHeatmap() {
@@ -260,13 +277,14 @@ const StudyStats = {
         for (let dia = 1; dia <= diasNoMes; dia += 1) {
             const data = new Date(ano, mes, dia);
             const futuro = startOfDay(data) > today;
-            const score = futuro ? 0 : StudyStats.calcularAtividade(data);
+            const esforco = futuro ? { foco: 0, concluidas: 0, total: 0 } : lerEsforcoDoDia(data);
+            const score = esforco.total;
 
             let nivel = 0;
             if (!futuro) {
-                if (score >= 5) nivel = 4;
-                else if (score >= 3) nivel = 3;
-                else if (score >= 1) nivel = 2;
+                if (score >= HEATMAP_NIVEIS[0]) nivel = 4;
+                else if (score >= HEATMAP_NIVEIS[1]) nivel = 3;
+                else if (score >= HEATMAP_NIVEIS[2]) nivel = 2;
                 else if (score > 0) nivel = 1;
             }
 
@@ -275,7 +293,7 @@ const StudyStats = {
             cell.className = 'heatmap-day';
             cell.dataset.n = String(nivel);
             cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
-            cell.title = `${data.toLocaleDateString('pt-PT')}: ${score} pts`;
+            cell.title = `${data.toLocaleDateString('pt-PT')}: ${esforco.foco} min de foco${esforco.concluidas ? ` · ${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}` : ''}`;
             if (startOfDay(data).getTime() === today.getTime()) cell.dataset.hoje = 'true';
 
             const num = document.createElement('span');
@@ -790,10 +808,11 @@ function concluirPomodoro() {
     const eraFoco = pomodoro.mode === 'foco';
 
     if (eraFoco) {
-        // Só o foco conta como sessão de estudo no heatmap
+        // Só o foco conta no heatmap, pesado pelos minutos da sessão
+        migrarHistoricoMinutos();
         const history = read(POMODORO_HISTORY_KEY, {});
         const key = dayKey(new Date());
-        history[key] = (history[key] || 0) + 1;
+        history[key] = (Number(history[key] || 0)) + minutosDoModo(pomodoro.mode);
         write(POMODORO_HISTORY_KEY, history);
         StudyStats.renderHeatmap();
     }
