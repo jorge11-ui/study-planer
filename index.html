@@ -6,9 +6,16 @@
     <meta name="color-scheme" content="dark">
     <title>StudyJournal</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%234f46e5'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="app.css?v=3">
+    <link rel="stylesheet" href="app.css?v=4">
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
+
+    <div class="aurora" aria-hidden="true">
+        <div class="aurora-blob aurora-1"></div>
+        <div class="aurora-blob aurora-2"></div>
+        <div class="aurora-blob aurora-3"></div>
+        <div class="aurora-blob aurora-4"></div>
+    </div>
 
     <!-- Sprite de ícones vetoriais -->
     <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -16,6 +23,9 @@
             <symbol id="i-book" viewBox="0 0 24 24">
                 <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
                 <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </symbol>
+            <symbol id="i-flame" viewBox="0 0 24 24">
+                <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
             </symbol>
             <symbol id="i-tomato" viewBox="0 0 24 24">
                 <path d="M12 8.4c-3.9 0-7.1 2.9-7.1 6.6C4.9 18.9 8 22 12 22s7.1-3.1 7.1-7c0-3.7-3.2-6.6-7.1-6.6Z"/>
@@ -208,11 +218,11 @@
     </header>
 
     <!-- ══ Layout ══ -->
-    <div class="mx-auto flex max-w-[1760px] flex-col gap-6 px-4 py-6 pb-24 sm:px-6 sm:py-8 lg:flex-row lg:px-10 lg:pb-6">
+    <div class="flex max-w-full flex-col gap-6 px-0 py-6 pb-24 sm:px-0 sm:py-8 lg:flex-row lg:px-0 lg:pb-6">
 
         <!-- Sidebar de navegação -->
         <nav aria-label="Navegação principal" id="nav-rail"
-            class="hidden shrink-0 flex-col gap-2 self-start rounded-2xl border border-line bg-surface p-3 shadow-card lg:flex lg:w-64">
+            class="hidden shrink-0 flex-col gap-2 self-start glass rounded-2xl border border-line bg-surface p-3 shadow-card lg:flex lg:w-64">
             <button type="button" data-view="painel" title="Painel" class="nav-item-wide nav-item-active">
                 <svg class="icon h-5 w-5"><use href="#i-panel"/></svg>
                 <span>Painel</span>
@@ -224,6 +234,10 @@
             <button type="button" data-view="disciplinas" title="Disciplinas" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-subjects"/></svg>
                 <span>Disciplinas</span>
+            </button>
+            <button type="button" data-view="estudar" title="Estudar" class="nav-item-wide">
+                <svg class="icon h-5 w-5"><use href="#i-tomato"/></svg>
+                <span>Estudar</span>
             </button>
             <button type="button" data-view="pdfs" title="PDFs" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
@@ -250,7 +264,7 @@
 
         <!-- Coluna principal: notas -->
         <section aria-labelledby="notes-title"
-            class="flex min-w-0 flex-1 flex-col rounded-2xl border border-line bg-surface p-6 shadow-card">
+            class="flex min-w-0 flex-1 flex-col glass rounded-2xl border border-line bg-surface p-6 shadow-card">
             <header class="mb-4 flex items-center gap-2.5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-pencil"/></svg>
                 <h2 id="notes-title" class="text-base font-semibold">Notas do Dia</h2>
@@ -307,11 +321,6 @@
                     <span id="word-count">0</span> palavras
                 </span>
                 <div class="flex gap-2">
-                    <button id="mark-review" type="button" title="Marcar para Revisão"
-                        class="btn-soft inline-flex items-center gap-1.5">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-refresh"/></svg>
-                        Revisão
-                    </button>
                     <button id="save-notes" type="button"
                         class="btn-mint">
                         <svg class="icon h-4 w-4"><use href="#i-check"/></svg>
@@ -323,20 +332,65 @@
 
         <!-- Coluna lateral: utilitários -->
         <section class="flex shrink-0 flex-col gap-6 lg:w-[380px]">
-            <!-- Revisões de Hoje -->
-            <div class="rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-3 flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-refresh"/></svg>
-                    <h2 class="text-base font-semibold">Revisões de Hoje</h2>
-                    <button id="review-focus-btn" type="button" class="btn-soft ml-auto px-2.5 py-1 text-[11px]">Estudar</button>
+            <!-- Sequência de estudos -->
+            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+                <header class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-flame"/></svg>
+                    <h2 class="text-base font-semibold">Sequência</h2>
+                    <span id="streak-best" class="ml-auto text-[11px] tabular-nums text-faint"></span>
                 </header>
-                <div id="review-queue" class="flex flex-col gap-2">
-                    <p class="text-xs text-center py-4 text-faint">Tudo em dia! 🎉</p>
+                <p class="mt-2 flex items-baseline gap-2">
+                    <span id="streak-num" class="text-3xl font-bold tabular-nums text-fg">0</span>
+                    <span class="text-sm text-muted">dias de sequência 🔥</span>
+                </p>
+            </div>
+
+            <!-- Sessão de Estudo -->
+            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+                <header class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-tomato"/></svg>
+                    <h2 class="text-base font-semibold">Sessão de Estudo</h2>
+                </header>
+                <div class="mt-4 space-y-3">
+                    <div class="flex items-center gap-2">
+                        <label class="text-[11px] font-medium text-muted" for="session-subject">Disciplina</label>
+                        <select id="session-subject" class="field flex-1 text-sm" aria-label="Disciplina para a sessão">
+                            <option>Matemática A</option>
+                            <option>FQA</option>
+                            <option>Português</option>
+                            <option>Biologia</option>
+                            <option>Aplicações Informáticas (A.I.)</option>
+                            <option>Geral</option>
+                        </select>
+                    </div>
+                    <div id="session-timer" class="flex items-center justify-center gap-3">
+                        <span id="session-time" class="text-3xl font-mono tabular-nums text-fg">25:00</span>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-center gap-2">
+                        <button id="session-start" type="button" class="btn-mint inline-flex items-center gap-1.5" aria-label="Iniciar sessão">
+                            <svg id="session-start-icon" class="icon h-4 w-4"><use href="#i-play"/></svg>
+                            <span id="session-start-text">Iniciar</span>
+                        </button>
+                        <button id="session-pause" type="button" class="btn-soft inline-flex items-center gap-1.5 hidden" aria-label="Pausar sessão">
+                            <svg class="icon h-4 w-4"><use href="#i-pause"/></svg>
+                            <span>Pausar</span>
+                        </button>
+                        <button id="session-stop" type="button" class="btn-soft inline-flex items-center gap-1.5 hidden" aria-label="Parar sessão">
+                            <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                            <span>Parar</span>
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap justify-center gap-1.5">
+                        <button type="button" data-session-preset="25" class="btn-ghost text-xs px-2 py-1" title="25 min">25</button>
+                        <button type="button" data-session-preset="50" class="btn-ghost text-xs px-2 py-1" title="50 min">50</button>
+                        <button type="button" data-session-preset="90" class="btn-ghost text-xs px-2 py-1" title="90 min">90</button>
+                    </div>
+                    <p id="session-today-summary" class="text-center text-[11px] text-muted hidden"></p>
                 </div>
             </div>
 
             <!-- Tarefas -->
-            <div class="rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-4 flex items-center gap-2.5">
                     <svg class="icon h-5 w-5 text-brand-light"><use href="#i-list-checks"/></svg>
                     <h2 id="tasks-title" class="text-base font-semibold">Tarefas de Hoje</h2>
@@ -376,6 +430,11 @@
                             <option>Aplicações Informáticas (A.I.)</option>
                         </select>
                     </div>
+                    <select id="task-category" class="field cursor-pointer appearance-none py-2 px-2 text-xs" title="Categoria">
+                        <option value="tarefa">Tarefa</option>
+                        <option value="estudo">Estudo</option>
+                        <option value="teste">Teste</option>
+                    </select>
                     <button type="submit" aria-label="Adicionar tarefa"
                         class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-xl bg-brand text-white transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:ml-auto">
                         <svg class="icon h-4 w-4"><use href="#i-plus"/></svg>
@@ -390,7 +449,7 @@
             </div>
 
             <!-- Consistência (Heatmap) -->
-            <div class="rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-3 flex items-center gap-2.5">
                     <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
                     <h2 class="text-base font-semibold">Consistência</h2>
@@ -422,7 +481,7 @@
 
         <!-- ══ Vista: Calendário ══ -->
         <section id="view-calendario" data-panel="calendario" hidden
-            class="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-card">
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
             <header class="flex flex-wrap items-center gap-2.5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
                 <h2 class="text-base font-semibold">Calendário</h2>
@@ -436,6 +495,20 @@
                     </button>
                 </div>
             </header>
+            <div class="flex flex-wrap items-center gap-4 text-[11px] font-medium text-muted" aria-label="Legenda de categorias">
+                <span class="flex items-center gap-1.5">
+                    <span class="h-2.5 w-2.5 rounded-full" style="background:#fb7185"></span>
+                    Testes e Avaliações
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <span class="h-2.5 w-2.5 rounded-full" style="background:#4ade80"></span>
+                    Tarefas e Entregas
+                </span>
+                <span class="flex items-center gap-1.5">
+                    <span class="h-2.5 w-2.5 rounded-full" style="background:#818cf8"></span>
+                    Blocos de Estudo / Revisão
+                </span>
+            </div>
 
             <div id="cal-weekdays" class="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-faint"></div>
             <div id="cal-grid" class="grid grid-cols-7 gap-1.5"></div>
@@ -444,7 +517,7 @@
 
         <!-- ══ Vista: Disciplinas ══ -->
         <section id="view-disciplinas" data-panel="disciplinas" hidden
-            class="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-card">
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
             <header class="flex flex-wrap items-center gap-2.5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-subjects"/></svg>
                 <h2 class="text-base font-semibold">Disciplinas</h2>
@@ -455,9 +528,94 @@
             <div id="subjects-list" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
         </section>
 
+        <!-- ══ Vista: Estudar ══ -->
+        <section id="view-estudar" data-panel="estudar" hidden
+            class="flex flex-col gap-6 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <header class="flex flex-wrap items-center gap-2.5">
+                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-tomato"/></svg>
+                <h2 class="text-base font-semibold">Sessões de Estudo</h2>
+            </header>
+
+            <!-- Timer Principal -->
+            <div class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <label class="text-sm font-medium text-muted" for="estudar-subject">Disciplina</label>
+                    <select id="estudar-subject" class="field w-full sm:w-auto text-sm" aria-label="Disciplina para a sessão">
+                        <option>Matemática A</option>
+                        <option>FQA</option>
+                        <option>Português</option>
+                        <option>Biologia</option>
+                        <option>Aplicações Informáticas (A.I.)</option>
+                        <option>Geral</option>
+                    </select>
+                </div>
+                <div class="flex flex-col items-center gap-4">
+                    <div id="estudar-timer" class="text-6xl font-mono tabular-nums text-fg font-bold">25:00</div>
+                    <div class="flex flex-wrap items-center justify-center gap-3">
+                        <button id="estudar-start" type="button" class="btn-primary inline-flex items-center gap-2 px-6 py-3 text-lg" aria-label="Iniciar sessão">
+                            <svg id="estudar-start-icon" class="icon h-5 w-5"><use href="#i-play"/></svg>
+                            <span id="estudar-start-text">Iniciar</span>
+                        </button>
+                        <button id="estudar-pause" type="button" class="btn-soft inline-flex items-center gap-2 px-6 py-3 text-lg hidden" aria-label="Pausar sessão">
+                            <svg class="icon h-5 w-5"><use href="#i-pause"/></svg>
+                            <span>Pausar</span>
+                        </button>
+                        <button id="estudar-stop" type="button" class="btn-soft inline-flex items-center gap-2 px-6 py-3 text-lg hidden" aria-label="Parar sessão">
+                            <svg class="icon h-5 w-5"><use href="#i-x"/></svg>
+                            <span>Parar</span>
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap justify-center gap-2">
+                        <button type="button" data-estudar-preset="25" class="btn-ghost text-sm px-3 py-1.5" title="25 min">25 min</button>
+                        <button type="button" data-estudar-preset="50" class="btn-ghost text-sm px-3 py-1.5" title="50 min">50 min</button>
+                        <button type="button" data-estudar-preset="90" class="btn-ghost text-sm px-3 py-1.5" title="90 min">90 min</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estatísticas -->
+            <div class="grid gap-4 md:grid-cols-3">
+                <!-- Hoje -->
+                <article class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-4">
+                    <header class="flex items-center gap-2 mb-3">
+                        <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
+                        <h3 class="text-sm font-semibold">Hoje</h3>
+                        <span id="estudar-hoje-total" class="ml-auto text-xs font-mono tabular-nums text-brand-light"></span>
+                    </header>
+                    <div id="estudar-hoje-list" class="space-y-2 text-sm">
+                        <p class="text-center text-muted py-4">Sem sessões hoje</p>
+                    </div>
+                </article>
+
+                <!-- Esta Semana -->
+                <article class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-4">
+                    <header class="flex items-center gap-2 mb-3">
+                        <svg class="icon h-5 w-5 text-brand-light"><use href="#i-week"/></svg>
+                        <h3 class="text-sm font-semibold">Esta Semana</h3>
+                        <span id="estudar-semana-total" class="ml-auto text-xs font-mono tabular-nums text-brand-light"></span>
+                    </header>
+                    <div id="estudar-semana-list" class="space-y-2 text-sm">
+                        <p class="text-center text-muted py-4">Sem sessões esta semana</p>
+                    </div>
+                </article>
+
+                <!-- Total Geral -->
+                <article class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-4">
+                    <header class="flex items-center gap-2 mb-3">
+                        <svg class="icon h-5 w-5 text-brand-light"><use href="#i-grad"/></svg>
+                        <h3 class="text-sm font-semibold">Total Geral</h3>
+                        <span id="estudar-total-geral" class="ml-auto text-xs font-mono tabular-nums text-brand-light"></span>
+                    </header>
+                    <div id="estudar-total-list" class="space-y-2 text-sm">
+                        <p class="text-center text-muted py-4">Sem registos</p>
+                    </div>
+                </article>
+            </div>
+        </section>
+
         <!-- ══ Vista: PDFs ══ -->
         <section id="view-pdfs" data-panel="pdfs" hidden
-            class="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-card">
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
             <header class="flex flex-wrap items-center gap-2.5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-file-text"/></svg>
                 <h2 class="text-base font-semibold">PDFs</h2>
@@ -492,7 +650,7 @@
 
         <!-- ══ Vista: Semanal ══ -->
         <section id="view-semanal" data-panel="semanal" hidden
-            class="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-card">
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
             <header class="flex flex-wrap items-center gap-2.5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-week"/></svg>
                 <h2 class="text-base font-semibold">Semanal</h2>
@@ -561,7 +719,7 @@
         <!-- ══ Vista: Exames Nacionais ══ -->
         <section id="view-exames" data-panel="exames" hidden
             class="flex flex-col gap-6">
-            <header class="flex flex-wrap items-center gap-2.5 rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5">
+            <header class="flex flex-wrap items-center gap-2.5 glass rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-grad"/></svg>
                 <div class="min-w-0 flex-1">
                     <h2 class="text-base font-semibold">Preparação para Exames Nacionais</h2>
@@ -586,7 +744,7 @@
             </nav>
 
             <!-- 1. 📍 O Que Estudar A Seguir -->
-            <div id="exames-panel-foco" data-exame-panel="foco" role="tabpanel" class="rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="exames-panel-foco" data-exame-panel="foco" role="tabpanel" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-4 flex items-center gap-2.5">
                     <span class="text-base">📍</span>
                     <h3 class="text-base font-semibold">Foco Prioritário</h3>
@@ -669,7 +827,7 @@
             </div>
 
             <!-- 2. 📄 Recursos & Repositório de PDFs -->
-            <div id="exames-panel-recursos" data-exame-panel="recursos" role="tabpanel" hidden class="rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="exames-panel-recursos" data-exame-panel="recursos" role="tabpanel" hidden class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-1 flex flex-wrap items-center gap-2.5">
                     <span class="text-base">📄</span>
                     <h3 class="text-base font-semibold">Recursos &amp; PDFs</h3>
@@ -706,7 +864,7 @@
             </div>
 
             <!-- 3. 📊 Tabela Dinâmica de Acompanhamento -->
-            <div id="exames-panel-track" data-exame-panel="track" role="tabpanel" hidden class="rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="exames-panel-track" data-exame-panel="track" role="tabpanel" hidden class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-4 flex flex-wrap items-center gap-2.5">
                     <span class="text-base">📊</span>
                     <h3 class="text-base font-semibold">Tabela de Acompanhamento</h3>
@@ -761,7 +919,7 @@
             </div>
 
             <!-- 4. ❓ Registo de Dúvidas & Revisão -->
-            <div id="exames-panel-duvidas" data-exame-panel="duvidas" role="tabpanel" hidden class="rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="exames-panel-duvidas" data-exame-panel="duvidas" role="tabpanel" hidden class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-4 flex items-center gap-2.5">
                     <span class="text-base">❓</span>
                     <h3 class="text-base font-semibold">Registo de Dúvidas &amp; Exercícios de Revisão</h3>
@@ -799,7 +957,7 @@
 
         <!-- ══ Vista: Definições ══ -->
         <section id="view-definicoes" data-panel="definicoes" hidden
-            class="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-6 shadow-card">
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
             <header class="flex items-center gap-2.5">
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-settings"/></svg>
                 <h2 class="text-base font-semibold">Definições</h2>
@@ -918,55 +1076,9 @@
         </button>
     </nav>
 
-    <!-- Pomodoro grande (canto inferior esquerdo) -->
-    <aside id="pomo-widget" aria-label="Temporizador Pomodoro"
-        class="fixed bottom-24 left-4 z-40 w-[min(19rem,calc(100vw-2rem))] rounded-3xl border border-line bg-surface p-5 shadow-pop lg:bottom-6">
-        <span id="pomodoro-status" role="status" class="sr-only"></span>
-        <div class="mb-3 flex items-center gap-2">
-            <svg class="icon h-4 w-4 text-brand-light"><use href="#i-tomato"/></svg>
-            <span class="text-[11px] font-semibold uppercase tracking-widest text-muted">Pomodoro</span>
-        </div>
-
-        <div class="mb-4 grid grid-cols-3 gap-1 rounded-full border border-line-soft bg-surface-2 p-1" role="group" aria-label="Modo">
-            <button type="button" data-pomo-mode="foco" aria-selected="true" class="pomo-tab" title="Tempo de foco">Foco</button>
-            <button type="button" data-pomo-mode="curta" aria-selected="false" class="pomo-tab" title="Pausa curta de 5 minutos">Curta</button>
-            <button type="button" data-pomo-mode="longa" aria-selected="false" class="pomo-tab" title="Pausa longa de 15 minutos">Longa</button>
-        </div>
-
-        <p id="pomo-big" class="text-center text-6xl font-extrabold tabular-nums tracking-tight text-fg" role="timer">25:00</p>
-
-        <div class="my-4 h-1 overflow-hidden rounded-full bg-line">
-            <div id="pomo-bar" class="h-full rounded-full bg-gradient-to-r from-brand to-brand-light transition-[width] duration-1000 ease-linear" style="width:0%"></div>
-        </div>
-
-        <button id="pomo-start" type="button"
-            class="flex w-full items-center justify-center gap-2 rounded-full bg-brand py-3 text-base font-bold text-white transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:translate-y-px">
-            <svg class="icon h-5 w-5"><use id="pomo-start-use" href="#i-play"/></svg>
-            <span id="pomo-start-label">Começar</span>
-        </button>
-
-        <div class="mt-3 flex items-center justify-center gap-2">
-            <button id="pomo-reset2" type="button" title="Repor" aria-label="Repor temporizador"
-                class="grid h-9 w-9 place-items-center rounded-full border border-line-soft bg-surface-2 text-muted transition hover:text-fg focus-visible:outline-2 focus-visible:outline-brand">
-                <svg class="icon h-4 w-4"><use href="#i-reset"/></svg>
-            </button>
-            <button id="pomo-skip" type="button" title="Avançar para o próximo modo" aria-label="Avançar"
-                class="grid h-9 w-9 place-items-center rounded-full border border-line-soft bg-surface-2 text-muted transition hover:text-fg focus-visible:outline-2 focus-visible:outline-brand">
-                <svg class="icon h-4 w-4"><use href="#i-skip"/></svg>
-            </button>
-        </div>
-
-        <div class="mt-3 flex items-center justify-center gap-1" role="group" aria-label="Duração do foco">
-            <button type="button" data-pomo-minutes="15" aria-pressed="false" class="pomo-min" title="Foco de 15 minutos">15</button>
-            <button type="button" data-pomo-minutes="25" aria-pressed="true" class="pomo-min" title="Foco de 25 minutos">25</button>
-            <button type="button" data-pomo-minutes="50" aria-pressed="false" class="pomo-min" title="Foco de 50 minutos">50</button>
-            <button type="button" data-pomo-minutes="90" aria-pressed="false" class="pomo-min" title="Foco de 90 minutos">90</button>
-        </div>
-    </aside>
-
     <!-- Evento Semanal -->
     <dialog id="week-form"
-        class="m-auto w-[min(28rem,94vw)] max-w-none overflow-hidden rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        class="m-auto w-[min(28rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
         <form class="flex flex-col" novalidate>
             <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
                 <h3 id="week-form-title" class="flex-1 text-sm font-semibold">Novo compromisso</h3>
@@ -1065,7 +1177,7 @@
 
     <!-- Adicionar PDF ou link -->
     <dialog id="pdf-form"
-        class="m-auto w-[min(34rem,94vw)] max-w-none overflow-hidden rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        class="m-auto w-[min(34rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
         <form class="flex flex-col" novalidate>
             <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
                 <h3 class="flex-1 text-sm font-semibold">Adicionar à galeria</h3>
@@ -1141,7 +1253,7 @@
 
     <!-- Visualizador de PDF -->
     <dialog id="pdf-viewer"
-        class="m-auto w-[min(64rem,94vw)] max-w-none overflow-hidden rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        class="m-auto w-[min(64rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
         <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
             <h3 id="pdf-viewer-title" class="min-w-0 flex-1 truncate text-sm font-semibold">PDF</h3>
             <span class="hidden shrink-0 text-[10px] text-faint sm:inline">F ecrã inteiro · Esc fecha</span>
@@ -1158,12 +1270,31 @@
                 <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
             </button>
         </div>
-        <iframe id="pdf-viewer-frame" title="Visualizar PDF" class="block h-[min(80vh,58rem)] w-full border-0 bg-surface-2"></iframe>
+        <iframe id="pdf-viewer-frame" title="Visualizar PDF" class="block h-[min(62vh,44rem)] w-full border-0 bg-surface-2"></iframe>
+        <div class="border-t border-line bg-surface-2 px-4 py-3">
+            <details id="pdf-cite-details">
+                <summary class="cursor-pointer text-xs font-semibold text-muted transition hover:text-fg">Guardar citação nas Notas do Dia</summary>
+                <div class="mt-2 flex flex-col gap-2">
+                    <textarea id="pdf-cite-text" rows="2" placeholder="Cola aqui a citação ou escreve o resumo…"
+                        class="field w-full text-xs"></textarea>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <label class="flex items-center gap-1.5 text-[11px] text-muted">p.
+                            <input id="pdf-cite-page" type="number" min="1" placeholder="—"
+                                class="field w-20 px-2 py-1.5 text-xs">
+                        </label>
+                        <div class="ml-auto flex gap-1.5">
+                            <button id="pdf-cite-quote" type="button" class="btn-soft text-xs">Guardar citação</button>
+                            <button id="pdf-cite-summary" type="button" class="btn-soft text-xs">Guardar resumo</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
+        </div>
     </dialog>
 
     <!-- Pesquisa global -->
     <dialog id="search-palette"
-        class="m-auto w-[min(36rem,94vw)] max-w-none overflow-hidden rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
+        class="m-auto w-[min(36rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
         <div class="flex items-center gap-2 border-b border-line px-4 py-3">
             <svg class="icon h-4 w-4 shrink-0 text-faint"><use href="#i-search"/></svg>
             <input id="global-search" type="search" placeholder="Pesquisar notas, tarefas, dúvidas…  (Enter abre o 1º)"
@@ -1179,7 +1310,7 @@
 
     <!-- Foco de revisão (flashcards) -->
     <dialog id="review-focus"
-        class="m-auto w-[min(30rem,94vw)] max-w-none overflow-hidden rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
+        class="m-auto w-[min(30rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
         <div class="flex items-center gap-3 border-b border-line px-4 py-3">
             <h3 class="flex-1 text-sm font-semibold">Revisão</h3>
             <span id="review-focus-count" class="text-[11px] tabular-nums text-faint"></span>

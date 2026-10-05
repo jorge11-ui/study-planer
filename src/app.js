@@ -6,20 +6,10 @@ const els = {
     dayPrev: document.getElementById('day-prev'),
     dayNext: document.getElementById('day-next'),
 
-    pomodoro: document.getElementById('pomodoro'),
-    pomodoroIcon: document.getElementById('pomodoro-icon'),
-    pomodoroTime: document.getElementById('pomodoro-time'),
-    pomodoroReset: document.getElementById('pomodoro-reset'),
-    pomodoroStatus: document.getElementById('pomodoro-status'),
-    pomodoroDuration: document.getElementById('pomodoro-duration'),
-    pomodoroDurationToggle: document.getElementById('pomodoro-duration-toggle'),
-    pomodoroDurationMenu: document.getElementById('pomodoro-duration-menu'),
-    pomodoroDurationLabel: document.getElementById('pomodoro-duration-label'),
-    pomodoroPresets: [...document.querySelectorAll('[data-pomodoro-minutes]')],
-
     taskForm: document.getElementById('task-form'),
     taskInput: document.getElementById('task-input'),
     taskSubject: document.getElementById('task-subject'),
+    taskCategory: document.getElementById('task-category'),
     taskList: document.getElementById('task-list'),
     taskEmpty: document.getElementById('task-empty'),
     clearDone: document.getElementById('clear-done'),
@@ -206,6 +196,88 @@ const ReviewSystem = {
     }
 };
 
+/* ── Sessões de Estudo ─────────────────────────────────── */
+
+const SESSIONS_KEY = 'study-journal-sessions';
+
+const StudySessions = {
+    ler() {
+        try {
+            const raw = localStorage.getItem(SESSIONS_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch {
+            return {};
+        }
+    },
+
+    escrever(dados) {
+        try {
+            localStorage.setItem(SESSIONS_KEY, JSON.stringify(dados));
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    adicionarMinutos(subject, minutos, date = new Date()) {
+        const key = dayKey(date);
+        const dados = this.ler();
+        if (!dados[key]) dados[key] = {};
+        dados[key][subject] = (dados[key][subject] || 0) + minutos;
+        this.escrever(dados);
+    },
+
+    obterDoDia(date) {
+        const key = dayKey(date);
+        const dados = this.ler();
+        return dados[key] || {};
+    },
+
+    obterSemana(weekStart) {
+        const dados = this.ler();
+        const resultado = {};
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStart);
+            d.setDate(d.getDate() + i);
+            const key = dayKey(d);
+            const dia = dados[key];
+            if (dia) {
+                Object.entries(dia).forEach(([subject, min]) => {
+                    resultado[subject] = (resultado[subject] || 0) + min;
+                });
+            }
+        }
+        return resultado;
+    },
+
+    obterTotal() {
+        const dados = this.ler();
+        const resultado = {};
+        Object.values(dados).forEach(dia => {
+            Object.entries(dia).forEach(([subject, min]) => {
+                resultado[subject] = (resultado[subject] || 0) + min;
+            });
+        });
+        return resultado;
+    },
+
+    formatar(minutos) {
+        if (minutos >= 60) {
+            const h = Math.floor(minutos / 60);
+            const m = minutos % 60;
+            return m ? `${h}h ${m}m` : `${h}h`;
+        }
+        return `${minutos}m`;
+    },
+
+    getSubjectsWithTime(date) {
+        const dia = this.obterDoDia(date);
+        return Object.entries(dia)
+            .map(([subject, min]) => ({ subject, minutos: min }))
+            .sort((a, b) => b.minutos - a.minutos);
+    }
+};
+
 const HEATMAP_MINUTOS_POR_TAREFA = 3;
 const HEATMAP_NIVEIS = [150, 90, 40];
 let historicoMinutosOk = false;
@@ -232,7 +304,64 @@ function lerEsforcoDoDia(date) {
     const foco = Math.max(0, Number(history[key] || 0));
     const tasks = read(`study-journal-tasks-${key}`, []);
     const concluidas = tasks.filter((t) => t.done).length;
-    return { foco, concluidas, total: foco + concluidas * HEATMAP_MINUTOS_POR_TAREFA };
+    const sessoes = StudySessions.obterDoDia(date);
+    const sessaoTotal = Object.values(sessoes).reduce((a, b) => a + b, 0);
+    return { foco, concluidas, sessoes: sessaoTotal, total: foco + concluidas * HEATMAP_MINUTOS_POR_TAREFA + sessaoTotal };
+}
+
+/* ── Sequência de estudos (streak) ──────────────────────── */
+
+const STREAK_MAX_DIAS = 730;
+
+function diaComAtividade(date) {
+    if (lerEsforcoDoDia(date).total > 0) return true;
+    try {
+        return read(`study-journal-notes-${dayKey(date)}`, '').trim() !== '';
+    } catch {
+        return false;
+    }
+}
+
+/* Dias consecutivos com estudo até hoje (se hoje ainda não tem
+   atividade, começa ontem) + recorde na janela visível. */
+function calcularSequencia() {
+    const cursor = new Date(today);
+    if (!diaComAtividade(cursor)) cursor.setDate(cursor.getDate() - 1);
+
+    let dias = 0;
+    for (let i = 0; i < STREAK_MAX_DIAS; i += 1) {
+        const d = new Date(cursor);
+        d.setDate(d.getDate() - i);
+        if (!diaComAtividade(d)) break;
+        dias += 1;
+    }
+
+    let recorde = dias, seq = 0;
+    for (let i = 0; i < STREAK_MAX_DIAS; i += 1) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        if (diaComAtividade(d)) {
+            seq += 1;
+            if (seq > recorde) recorde = seq;
+        } else {
+            seq = 0;
+        }
+    }
+
+    return { dias, recorde };
+}
+
+function renderStreak() {
+    const num = document.getElementById('streak-num');
+    if (!num) return;
+    const { dias, recorde } = calcularSequencia();
+    num.textContent = String(dias);
+    const best = document.getElementById('streak-best');
+    if (best) {
+        best.textContent = recorde > 0
+            ? `recorde: ${recorde} ${recorde === 1 ? 'dia' : 'dias'}`
+            : 'começa hoje 🔥';
+    }
 }
 
 const StudyStats = {
@@ -293,7 +422,7 @@ const StudyStats = {
             cell.className = 'heatmap-day';
             cell.dataset.n = String(nivel);
             cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
-            cell.title = `${data.toLocaleDateString('pt-PT')}: ${esforco.foco} min de foco${esforco.concluidas ? ` · ${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}` : ''}`;
+            cell.title = `${data.toLocaleDateString('pt-PT')}: ${esforco.foco} min de foco${esforco.concluidas ? ` · ${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}` : ''}${esforco.sessoes ? ` · ${esforco.sessoes} min de sessão` : ''}`;
             if (startOfDay(data).getTime() === today.getTime()) cell.dataset.hoje = 'true';
 
             const num = document.createElement('span');
@@ -447,7 +576,7 @@ const TOAST_DOTS = {
 
 function toast(message, type = 'info', { timeout = 4000 } = {}) {
     const node = document.createElement('div');
-    node.className = `toast pointer-events-auto flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm shadow-pop ${TOAST_STYLES[type]}`;
+    node.className = `toast pointer-events-auto flex items-start gap-2.5 glass-strong rounded-xl border border-line-soft px-4 py-3 text-sm shadow-pop ${TOAST_STYLES[type]}`;
 
     const dot = document.createElement('span');
     dot.className = `mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${TOAST_DOTS[type]}`;
@@ -473,6 +602,7 @@ async function setTaskDone(id, done) {
     task.done = done;
     await syncTasks();
     renderTasks();
+    renderStreak();
 
     if (currentView === 'disciplinas') renderSubjects();
 }
@@ -518,12 +648,25 @@ function renderTasks() {
         chip.className = `chip ${SUBJECTS[task.subject] ?? SUBJECTS['Geral']}`;
         chip.textContent = task.subject;
 
+        const catPainel = categoriaDaTarefa(task);
+        const corPainel = CATEGORIA_CORES[catPainel] || CATEGORIA_CORES.tarefa;
+        const chipCat = document.createElement('span');
+        chipCat.className = 'chip';
+        chipCat.style.background = corPainel.bg;
+        chipCat.style.color = corPainel.text;
+        chipCat.style.border = `1px solid ${corPainel.border}`;
+        chipCat.textContent = CATEGORIA_NOMES[catPainel] || catPainel;
+
+        const chipsRow = document.createElement('div');
+        chipsRow.className = 'flex flex-wrap gap-1.5';
+        chipsRow.append(chip, chipCat);
+
         const body = document.createElement('div');
         body.className = 'flex min-w-0 flex-1 flex-col gap-1.5';
         const line = document.createElement('div');
         line.className = 'flex items-start gap-2.5';
         line.append(checkbox, text);
-        body.append(line, chip);
+        body.append(line, chipsRow);
 
         const remove = document.createElement('button');
         remove.type = 'button';
@@ -564,13 +707,45 @@ function renderProgress() {
     }
 }
 
-async function addTask(text, subject) {
-    tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, done: false });
+async function addTask(text, subject, category = 'tarefa') {
+    tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, category, done: false });
     await syncTasks();
     renderTasks();
     if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
         window.GitHubSync.sync(false).catch(() => {});
     }
+}
+
+const CATEGORIA_CORES = {
+    teste: { bg: 'rgba(251, 113, 133, 0.22)', border: '#fb7185', text: '#fda4af' },
+    tarefa: { bg: 'rgba(74, 222, 128, 0.15)', border: '#4ade80', text: '#86efac' },
+    estudo: { bg: 'rgba(129, 140, 248, 0.18)', border: '#818cf8', text: '#a5b4fc' },
+};
+
+const CATEGORIA_NOMES = { teste: 'Teste', tarefa: 'Tarefa', estudo: 'Estudo' };
+
+/* Tarefas antigas não têm `category`: infere pelo texto para
+   QA-Matematica / Teste-A.I existentes aparecerem a vermelho. */
+function categoriaDaTarefa(task) {
+    if (task && task.category) return task.category;
+    const texto = (task && task.text) || '';
+    if (/teste|\bqa[-\s]|\bexame|\bavalia|\bprova|\bfrequência|\bmini[-\s]?teste/i.test(texto)) return 'teste';
+    if (/revis|\bestud|\bresum|\btrein/i.test(texto)) return 'estudo';
+    return 'tarefa';
+}
+
+/* Remove os blocos de revisão gerados automaticamente (ids `estudo-…`).
+   As tarefas de estudo criadas manualmente têm outro formato de id e ficam. */
+function limparBlocosEstudoGerados() {
+    try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const k = localStorage.key(i);
+            if (!k || !k.startsWith('study-journal-tasks-')) continue;
+            const tarefas = read(k, []);
+            const filtradas = tarefas.filter((t) => !(t && typeof t.id === 'string' && t.id.startsWith('estudo-')));
+            if (filtradas.length !== tarefas.length) write(k, filtradas);
+        }
+    } catch { /* nunca parte o arranque */ }
 }
 
 async function clearDone() {
@@ -614,6 +789,29 @@ function commitNotes() {
         window.GitHubSync.sync(false).catch(() => {});
     }
     StudyStats.renderHeatmap();
+    renderStreak();
+}
+
+/* Anexa texto às notas de hoje (usado pelo visualizador de PDFs). */
+function adicionarANotas(texto) {
+    if (!texto || !texto.trim()) return false;
+    const bloco = texto.trim();
+    try {
+        if (dayKey(selected) === dayKey(today)) {
+            const base = els.notes.value.replace(/\s+$/, '');
+            els.notes.value = base ? `${base}\n${bloco}\n` : `${bloco}\n`;
+            onNotesInput();
+        } else {
+            const chaveHoje = `study-journal-notes-${dayKey(today)}`;
+            const base = read(chaveHoje, '').replace(/\s+$/, '');
+            write(chaveHoje, base ? `${base}\n${bloco}\n` : `${bloco}\n`);
+            toast('Guardado nas notas de hoje.', 'success');
+        }
+        renderStreak();
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function onNotesInput() {
@@ -815,6 +1013,7 @@ function concluirPomodoro() {
         history[key] = (Number(history[key] || 0)) + minutosDoModo(pomodoro.mode);
         write(POMODORO_HISTORY_KEY, history);
         StudyStats.renderHeatmap();
+        renderStreak();
     }
 
     setModoPomodoro(eraFoco ? 'curta' : 'foco');
@@ -992,6 +1191,266 @@ function setPomodoroMinutes(minutes) {
     if (wasRunning) toast(`Pomodoro de ${minutes} min. A contagem recomeçou.`, 'info');
 }
 
+/* ── Sessão de Estudo (Timer) ───────────────────────────── */
+
+const sessionTimer = {
+    minutes: 25,
+    remaining: 25 * 60,
+    running: false,
+    timer: null,
+    deadline: null,
+    subject: 'Matemática A',
+};
+
+const SESSION_PRESETS = [25, 50, 90];
+
+function formatSessionClock(total) {
+    const safe = Math.max(0, Math.ceil(total));
+    const minutes = Math.floor(safe / 60);
+    const seconds = safe % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function renderSessionTimer() {
+    const timeEl = document.getElementById('session-time');
+    const startBtn = document.getElementById('session-start');
+    const pauseBtn = document.getElementById('session-pause');
+    const stopBtn = document.getElementById('session-stop');
+    const startIcon = document.getElementById('session-start-icon');
+    const startText = document.getElementById('session-start-text');
+    const summaryEl = document.getElementById('session-today-summary');
+
+    if (!timeEl) return;
+
+    timeEl.textContent = formatSessionClock(sessionTimer.remaining);
+
+    if (sessionTimer.running) {
+        startBtn.classList.add('hidden');
+        pauseBtn.classList.remove('hidden');
+        stopBtn.classList.remove('hidden');
+        startIcon.setAttribute('href', '#i-pause');
+        startText.textContent = 'Continuar';
+    } else {
+        startBtn.classList.remove('hidden');
+        pauseBtn.classList.add('hidden');
+        stopBtn.classList.add('hidden');
+        startIcon.setAttribute('href', '#i-play');
+        startText.textContent = sessionTimer.remaining < sessionTimer.minutes * 60 ? 'Continuar' : 'Iniciar';
+    }
+
+    document.querySelectorAll('[data-session-preset]').forEach(btn => {
+        const selected = Number(btn.dataset.sessionPreset) === sessionTimer.minutes;
+        btn.classList.toggle('btn-mint', selected);
+        btn.classList.toggle('btn-ghost', !selected);
+        btn.classList.toggle('text-white', selected);
+    });
+
+    // Show today's summary for selected subject
+    const hoje = StudySessions.obterDoDia(new Date());
+    const subjMin = hoje[sessionTimer.subject] || 0;
+    if (subjMin > 0) {
+        summaryEl.textContent = `Hoje: ${StudySessions.formatar(subjMin)} em ${sessionTimer.subject}`;
+        summaryEl.classList.remove('hidden');
+    } else {
+        summaryEl.classList.add('hidden');
+    }
+}
+
+function startSessionTimer() {
+    if (sessionTimer.timer) clearInterval(sessionTimer.timer);
+    if (!(sessionTimer.remaining > 0)) sessionTimer.remaining = sessionTimer.minutes * 60;
+    sessionTimer.deadline = Date.now() + sessionTimer.remaining * 1000;
+    sessionTimer.timer = setInterval(tickSessionTimer, 250);
+    sessionTimer.running = true;
+    renderSessionTimer();
+}
+
+function stopSessionTimer() {
+    if (sessionTimer.timer) clearInterval(sessionTimer.timer);
+    sessionTimer.timer = null;
+    if (sessionTimer.running && sessionTimer.deadline) {
+        sessionTimer.remaining = Math.max(0, Math.ceil((sessionTimer.deadline - Date.now()) / 1000));
+    }
+    sessionTimer.deadline = null;
+    sessionTimer.running = false;
+    renderSessionTimer();
+}
+
+function tickSessionTimer() {
+    if (!sessionTimer.deadline) return;
+    const restam = Math.max(0, Math.ceil((sessionTimer.deadline - Date.now()) / 1000));
+
+    if (restam <= 0) {
+        sessionTimer.remaining = 0;
+        renderSessionTimer();
+        if (currentView === 'estudar') renderEstudarView();
+        stopSessionTimer();
+        playAlarm();
+        concluirSessao();
+        return;
+    }
+
+    if (restam === sessionTimer.remaining) return;
+    sessionTimer.remaining = restam;
+    renderSessionTimer();
+    if (currentView === 'estudar') renderEstudarView();
+}
+
+function concluirSessao() {
+    const minutosCompletos = sessionTimer.minutes;
+    StudySessions.adicionarMinutos(sessionTimer.subject, minutosCompletos);
+    toast(`Sessão de ${minutosCompletos} min concluída em ${sessionTimer.subject}!`, 'success');
+    StudyStats.renderHeatmap();
+    renderStreak();
+    if (currentView === 'calendario') renderCalendar();
+    if (currentView === 'disciplinas') renderSubjects();
+    if (currentView === 'estudar') renderEstudarView();
+    sessionTimer.remaining = sessionTimer.minutes * 60;
+    renderSessionTimer();
+}
+
+function setSessionMinutes(minutes) {
+    if (!SESSION_PRESETS.includes(minutes)) return;
+    if (minutes === sessionTimer.minutes && !sessionTimer.running) {
+        sessionTimer.minutes = minutes;
+        sessionTimer.remaining = minutes * 60;
+        renderSessionTimer();
+        return;
+    }
+
+    const wasRunning = sessionTimer.running;
+    stopSessionTimer();
+    sessionTimer.minutes = minutes;
+    sessionTimer.remaining = minutes * 60;
+
+    if (wasRunning) startSessionTimer();
+    else renderSessionTimer();
+}
+
+function toggleSessionTimer() {
+    if (sessionTimer.running) {
+        stopSessionTimer();
+        return;
+    }
+    startSessionTimer();
+}
+
+function setSessionSubject(subject) {
+    sessionTimer.subject = subject;
+    renderSessionTimer();
+}
+
+function renderEstudarView() {
+    // Sync subject selector with session timer
+    const subjectSelect = document.getElementById('estudar-subject');
+    if (subjectSelect) {
+        subjectSelect.value = sessionTimer.subject;
+    }
+
+    // Render timer
+    const timerEl = document.getElementById('estudar-timer');
+    const startBtn = document.getElementById('estudar-start');
+    const pauseBtn = document.getElementById('estudar-pause');
+    const stopBtn = document.getElementById('estudar-stop');
+    const startIcon = document.getElementById('estudar-start-icon');
+    const startText = document.getElementById('estudar-start-text');
+
+    if (timerEl) {
+        timerEl.textContent = formatSessionClock(sessionTimer.remaining);
+
+        if (sessionTimer.running) {
+            startBtn.classList.add('hidden');
+            pauseBtn.classList.remove('hidden');
+            stopBtn.classList.remove('hidden');
+            startIcon.setAttribute('href', '#i-pause');
+            startText.textContent = 'Continuar';
+        } else {
+            startBtn.classList.remove('hidden');
+            pauseBtn.classList.add('hidden');
+            stopBtn.classList.add('hidden');
+            startIcon.setAttribute('href', '#i-play');
+            startText.textContent = sessionTimer.remaining < sessionTimer.minutes * 60 ? 'Continuar' : 'Iniciar';
+        }
+    }
+
+    // Preset buttons
+    document.querySelectorAll('[data-estudar-preset]').forEach(btn => {
+        const selected = Number(btn.dataset.estudarPreset) === sessionTimer.minutes;
+        btn.classList.toggle('btn-mint', selected);
+        btn.classList.toggle('btn-ghost', !selected);
+        btn.classList.toggle('text-white', selected);
+    });
+
+    // Hoje
+    const hoje = StudySessions.obterDoDia(new Date());
+    const hojeList = document.getElementById('estudar-hoje-list');
+    const hojeTotal = document.getElementById('estudar-hoje-total');
+    const hojeTotalMin = Object.values(hoje).reduce((a, b) => a + b, 0);
+    if (hojeTotal) hojeTotal.textContent = StudySessions.formatar(hojeTotalMin);
+    if (hojeList) {
+        if (Object.keys(hoje).length === 0) {
+            hojeList.innerHTML = '<p class="text-center text-muted py-4">Sem sessões hoje</p>';
+        } else {
+            hojeList.innerHTML = Object.entries(hoje)
+                .sort((a, b) => b[1] - a[1])
+                .map(([subject, min]) => {
+                    const colorClass = SUBJECTS[subject] ?? SUBJECTS['Geral'];
+                    return `<div class="flex items-center justify-between gap-2">
+                        <span class="chip ${colorClass} text-xs">${subject}</span>
+                        <span class="font-mono tabular-nums text-fg">${StudySessions.formatar(min)}</span>
+                    </div>`;
+                }).join('');
+        }
+    }
+
+    // Esta Semana
+    const semanaInicio = new Date();
+    semanaInicio.setDate(semanaInicio.getDate() - semanaInicio.getDay() + (semanaInicio.getDay() === 0 ? -6 : 1));
+    semanaInicio.setHours(0, 0, 0, 0);
+    const semana = StudySessions.obterSemana(semanaInicio);
+    const semanaList = document.getElementById('estudar-semana-list');
+    const semanaTotal = document.getElementById('estudar-semana-total');
+    const semanaTotalMin = Object.values(semana).reduce((a, b) => a + b, 0);
+    if (semanaTotal) semanaTotal.textContent = StudySessions.formatar(semanaTotalMin);
+    if (semanaList) {
+        if (Object.keys(semana).length === 0) {
+            semanaList.innerHTML = '<p class="text-center text-muted py-4">Sem sessões esta semana</p>';
+        } else {
+            semanaList.innerHTML = Object.entries(semana)
+                .sort((a, b) => b[1] - a[1])
+                .map(([subject, min]) => {
+                    const colorClass = SUBJECTS[subject] ?? SUBJECTS['Geral'];
+                    return `<div class="flex items-center justify-between gap-2">
+                        <span class="chip ${colorClass} text-xs">${subject}</span>
+                        <span class="font-mono tabular-nums text-fg">${StudySessions.formatar(min)}</span>
+                    </div>`;
+                }).join('');
+        }
+    }
+
+    // Total Geral
+    const total = StudySessions.obterTotal();
+    const totalList = document.getElementById('estudar-total-list');
+    const totalGeral = document.getElementById('estudar-total-geral');
+    const totalGeralMin = Object.values(total).reduce((a, b) => a + b, 0);
+    if (totalGeral) totalGeral.textContent = StudySessions.formatar(totalGeralMin);
+    if (totalList) {
+        if (Object.keys(total).length === 0) {
+            totalList.innerHTML = '<p class="text-center text-muted py-4">Sem registos</p>';
+        } else {
+            totalList.innerHTML = Object.entries(total)
+                .sort((a, b) => b[1] - a[1])
+                .map(([subject, min]) => {
+                    const colorClass = SUBJECTS[subject] ?? SUBJECTS['Geral'];
+                    return `<div class="flex items-center justify-between gap-2">
+                        <span class="chip ${colorClass} text-xs">${subject}</span>
+                        <span class="font-mono tabular-nums text-fg">${StudySessions.formatar(min)}</span>
+                    </div>`;
+                }).join('');
+        }
+    }
+}
+
 /* ── Vault (Obsidian) ─────────────────────────────────── */
 
 const VAULT_LABELS = {
@@ -1055,7 +1514,7 @@ function showConflict({ name, path, current }, retry) {
     overlay.className = 'fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm';
 
     const card = document.createElement('div');
-    card.className = 'flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-line bg-surface p-5 shadow-pop';
+    card.className = 'flex w-full max-w-lg flex-col gap-4 glass-strong rounded-2xl border border-line bg-surface p-5 shadow-pop';
 
     const title = document.createElement('h3');
     title.className = 'text-base font-semibold';
@@ -1202,6 +1661,7 @@ const VIEW_LABELS = {
     painel: 'Painel',
     calendario: 'Calendário',
     disciplinas: 'Disciplinas',
+    estudar: 'Estudar',
     pdfs: 'PDFs',
     semanal: 'Semanal',
     exames: 'Exames Nacionais',
@@ -1232,9 +1692,11 @@ function showView(view) {
     if (view === 'painel') {
         StudyStats.renderHeatmap();
         StudyStats.renderReviewQueue();
+        renderSessionTimer();
     }
     if (view === 'calendario') renderCalendar();
     if (view === 'disciplinas') renderSubjects();
+    if (view === 'estudar') renderEstudarView();
     if (view === 'definicoes') renderSettings();
     if (view === 'pdfs') Pdfs.ligar();
     if (view === 'semanal') Weekly.ligar();
@@ -1341,7 +1803,7 @@ function renderCalendar() {
         // Show "+N more" if more tasks
         if (tasks.length > 3) {
             const moreEl = document.createElement('div');
-            moreEl.className = 'text-[10px] text-muted text-center py-0.5';
+            moreEl.className = 'text-[11px] text-muted text-center py-0.5';
             moreEl.textContent = `+${tasks.length - 3} mais`;
             moreEl.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1353,7 +1815,7 @@ function renderCalendar() {
         // Show notes indicator
         if (notes.trim()) {
             const notesEl = document.createElement('div');
-            notesEl.className = 'text-[10px] text-brand/70 text-center py-0.5 border-t border-brand/20 mt-1';
+            notesEl.className = 'text-[11px] text-brand/70 text-center py-0.5 border-t border-brand/20 mt-1';
             notesEl.innerHTML = '<svg class="icon inline h-3 w-3 mr-0.5"><use href="#i-file-text"/></svg> Notas';
             notesEl.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1390,11 +1852,16 @@ function renderCalendar() {
 
 function createCalendarTaskElement(task, key, date) {
     const el = document.createElement('div');
-    el.className = 'calendar-task flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium truncate cursor-pointer transition hover:shadow-sm';
-    el.style.backgroundColor = `var(${SUBJECTS[task.subject]?.replace('bg-', '').replace(' text-muted', '') || '--color-brand'})`;
-    el.style.color = task.subject === 'Geral' ? 'var(--color-fg)' : 'white';
+    el.className = 'calendar-task flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium truncate cursor-pointer transition hover:shadow-sm';
+
+    const categoria = categoriaDaTarefa(task);
+    const cat = CATEGORIA_CORES[categoria] || CATEGORIA_CORES.tarefa;
+    el.style.backgroundColor = cat.bg;
+    el.style.borderLeft = `3px solid ${cat.border}`;
+    el.style.color = cat.text;
+
     el.dataset.taskId = task.id;
-    el.title = task.text;
+    el.title = `[${(CATEGORIA_NOMES[categoria] || categoria).toUpperCase()}] ${task.text}`;
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -1443,7 +1910,7 @@ function createCalendarTaskElement(task, key, date) {
 function showInlineTaskForm(cell, key, date) {
     // Use a modal dialog instead of inline form to avoid z-index/overflow issues
     const dlg = document.createElement('dialog');
-    dlg.className = 'm-auto w-[min(22rem,90vw)] rounded-2xl border border-line bg-surface p-0 shadow-pop';
+    dlg.className = 'm-auto w-[min(22rem,90vw)] glass-strong rounded-2xl border border-line bg-surface p-0 shadow-pop';
     dlg.innerHTML = `
         <form class="flex flex-col" novalidate>
             <div class="flex items-center gap-3 border-b border-line px-4 py-3">
@@ -1465,6 +1932,14 @@ function showInlineTaskForm(cell, key, date) {
                         <option>Biologia</option>
                         <option>Português</option>
                         <option>Aplicações Informáticas (A.I.)</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[11px] font-medium text-muted" for="inline-task-category">Categoria</label>
+                    <select id="inline-task-category" class="field text-sm">
+                        <option value="tarefa">🟢 Tarefa / Entrega</option>
+                        <option value="estudo">🔵 Bloco de estudo / Revisão</option>
+                        <option value="teste">🔴 Teste / Avaliação</option>
                     </select>
                 </div>
             </div>
@@ -1498,15 +1973,18 @@ function showInlineTaskForm(cell, key, date) {
         e.preventDefault();
         const title = input.value.trim();
         const subject = dlg.querySelector('#inline-task-subject').value;
+        const category = dlg.querySelector('#inline-task-category')?.value || 'tarefa';
         if (!title) return;
 
         const tasks = read(`study-journal-tasks-${key}`, []);
-        tasks.push({ 
-            id: `${Date.now()}-${tasks.length}`, 
-            text: title, 
-            subject, 
-            done: false 
-        });
+        const nova = {
+            id: `${Date.now()}-${tasks.length}`,
+            text: title,
+            subject,
+            category,
+            done: false,
+        };
+        tasks.push(nova);
         write(`study-journal-tasks-${key}`, tasks);
         close();
         renderCalendar();
@@ -1547,7 +2025,7 @@ function createDayTasksDialog(date, key) {
     const dlg = document.createElement('dialog');
     dlg.id = 'day-tasks-dlg';
     dlg.dataset.dateKey = key;
-    dlg.className = 'm-auto w-[min(28rem,94vw)] rounded-2xl border border-line bg-surface p-0 shadow-pop';
+    dlg.className = 'm-auto w-[min(28rem,94vw)] glass-strong rounded-2xl border border-line bg-surface p-0 shadow-pop';
     dlg.innerHTML = `
         <div class="flex flex-col">
             <div class="flex items-center gap-3 border-b border-line px-4 py-3">
@@ -1559,7 +2037,7 @@ function createDayTasksDialog(date, key) {
             <div id="day-tasks-list" class="flex flex-col gap-2 p-4 max-h-[60vh] overflow-auto"></div>
             <div class="border-t border-line px-4 py-3">
                 <form id="day-tasks-add-form" class="flex flex-col gap-2">
-                    <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <div class="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                         <input id="day-tasks-title" type="text" placeholder="Nova tarefa..." class="field w-full text-sm" autocomplete="off" required>
                         <select id="day-tasks-subject" class="field w-full sm:w-auto text-sm">
                             <option>Geral</option>
@@ -1567,6 +2045,11 @@ function createDayTasksDialog(date, key) {
                             <option>Biologia</option>
                             <option>Português</option>
                             <option>Aplicações Informáticas (A.I.)</option>
+                        </select>
+                        <select id="day-tasks-category" class="field w-full sm:w-auto text-sm" title="Categoria">
+                            <option value="tarefa">🟢 Tarefa</option>
+                            <option value="estudo">🔵 Estudo</option>
+                            <option value="teste">🔴 Teste</option>
                         </select>
                     </div>
                     <div class="flex justify-end gap-2">
@@ -1596,16 +2079,19 @@ function bindDayTasksDialog(dlg) {
         const key = dlg.dataset.dateKey;
         const title = dlg.querySelector('#day-tasks-title').value.trim();
         const subject = dlg.querySelector('#day-tasks-subject').value;
-        
+        const category = dlg.querySelector('#day-tasks-category')?.value || 'tarefa';
+
         if (!title) return;
-        
+
         const tasks = read(`study-journal-tasks-${key}`, []);
-        tasks.push({ 
-            id: `${Date.now()}-${tasks.length}`, 
-            text: title, 
-            subject, 
-            done: false 
-        });
+        const nova = {
+            id: `${Date.now()}-${tasks.length}`,
+            text: title,
+            subject,
+            category,
+            done: false,
+        };
+        tasks.push(nova);
         write(`study-journal-tasks-${key}`, tasks);
         
         // Update vault if connected
@@ -1655,11 +2141,16 @@ function renderDayTasksInDialog(key) {
     tasks.forEach(task => {
         const taskEl = document.createElement('div');
         taskEl.className = `flex items-start gap-2.5 rounded-lg border border-line bg-surface p-2.5 transition hover:border-brand/30 ${task.done ? 'opacity-50' : ''}`;
+        const catDlg = categoriaDaTarefa(task);
+        const corDlg = CATEGORIA_CORES[catDlg] || CATEGORIA_CORES.tarefa;
         taskEl.innerHTML = `
             <input type="checkbox" class="task-check mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-brand" ${task.done ? 'checked' : ''} data-id="${task.id}">
             <div class="flex-1 min-w-0">
                 <p class="text-sm ${task.done ? 'line-through text-muted' : 'text-fg'}">${escapeHtml(task.text)}</p>
-                <span class="chip ${SUBJECTS[task.subject] ?? SUBJECTS['Geral']}">${task.subject}</span>
+                <span class="flex flex-wrap gap-1.5">
+                    <span class="chip ${SUBJECTS[task.subject] ?? SUBJECTS['Geral']}">${task.subject}</span>
+                    <span class="chip" style="background:${corDlg.bg};color:${corDlg.text};border:1px solid ${corDlg.border}">${CATEGORIA_NOMES[catDlg] || catDlg}</span>
+                </span>
             </div>
             <button type="button" class="task-remove shrink-0 rounded-lg p-1 text-faint opacity-0 hover:opacity-100 hover:bg-surface-2 hover:text-subject-rose" data-id="${task.id}" aria-label="Apagar tarefa">
                 <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
@@ -1732,6 +2223,7 @@ function renderSubjects() {
     });
 
     const stats = allTimeStats();
+    const sessoesHoje = StudySessions.obterDoDia(selected);
     els.subjectsTotal.textContent = stats.days
         ? `${stats.tasks} tarefas registadas em ${stats.days} ${stats.days === 1 ? 'dia' : 'dias'}.`
         : 'Ainda não há registos.';
@@ -1756,9 +2248,10 @@ function renderSubjects() {
     groups.forEach((list, subject) => {
         const done = list.filter((t) => t.done).length;
         const total = stats.perSubject.get(subject) || 0;
+        const sessaoMin = sessoesHoje[subject] || 0;
 
         const card = document.createElement('article');
-        card.className = 'flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4';
+        card.className = 'flex flex-col gap-3 glass-subtle rounded-xl border border-line-soft bg-surface-2 p-4';
 
         const head = document.createElement('div');
         head.className = 'flex items-center gap-2';
@@ -1769,7 +2262,8 @@ function renderSubjects() {
 
         const counter = document.createElement('span');
         counter.className = 'ml-auto text-[11px] tabular-nums text-faint';
-        counter.textContent = `${done}/${list.length} · ${total} no total`;
+        const sessaoText = sessaoMin ? ` · ${StudySessions.formatar(sessaoMin)} sessão` : '';
+        counter.textContent = `${done}/${list.length} · ${total} no total${sessaoText}`;
 
         head.append(chip, counter);
 
@@ -1817,7 +2311,7 @@ function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
         overlay.className = 'fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm';
 
         const card = document.createElement('div');
-        card.className = 'flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-line bg-surface p-5 shadow-pop';
+        card.className = 'flex w-full max-w-sm flex-col gap-4 glass-strong rounded-2xl border border-line bg-surface p-5 shadow-pop';
 
         const heading = document.createElement('h3');
         heading.className = 'text-base font-semibold';
@@ -2021,6 +2515,9 @@ async function loadDay() {
 
     renderDate();
     renderTasks();
+    limparBlocosEstudoGerados();
+    renderStreak();
+    renderSessionTimer();
 
     if (currentView === 'calendario') renderCalendar();
     if (currentView === 'disciplinas') renderSubjects();
@@ -2119,12 +2616,37 @@ function bind() {
         tab.addEventListener('click', () => setModoPomodoro(tab.dataset.pomoMode));
     });
 
-    document.getElementById('pomo-start')?.addEventListener('click', togglePomodoro);
-    document.getElementById('pomo-reset2')?.addEventListener('click', resetPomodoro);
-    document.getElementById('pomo-skip')?.addEventListener('click', skipPomodoro);
+    // Session Timer
+    document.getElementById('session-start')?.addEventListener('click', toggleSessionTimer);
+    document.getElementById('session-pause')?.addEventListener('click', toggleSessionTimer);
+    document.getElementById('session-stop')?.addEventListener('click', () => {
+        stopSessionTimer();
+        sessionTimer.remaining = sessionTimer.minutes * 60;
+        renderSessionTimer();
+    });
+    document.getElementById('session-subject')?.addEventListener('change', (e) => setSessionSubject(e.target.value));
+    document.querySelectorAll('[data-session-preset]').forEach((btn) => {
+        btn.addEventListener('click', () => setSessionMinutes(Number(btn.dataset.sessionPreset)));
+    });
 
-    document.querySelectorAll('[data-pomo-minutes]').forEach((btn) => {
-        btn.addEventListener('click', () => setPomodoroMinutes(Number(btn.dataset.pomoMinutes)));
+    // Estudar View Timer
+    document.getElementById('estudar-start')?.addEventListener('click', toggleSessionTimer);
+    document.getElementById('estudar-pause')?.addEventListener('click', toggleSessionTimer);
+    document.getElementById('estudar-stop')?.addEventListener('click', () => {
+        stopSessionTimer();
+        sessionTimer.remaining = sessionTimer.minutes * 60;
+        renderSessionTimer();
+        renderEstudarView();
+    });
+    document.getElementById('estudar-subject')?.addEventListener('change', (e) => {
+        setSessionSubject(e.target.value);
+        renderEstudarView();
+    });
+    document.querySelectorAll('[data-estudar-preset]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            setSessionMinutes(Number(btn.dataset.estudarPreset));
+            renderEstudarView();
+        });
     });
 
     els.taskForm.addEventListener('submit', async (event) => {
@@ -2133,7 +2655,8 @@ function bind() {
         const text = els.taskInput.value.trim();
         if (!text) return;
 
-        await addTask(text, els.taskSubject.value);
+        const category = document.getElementById('task-category')?.value || 'tarefa';
+        await addTask(text, els.taskSubject.value, category);
         els.taskInput.value = '';
         els.taskInput.focus();
     });
@@ -2337,10 +2860,14 @@ function bind() {
     window.addEventListener('beforeunload', savePomoState);
 
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && pomodoro.running) tickPomodoro();
+        if (document.visibilityState === 'visible') {
+            if (pomodoro.running) tickPomodoro();
+            if (sessionTimer.running) tickSessionTimer();
+        }
     });
     window.addEventListener('focus', () => {
         if (pomodoro.running) tickPomodoro();
+        if (sessionTimer.running) tickSessionTimer();
     });
 }
 
@@ -2403,6 +2930,7 @@ async function init() {
     ReviewSystem.migrar();
     StudyStats.renderHeatmap();
     StudyStats.renderReviewQueue();
+    renderSessionTimer();
     if (window.NotasPro) window.NotasPro.ligar();
 
     // Callback para sync GitHub quando Weekly salva
@@ -2521,6 +3049,7 @@ function configurePublicGist() {
 
 window.StudyJournal = {
     abrirDia: abrirDiaChave,
+    adicionarANotas,
     irAExames() { showView('exames'); },
     irAPainel() { showView('painel'); },
 };

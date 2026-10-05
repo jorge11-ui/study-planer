@@ -56,7 +56,7 @@ function miniToast(msg) {
     const box = document.getElementById('toasts');
     if (!box) return;
     const n = document.createElement('div');
-    n.className = 'toast pointer-events-auto rounded-xl border border-line bg-surface-2 px-4 py-2 text-sm';
+    n.className = 'toast pointer-events-auto glass-subtle rounded-xl border border-line bg-surface-2 px-4 py-2 text-sm';
     n.textContent = msg;
     box.append(n);
     setTimeout(() => n.remove(), 2500);
@@ -632,6 +632,7 @@ if (document.readyState === 'loading') {
 
 window.Exames = {
     ligar,
+    lerDataAlvo,
     lerTudo() {
         return {
             foco: exRead(FOCO_KEY, {}),

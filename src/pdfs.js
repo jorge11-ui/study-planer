@@ -28,6 +28,7 @@ window.Pdfs = (() => {
     let filtroActivo = 'todos';
     let termos = '';
     let urls = new Map();
+    let docAberto = null;
 
     /* ── IndexedDB: os bytes dos PDFs ───────────────────── */
 
@@ -409,6 +410,12 @@ window.Pdfs = (() => {
         const doc = porId(id);
         if (!doc) return;
 
+        docAberto = doc;
+        const campoTexto = document.getElementById('pdf-cite-text');
+        if (campoTexto) campoTexto.value = '';
+        const campoPagina = document.getElementById('pdf-cite-page');
+        if (campoPagina) campoPagina.value = '';
+
         const url = await urlDe(doc);
         if (!url) {
             toast('O ficheiro já não está no browser.', 'error');
@@ -439,12 +446,45 @@ window.Pdfs = (() => {
 
     function fechar() {
         const dlg = dialogo();
+        docAberto = null;
         if (!dlg.open) {
             frame().src = 'about:blank';
             return;
         }
         aplicarMax(false);
         dlg.close();
+    }
+
+    /* Citações e resumos: o visor nativo não permite sublinhar, por isso
+       cola-se aqui o trecho e ele segue formatado para as Notas do Dia. */
+    function guardarCitacao(tipo) {
+        const campo = document.getElementById('pdf-cite-text');
+        const texto = (campo?.value || '').trim();
+        if (!texto) {
+            toast('Escreve ou cola primeiro a citação.', 'warn');
+            campo?.focus();
+            return;
+        }
+
+        const pagina = (document.getElementById('pdf-cite-page')?.value || '').trim();
+        const titulo = docAberto?.titulo || 'PDF';
+        const data = new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
+        const onde = pagina ? `, p. ${pagina}` : '';
+
+        const md = tipo === 'resumo'
+            ? `**Resumo — ${titulo}${onde} (${data}):** ${texto.replace(/\s+/g, ' ')}`
+            : `> ${texto.replace(/\n/g, '\n> ')}\n> — ${titulo}${onde} (${data})`;
+
+        const ok = window.StudyJournal && typeof window.StudyJournal.adicionarANotas === 'function'
+            ? window.StudyJournal.adicionarANotas(md)
+            : false;
+
+        if (ok) {
+            campo.value = '';
+            toast(tipo === 'resumo' ? 'Resumo guardado nas Notas do Dia.' : 'Citação guardada nas Notas do Dia.', 'success');
+        } else {
+            toast('Não foi possível guardar nas notas.', 'error');
+        }
     }
 
     /* Ecrã inteiro: pede-se o nativo e, em paralelo, aplica-se a classe
@@ -768,6 +808,11 @@ window.Pdfs = (() => {
 
             const botaoMax = document.getElementById('pdf-viewer-full');
             if (botaoMax) botaoMax.addEventListener('click', () => alternarMax());
+
+            const botaoCitacao = document.getElementById('pdf-cite-quote');
+            if (botaoCitacao) botaoCitacao.addEventListener('click', () => guardarCitacao('citacao'));
+            const botaoResumo = document.getElementById('pdf-cite-summary');
+            if (botaoResumo) botaoResumo.addEventListener('click', () => guardarCitacao('resumo'));
 
             // Depois de o PDF carregar, o foco salta para o iframe:
             // recupera-se o diálogo e passa-se a escutar as teclas lá dentro.
