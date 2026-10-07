@@ -1,0 +1,28 @@
+# StudyJournal no Render — deploy com conta única + sync entre aparelhos.
+#
+# 1. No dashboard do Render: New → Blueprint → aponta para este repo.
+# 2. Preenche SYNC_USER e SYNC_PASS quando o Render pedir ( Environment ).
+# 3. IMPORTANTE: o plano free tem disco efémero — cada restart APAGA o
+#    sync (data/sync.json) e as sessões. Para a conta funcionar a sério
+#    usa um plano pago (Starter) com o disco abaixo. Sem disco, serve só
+#    para experimentar: funciona enquanto o serviço não reiniciar.
+
+services:
+  - type: web
+    name: study-journal
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: SYNC_USER
+        sync: false
+      - key: SYNC_PASS
+        sync: false
+    # Descomenta o disco (e usa plano Starter ou superior) para o sync
+    # sobreviver a restarts/redeploys. Sem isto, o free apaga data/.
+    # disk:
+    #   name: study-data
+    #   mountPath: /opt/render/project/src/data
+    #   sizeGB: 1
