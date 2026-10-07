@@ -298,7 +298,7 @@
             </div>
 
             <textarea id="journal-text" spellcheck="true"
-                placeholder="O que aprendeste hoje? Quais as dúvidas para a próxima aula?"
+                placeholder="O que aprendeste hoje? Quais as dúvidas para a próxima aula? (podes colar imagens)"
                 class="field min-h-[300px] flex-1 resize-y py-3 font-mono text-[13px] leading-relaxed lg:min-h-[380px]"></textarea>
             <div id="notes-preview" hidden
                 class="field min-h-[300px] flex-1 overflow-auto py-3 text-[13px] leading-relaxed lg:min-h-[380px]"></div>
@@ -984,6 +984,53 @@
                     </div>
                 </div>
 
+                <!-- Conta StudyJournal (uma conta, vários aparelhos) -->
+                <div class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
+                    <h3 class="text-sm font-semibold">Conta StudyJournal</h3>
+                    <p class="text-xs leading-relaxed text-muted">
+                        Uma conta para todos os aparelhos: entra uma vez em cada um e as notas,
+                        tarefas e semanais atualizam sozinhos.
+                    </p>
+                    <p id="conta-dica" class="text-xs leading-relaxed text-faint"></p>
+
+                    <div id="conta-login" class="flex flex-col gap-3">
+                        <div class="grid gap-2 sm:grid-cols-2">
+                            <div class="flex flex-col gap-1.5">
+                                <label class="week-label" for="conta-user">Utilizador</label>
+                                <input id="conta-user" type="text" placeholder="O teu utilizador" class="field w-full text-sm" autocomplete="username">
+                            </div>
+                            <div class="flex flex-col gap-1.5">
+                                <label class="week-label" for="conta-pass">Palavra-passe</label>
+                                <input id="conta-pass" type="password" placeholder="••••••••" class="field w-full text-sm" autocomplete="current-password">
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="conta-entrar" type="button" class="btn-primary">
+                                <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>
+                                <span>Entrar e sincronizar</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="conta-ativa" hidden class="flex flex-col gap-3">
+                        <div class="flex items-center gap-2 text-xs text-muted">
+                            <span class="w-1.5 h-1.5 rounded-full bg-mint"></span>
+                            <span id="conta-status">Ligado</span>
+                            <span id="conta-last-sync" class="ml-auto"></span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="conta-sync-now" type="button" class="btn-soft">
+                                <svg class="icon h-3.5 w-3.5"><use href="#i-refresh"/></svg>
+                                <span>Sincronizar agora</span>
+                            </button>
+                            <button id="conta-sair" type="button" class="btn-soft btn-soft-danger">
+                                <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
+                                <span>Sair</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Sincronização GitHub -->
                 <div class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
                     <h3 class="text-sm font-semibold">Sincronização GitHub (Gist)</h3>
@@ -1332,8 +1379,10 @@
     <script src="src/pdfs.js?v=3"></script>
     <script src="src/weekly.js?v=3"></script>
     <script src="src/github-sync.js?v=3"></script>
+    <script src="src/conta-sync.js?v=1"></script>
     <script src="src/exames.js?v=2"></script>
     <script src="src/notas.js?v=2"></script>
+    <script src="src/imagens.js?v=1"></script>
     <script src="src/app.js?v=4"></script>
 </body>
 </html>

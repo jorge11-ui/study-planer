@@ -341,6 +341,10 @@
         @apply mt-auto flex gap-1 pt-1;
     }
 
+    .md-img {
+        @apply mt-2 max-w-full rounded-xl border border-line;
+    }
+
     .pdf-action {
         @apply inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium no-underline transition
             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;

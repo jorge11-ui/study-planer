@@ -7,7 +7,7 @@
     "start": "node serve.js",
     "build": "tailwindcss -i src/input.css -o app.css",
     "dev": "tailwindcss -i src/input.css -o app.css --watch",
-    "check": "node --check serve.js && node --check src/app.js && node --check src/vault.js && node --check src/pdfs.js && node --check src/weekly.js && node --check src/github-sync.js && node --check src/exames.js && node --check src/notas.js"
+    "check": "node --check serve.js && node --check src/app.js && node --check src/vault.js && node --check src/pdfs.js && node --check src/weekly.js && node --check src/github-sync.js && node --check src/conta-sync.js && node --check src/exames.js && node --check src/notas.js && node --check src/imagens.js"
   },
   "keywords": [],
   "author": "",

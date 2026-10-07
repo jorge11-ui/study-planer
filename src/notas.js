@@ -73,7 +73,9 @@ window.NotasPro = (() => {
     }
 
     function trecho(texto, pos, raio = 70) {
-        const limpo = String(texto || '').replace(/\s+/g, ' ').trim();
+        // dataURLs de imagens coladas não cabem num excerto
+        const semImagens = String(texto || '').replace(/!\[[^\]]*\]\(data:image\/[^)]*\)/g, '[imagem]');
+        const limpo = semImagens.replace(/\s+/g, ' ').trim();
         if (limpo.length <= raio * 2) return limpo;
         const inicio = Math.max(0, pos - raio);
         const fim = Math.min(limpo.length, pos + raio);
@@ -160,6 +162,7 @@ window.NotasPro = (() => {
         let lista = [];
 
         const inline = (s) => s
+            .replace(/!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g, '<img src="$2" alt="$1" class="md-img" loading="lazy">')
             .replace(/`([^`]+)`/g, '<code class="rounded bg-surface-3 px-1 font-mono text-[12px]">$1</code>')
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
             .replace(/(^|\W)_([^_]+)_/g, '$1<em>$2</em>')

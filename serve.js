@@ -11,6 +11,7 @@
 
 const http = require('node:http');
 const https = require('node:https');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -22,6 +23,7 @@ const FOLDER = 'Diario';
 const DAY_NAME = /^\d{4}-\d{2}-\d{2}\.md$/;
 const CONFIG_NAME = /^(tasks|pdfs)\.json$/;
 const MAX_BODY = 2 * 1024 * 1024;
+const SYNC_MAX_BODY = 8 * 1024 * 1024;
 
 const TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -85,14 +87,14 @@ function json(res, status, data) {
     }).end(JSON.stringify(data));
 }
 
-function readBody(req) {
+function readBody(req, limite = MAX_BODY) {
     return new Promise((resolve, reject) => {
         const chunks = [];
         let size = 0;
 
         req.on('data', (chunk) => {
             size += chunk.length;
-            if (size > MAX_BODY) {
+            if (size > limite) {
                 req.destroy();
                 reject(new Error('corpo demasiado grande'));
                 return;
@@ -161,6 +163,195 @@ async function api(req, res, url) {
     json(res, 404, { ok: false, reason: 'rota' });
 }
 
+/* ── Conta única + sync entre aparelhos ────────────────────
+   Uma só conta (SYNC_USER/SYNC_PASS no ambiente) partilhada pelos
+   aparelhos. O servidor guarda o documento canónico em data/sync.json
+   com revisão (rev); pushes sobre revisões antigas são recusados (409)
+   para o cliente fundir e repetir. Sessões em data/sessoes.json. */
+
+const SYNC_USER = process.env.SYNC_USER || '';
+const SYNC_PASS_HASH = SYNC_USER && process.env.SYNC_PASS
+    ? crypto.createHash('sha256').update(String(process.env.SYNC_PASS), 'utf8').digest()
+    : null;
+const contaAtiva = Boolean(SYNC_USER && SYNC_PASS_HASH);
+
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+const SYNC_FILE = path.join(DATA_DIR, 'sync.json');
+const SESSOES_FILE = path.join(DATA_DIR, 'sessoes.json');
+const SESSAO_MS = 180 * 24 * 60 * 60 * 1000;
+const LOGIN_JANELA_MS = 60 * 1000;
+const LOGIN_MAX_TENTATIVAS = 12;
+
+let syncDoc = { rev: 0, updatedAt: null, data: { days: {} } };
+let sessoes = {};
+const tentativasLogin = new Map();
+
+try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    try {
+        const raw = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8'));
+        if (raw && typeof raw.rev === 'number' && raw.data && typeof raw.data === 'object') {
+            syncDoc = { rev: raw.rev, updatedAt: raw.updatedAt ?? null, data: raw.data };
+        }
+    } catch (error) {
+        if (error.code !== 'ENOENT') console.log('  ! sync.json ilegível, a começar do zero.');
+    }
+    try {
+        const raw = JSON.parse(fs.readFileSync(SESSOES_FILE, 'utf8'));
+        if (raw && typeof raw === 'object') sessoes = raw;
+    } catch (error) {
+        if (error.code !== 'ENOENT') console.log('  ! sessoes.json ilegível, a começar do zero.');
+    }
+} catch (error) {
+    console.log(`  ! Não foi possível preparar ${DATA_DIR}: ${error.message}`);
+}
+
+function guardarSync() {
+    const tmp = `${SYNC_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(syncDoc), { mode: 0o600 });
+    fs.renameSync(tmp, SYNC_FILE);
+}
+
+function guardarSessoes() {
+    fs.writeFileSync(SESSOES_FILE, JSON.stringify(sessoes), { mode: 0o600 });
+}
+
+function hashIguais(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+}
+
+function tokenDaSessao(req) {
+    const m = /^Bearer\s+(.+)$/.exec(req.headers.authorization || '');
+    return m ? m[1].trim() : '';
+}
+
+function sessaoValida(token) {
+    const s = sessoes[token];
+    if (!s) return false;
+    if (Date.now() - Number(s.criadoEm || 0) > SESSAO_MS) {
+        delete sessoes[token];
+        try { guardarSessoes(); } catch { /* segue */ }
+        return false;
+    }
+    return true;
+}
+
+function podeTentarLogin(req) {
+    const ip = req.socket.remoteAddress || '?';
+    const agora = Date.now();
+    for (const [chave, valor] of tentativasLogin) {
+        if (agora - valor.desde > LOGIN_JANELA_MS) tentativasLogin.delete(chave);
+    }
+    const atual = tentativasLogin.get(ip) ?? { n: 0, desde: agora };
+    if (atual.n >= LOGIN_MAX_TENTATIVAS) return false;
+    tentativasLogin.set(ip, { n: atual.n + 1, desde: atual.desde });
+    return true;
+}
+
+async function lerJsonBody(req, res, limite) {
+    let parsed;
+    try {
+        parsed = JSON.parse(await readBody(req, limite));
+    } catch {
+        json(res, 400, { ok: false, reason: 'conteudo' });
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object') {
+        json(res, 400, { ok: false, reason: 'conteudo' });
+        return null;
+    }
+    return parsed;
+}
+
+async function apiConta(req, res, url) {
+    const route = url.pathname.slice('/api/conta'.length);
+
+    if (route === '/estado' && req.method === 'GET') {
+        json(res, 200, { ok: true, contaAtiva });
+        return;
+    }
+
+    if (route === '/login' && req.method === 'POST') {
+        if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
+        if (!podeTentarLogin(req)) return json(res, 429, { ok: false, reason: 'demasiadas-tentativas' });
+
+        const body = await lerJsonBody(req, res);
+        if (!body) return;
+        const user = String(body.user ?? '');
+        const pass = String(body.pass ?? '');
+        const passHash = crypto.createHash('sha256').update(pass, 'utf8').digest();
+
+        if (user !== SYNC_USER || !hashIguais(passHash, SYNC_PASS_HASH)) {
+            return json(res, 401, { ok: false, reason: 'credenciais' });
+        }
+
+        const token = crypto.randomBytes(48).toString('hex');
+        sessoes[token] = { criadoEm: Date.now() };
+        try {
+            guardarSessoes();
+        } catch {
+            return json(res, 500, { ok: false, reason: 'erro' });
+        }
+        json(res, 200, { ok: true, token });
+        return;
+    }
+
+    if (route === '/sair' && req.method === 'POST') {
+        const token = tokenDaSessao(req);
+        if (token && sessoes[token]) {
+            delete sessoes[token];
+            try { guardarSessoes(); } catch { /* segue */ }
+        }
+        json(res, 200, { ok: true });
+        return;
+    }
+
+    json(res, 404, { ok: false, reason: 'rota' });
+}
+
+function dadosSyncValidos(data) {
+    return data && typeof data === 'object' && !Array.isArray(data)
+        && data.days && typeof data.days === 'object' && !Array.isArray(data.days);
+}
+
+async function apiSync(req, res) {
+    if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
+
+    const token = tokenDaSessao(req);
+    if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
+
+    if (req.method === 'GET') {
+        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, data: syncDoc.data });
+        return;
+    }
+
+    if (req.method === 'PUT') {
+        const body = await lerJsonBody(req, res, SYNC_MAX_BODY);
+        if (!body) return;
+        const baseRev = Number(body.baseRev);
+        if (!Number.isInteger(baseRev) || baseRev < 0 || !dadosSyncValidos(body.data)) {
+            return json(res, 400, { ok: false, reason: 'conteudo' });
+        }
+        if (baseRev !== syncDoc.rev) {
+            return json(res, 409, {
+                ok: false, reason: 'conflito',
+                rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, data: syncDoc.data,
+            });
+        }
+        syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), data: body.data };
+        try {
+            guardarSync();
+        } catch {
+            return json(res, 500, { ok: false, reason: 'erro' });
+        }
+        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt });
+        return;
+    }
+
+    json(res, 404, { ok: false, reason: 'rota' });
+}
+
 function serveStatic(req, res, url) {
     const pathname = decodeURIComponent(url.pathname);
     const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
@@ -188,6 +379,24 @@ function serveStatic(req, res, url) {
 async function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${url.pathname}`);
+
+    if (url.pathname === '/api/conta' || url.pathname.startsWith('/api/conta/')) {
+        try {
+            await apiConta(req, res, url);
+        } catch {
+            json(res, 500, { ok: false, reason: 'erro' });
+        }
+        return;
+    }
+
+    if (url.pathname === '/api/sync') {
+        try {
+            await apiSync(req, res);
+        } catch {
+            json(res, 500, { ok: false, reason: 'erro' });
+        }
+        return;
+    }
 
     if (url.pathname === '/api/vault' || url.pathname.startsWith('/api/vault/')) {
         try {
@@ -222,6 +431,11 @@ server.listen(PORT, HOST, () => {
     }
 
     console.log(`  Vault: ${VAULT_BASE ?? '(não encontrado — define VAULT_DIR)'}`);
+    if (contaAtiva) {
+        console.log(`  Conta: ativa (utilizador "${SYNC_USER}") — entra nos aparelhos com estes dados.`);
+    } else {
+        console.log('  Conta: por configurar — define SYNC_USER e SYNC_PASS para sync entre aparelhos.');
+    }
 
     if (HOST === '0.0.0.0') {
         for (const list of Object.values(os.networkInterfaces())) {

@@ -2320,6 +2320,14 @@
     gap: var(--spacing);
     padding-top: var(--spacing);
   }
+  .md-img {
+    margin-top: calc(var(--spacing) * 2);
+    max-width: 100%;
+    border-radius: var(--radius-xl);
+    border-style: var(--tw-border-style);
+    border-width: 1px;
+    border-color: var(--color-line);
+  }
   .pdf-action {
     display: inline-flex;
     flex: 1;

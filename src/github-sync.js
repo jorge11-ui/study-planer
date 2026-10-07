@@ -1,4 +1,4 @@
-const GitHubSync = (() => {
+window.GitHubSync = (() => {
     const CHAVE_TOKEN = 'study-journal-github-token';
     const CHAVE_GIST = 'study-journal-gist-id';
     const CHAVE_ULTIMO_SYNC = 'study-journal-github-last-sync';
@@ -326,6 +326,8 @@ const GitHubSync = (() => {
         configurado,
         isPublicReadOnly,
         hasWriteAccess,
+        coletarLocais: coletarDadosLocais,
+        aplicarRemotos: aplicarDadosRemotos,
         getToken: () => token,
         getGistId: () => gistId,
         setConfig: salvarConfig,

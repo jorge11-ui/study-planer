@@ -593,6 +593,49 @@ function toast(message, type = 'info', { timeout = 4000 } = {}) {
     return node;
 }
 
+/* ── Sync entre aparelhos ───────────────────────────────
+   Conta única do servidor quando há login, senão o GitHub Gist. */
+
+function sincronizarDispositivos() {
+    if (window.ContaSync && window.ContaSync.configurado()) {
+        window.ContaSync.push().catch(() => {});
+        return;
+    }
+    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+        window.GitHubSync.sync(false).catch(() => {});
+    }
+}
+
+/* Re-renderiza o dia atual a partir do localStorage (após pull).
+   Não toca na caixa de notas enquanto estiver focada. */
+function recarregarAposSync() {
+    tasks = read(tasksKey(), []);
+    renderTasks();
+
+    const notasFocadas = document.activeElement === els.notes;
+    if (!notasFocadas) {
+        els.notes.value = read(notesKey(), '');
+        els.wordCount.textContent = String(countWords(els.notes.value));
+        if (window.NotasPro) window.NotasPro.renderTagsNota();
+        const vista = document.getElementById('notes-preview');
+        if (vista && !vista.hidden && window.NotasPro) {
+            vista.innerHTML = window.NotasPro.renderMarkdownLite(els.notes.value)
+                || '<p class="text-xs text-faint">Nada para pré-visualizar.</p>';
+        }
+    }
+
+    renderStreak();
+    StudyStats.renderHeatmap();
+    if (currentView === 'calendario') renderCalendar();
+    if (currentView === 'disciplinas') renderSubjects();
+    if (currentView === 'estudar') renderEstudarView();
+    if (currentView === 'definicoes') renderSettings();
+    if (currentView === 'exames' && window.Exames) window.Exames.ligar();
+    if (currentView === 'semanal' && window.Weekly) window.Weekly.ligar();
+
+    return !notasFocadas;
+}
+
 /* ── Tarefas ──────────────────────────────────────────── */
 
 async function setTaskDone(id, done) {
@@ -698,9 +741,7 @@ function renderTasks() {
             tasks = tasks.filter((t) => t.id !== task.id);
             await syncTasks();
             renderTasks();
-            if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-                window.GitHubSync.sync(false).catch(() => {});
-            }
+            sincronizarDispositivos();
         });
 
         const li = document.createElement('li');
@@ -732,9 +773,7 @@ async function addTask(text, subject, category = 'tarefa') {
     tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, category, done: false });
     await syncTasks();
     renderTasks();
-    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-        window.GitHubSync.sync(false).catch(() => {});
-    }
+    sincronizarDispositivos();
 }
 
 const CATEGORIA_CORES = {
@@ -778,9 +817,7 @@ async function clearDone() {
     renderTasks();
 
     toast(done === 1 ? 'Tarefa concluída apagada.' : `${done} tarefas concluídas apagadas.`, 'success');
-    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-        window.GitHubSync.sync(false).catch(() => {});
-    }
+    sincronizarDispositivos();
 }
 
 /* ── Notas ────────────────────────────────────────────── */
@@ -806,9 +843,7 @@ function commitNotes() {
     const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     setSaveStatus(`guardado às ${time}`);
 
-    if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-        window.GitHubSync.sync(false).catch(() => {});
-    }
+    sincronizarDispositivos();
     StudyStats.renderHeatmap();
     renderStreak();
 }
@@ -2592,6 +2627,128 @@ function bind() {
 
     atualizarUIEstados();
 
+    // ── Conta StudyJournal (sync pelo próprio servidor) ──
+    const contaUser = document.getElementById('conta-user');
+    const contaPass = document.getElementById('conta-pass');
+    const contaEntrar = document.getElementById('conta-entrar');
+    const contaDica = document.getElementById('conta-dica');
+    const contaLogin = document.getElementById('conta-login');
+    const contaAtiva = document.getElementById('conta-ativa');
+    const contaStatus = document.getElementById('conta-status');
+    const contaLastSync = document.getElementById('conta-last-sync');
+    const contaSyncNow = document.getElementById('conta-sync-now');
+    const contaSair = document.getElementById('conta-sair');
+
+    function pintarHoraConta() {
+        if (!contaLastSync) return;
+        let last = null;
+        try {
+            last = localStorage.getItem('study-journal-conta-last-sync');
+        } catch { /* segue */ }
+        if (last) {
+            contaLastSync.textContent = new Date(last)
+                .toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+        } else {
+            contaLastSync.textContent = '';
+        }
+    }
+
+    async function atualizarUIConta() {
+        if (!window.ContaSync) return;
+        const cfg = window.ContaSync.configurado();
+        if (contaLogin) contaLogin.hidden = cfg;
+        if (contaAtiva) contaAtiva.hidden = !cfg;
+        if (cfg) {
+            if (contaStatus) contaStatus.textContent = `Ligado como ${window.ContaSync.getUser()}`;
+            pintarHoraConta();
+        } else if (contaDica) {
+            contaDica.textContent = 'A verificar o servidor…';
+            try {
+                const est = await window.ContaSync.estado();
+                contaDica.textContent = est.contaAtiva
+                    ? 'Servidor pronto — entra com a tua conta uma vez em cada aparelho.'
+                    : 'O servidor ainda não tem conta: define SYNC_USER e SYNC_PASS ao arrancar o servidor.';
+            } catch {
+                contaDica.textContent = 'Sem ligação ao servidor.';
+            }
+        }
+    }
+
+    async function entrarNaConta() {
+        if (!window.ContaSync) return;
+        const res = await window.ContaSync.login(contaUser?.value, contaPass?.value);
+        if (contaPass) contaPass.value = '';
+        if (res.ok) {
+            toast('Conta ligada e sincronizada.', 'success');
+        } else {
+            toast(`Erro: ${res.error || 'desconhecido'}`, 'error');
+        }
+        atualizarUIConta();
+    }
+
+    if (contaEntrar) {
+        contaEntrar.addEventListener('click', entrarNaConta);
+        contaPass?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') entrarNaConta();
+        });
+        contaUser?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') contaPass?.focus();
+        });
+    }
+
+    if (contaSyncNow) {
+        contaSyncNow.addEventListener('click', async () => {
+            if (!window.ContaSync) return;
+            const res = await window.ContaSync.sync(true);
+            if (res.ok) {
+                toast(res.atualizou ? 'Sincronizado com novidades.' : 'Sincronizado.', 'success');
+                atualizarUIConta();
+            } else {
+                toast(`Erro: ${res.error || 'desconhecido'}`, 'error');
+            }
+        });
+    }
+
+    if (contaSair) {
+        contaSair.addEventListener('click', async () => {
+            const ok = await askConfirm({
+                title: 'Sair da conta?',
+                message: 'Este aparelho deixa de sincronizar. Os dados locais não são apagados.',
+                confirmLabel: 'Sair',
+            });
+            if (!ok || !window.ContaSync) return;
+            await window.ContaSync.logout();
+            atualizarUIConta();
+            toast('Sessão terminada neste aparelho.', 'info');
+        });
+    }
+
+    if (window.ContaSync && window.ContaSync.onSync) {
+        window.ContaSync.onSync((tipo, detalhes = {}) => {
+            if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
+                atualizarUIConta();
+                if (contaStatus && currentView === 'definicoes') {
+                    if (tipo === 'pull-done' && detalhes.notasAdiadas) {
+                        contaStatus.textContent = 'Sincronizado (notas atualizam ao sair da caixa)';
+                    } else if (window.ContaSync.configurado()) {
+                        contaStatus.textContent = `Ligado como ${window.ContaSync.getUser()}`;
+                    }
+                }
+                if (tipo === 'pull-done' && detalhes.atualizou && !detalhes.notasAdiadas) {
+                    toast('Novidades sincronizadas de outro aparelho.', 'info');
+                }
+            } else if (tipo === 'sync-error') {
+                if (contaStatus && currentView === 'definicoes') {
+                    contaStatus.textContent = `Erro: ${detalhes.error || 'sync'}`;
+                }
+            } else if (tipo === 'sync-start') {
+                if (contaStatus && currentView === 'definicoes') contaStatus.textContent = 'A sincronizar...';
+            }
+        });
+    }
+
+    atualizarUIConta();
+
     document.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
             event.preventDefault();
@@ -2637,13 +2794,17 @@ async function init() {
     StudyStats.renderReviewQueue();
     renderSessionTimer();
     if (window.NotasPro) window.NotasPro.ligar();
+    if (window.Imagens) window.Imagens.ligar();
 
     // Callback para sync GitHub quando Weekly salva
     window.onWeeklySave = () => {
-        if (window.GitHubSync && window.GitHubSync.hasWriteAccess && window.GitHubSync.hasWriteAccess()) {
-            window.GitHubSync.sync(false).catch(() => {});
-        }
+        sincronizarDispositivos();
     };
+
+    // Pull inicial da conta (se houver login): atualiza deste lado
+    if (window.ContaSync && window.ContaSync.configurado()) {
+        window.ContaSync.pull().catch(() => {});
+    }
 }
 
 function applyReadOnlyMode() {
