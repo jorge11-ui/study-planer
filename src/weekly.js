@@ -249,7 +249,7 @@ window.Weekly = (() => {
                 const isToday = cellDate.toDateString() === hoje.toDateString();
                 const isWeekend = dia === 6 || dia === 7;
 
-                html += `<td class="week-cell relative min-h-6 p-0.5 border-r border-line ${isToday ? 'bg-brand/5' : ''} ${isWeekend ? 'bg-surface-2/50' : ''}" 
+                html += `<td tabindex="0" class="week-cell relative min-h-6 p-0.5 border-r border-line ${isToday ? 'bg-brand/5' : ''} ${isWeekend ? 'bg-surface-2/50' : ''}" 
                           data-dia="${dia}" data-hora="${hora}" ${isToday ? 'data-hoje="true"' : ''} ${isWeekend ? 'data-fim-semana="true"' : ''}>
                     ${cellHtml}
                 </td>`;
@@ -355,8 +355,9 @@ window.Weekly = (() => {
         salvar();
         render();
         dlg.close();
+        const eraEdicao = editandoId !== null;
         editandoId = null;
-        toast(`Compromisso ${editandoId ? 'atualizado' : 'adicionado'}.`, 'success');
+        toast(`Compromisso ${eraEdicao ? 'atualizado' : 'adicionado'}.`, 'success');
     }
 
     function apagarEvento() {
@@ -592,12 +593,8 @@ window.Weekly = (() => {
                 }
             });
 
-            for (let i = 0; i <= 7; i++) {
-                for (const h of SLOTS) {
-                    const cell = tbody.querySelector(`[data-dia="${i}"][data-hora="${h}"]`);
-                    if (cell) cell.setAttribute('tabindex', '0');
-                }
-            }
+            // As células já nascem focáveis (tabindex no template do render),
+            // por isso a navegação por setas sobrevive a cada render().
         }
 
         if (dlg && !dlg.dataset.weekBound) {

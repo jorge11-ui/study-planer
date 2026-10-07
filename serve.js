@@ -6,7 +6,8 @@
       quem escreve no Obsidian é este processo — o mesmo que corre no
       laptop onde está a pasta.
 
-   Só aceita ficheiros de dia (YYYY-MM-DD.md) dentro de Diario/. */
+   Só aceita ficheiros de dia (YYYY-MM-DD.md) e configs (tasks/pdfs.json)
+   dentro de Diario/. */
 
 const http = require('node:http');
 const https = require('node:https');
@@ -138,10 +139,17 @@ async function api(req, res, url) {
 
         try {
             const body = await readBody(req);
-            const { content } = JSON.parse(body);
+            let parsed;
+            try {
+                parsed = JSON.parse(body);
+            } catch {
+                return json(res, 400, { ok: false, reason: 'conteudo' });
+            }
+            const { content } = parsed;
             if (typeof content !== 'string') return json(res, 400, { ok: false, reason: 'conteudo' });
 
             const filePath = path.join(folder, name);
+            fs.mkdirSync(path.dirname(filePath), { recursive: true });
             fs.writeFileSync(filePath, content, 'utf8');
             json(res, 200, { ok: true, path: `${FOLDER}/${name}` });
         } catch (error) {
@@ -216,8 +224,7 @@ server.listen(PORT, HOST, () => {
     console.log(`  Vault: ${VAULT_BASE ?? '(não encontrado — define VAULT_DIR)'}`);
 
     if (HOST === '0.0.0.0') {
-        const { networkInterfaces } = require('node:os');
-        for (const list of Object.values(networkInterfaces())) {
+        for (const list of Object.values(os.networkInterfaces())) {
             for (const net of list ?? []) {
                 if (net.family === 'IPv4' && !net.internal) {
                     console.log(`  Rede local: ${scheme}://${net.address}:${PORT}`);

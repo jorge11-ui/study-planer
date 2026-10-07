@@ -275,10 +275,7 @@ function estadoBadge(estado) {
     b.addEventListener('click', () => {
         const order = ['A iniciar', 'Em progresso', 'Concluído'];
         const next = order[(order.indexOf(estado) + 1) % order.length];
-        const all = exRead(TRACK_KEY, []).map((x) => x.estado === estado && x.id === b.dataset.id ? { ...x, estado: next } : x);
-        // correcção: mapear por id
         const fixed = exRead(TRACK_KEY, []).map((x) => (x.id === b.dataset.id ? { ...x, estado: next } : x));
-        void all;
         exWrite(TRACK_KEY, fixed);
         renderTrack();
     });

@@ -302,6 +302,7 @@ const GitHubSync = (() => {
         return JSON.parse(arquivo.content);
     }
 
+
     function iniciarAutoSync() {
         if (!hasWriteAccess()) return;
         if (syncTimer) return;

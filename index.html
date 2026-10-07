@@ -128,7 +128,6 @@
             <symbol id="i-moon" viewBox="0 0 24 24">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
             </symbol>
-            </symbol>
             <symbol id="i-list" viewBox="0 0 24 24">
                 <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>
             </symbol>
@@ -203,12 +202,7 @@
                     class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-2 text-fg transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
                     <svg class="icon h-4 w-4"><use href="#i-search"/></svg>
                 </button>
-                <button id="theme-toggle" type="button" aria-label="Alternar tema"
-                    class="hidden h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-2 text-fg transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:grid">
-                    <svg id="theme-icon-sun" class="icon h-4 w-4"><use href="#i-sun"/></svg>
-                    <svg id="theme-icon-moon" class="icon h-4 w-4 hidden"><use href="#i-moon"/></svg>
-                </button>
-                <button type="button" aria-label="Perfil"
+               <button type="button" aria-label="Perfil"
                     class="hidden h-8 w-8 shrink-0 place-items-center rounded-full bg-surface-2 text-fg ring-1 ring-line transition hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:grid">
                     <svg class="icon h-4 w-4"><use href="#i-user"/></svg>
                 </button>
@@ -1058,6 +1052,10 @@
             <svg class="icon h-5 w-5"><use href="#i-subjects"/></svg>
             <span>Disciplinas</span>
         </button>
+        <button type="button" data-view="estudar" class="nav-mobile">
+            <svg class="icon h-5 w-5"><use href="#i-tomato"/></svg>
+            <span>Estudar</span>
+        </button>
         <button type="button" data-view="pdfs" class="nav-mobile">
             <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
             <span>PDFs</span>
@@ -1329,10 +1327,6 @@
             </div>
         </div>
     </dialog>
-
-    <!-- Toasts -->
-    <div id="toasts" role="status" aria-live="polite"
-        class="pointer-events-none fixed bottom-5 right-5 z-50 flex w-[min(22rem,calc(100vw-2.5rem))] flex-col gap-2"></div>
 
     <script src="src/vault.js?v=3"></script>
     <script src="src/pdfs.js?v=3"></script>

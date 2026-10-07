@@ -511,10 +511,6 @@
     .week-block-dinamico[style*="rose"] { --cor-bg: var(--color-subject-rose); }
     .week-block-dinamico[style*="purple"] { --cor-bg: var(--color-subject-violet); }
 
-    .week-block-fixo {
-        @apply text-white;
-    }
-
     .week-block-title {
         @apply block truncate;
     }

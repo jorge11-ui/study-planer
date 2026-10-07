@@ -88,16 +88,22 @@ window.Pdfs = (() => {
         }
     }
 
-    /* O vault é o espelho em disco: se não estiver ligado, fica só no browser. */
+    /* O vault é o espelho em disco: tenta-se sempre gravar — o Vault.save
+       decide se vai por handle local, API remota ou recusa (sem vault). */
     async function guardar() {
         guardarLocais();
         desenhar();
 
-        if (!window.Vault || !Vault.supported()) return;
+        if (!window.Vault) return;
 
-        const resultado = await Vault.save(FICHEIRO_VAULT, JSON.stringify(docs, null, 2));
+        let resultado = null;
+        try {
+            resultado = await Vault.save(FICHEIRO_VAULT, JSON.stringify(docs, null, 2));
+        } catch {
+            return;
+        }
 
-        if (resultado.ok) return;
+        if (!resultado || resultado.ok) return;
         if (resultado.reason === 'conflito') {
             toast('O pdfs.json mudou no vault. Nada foi sobrescrito.', 'warn');
         }

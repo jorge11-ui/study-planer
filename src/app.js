@@ -607,10 +607,31 @@ async function setTaskDone(id, done) {
     if (currentView === 'disciplinas') renderSubjects();
 }
 
+/* O tasks.json do vault guarda um mapa { 'AAAA-MM-DD': [...] } para não
+   apagar os outros dias. Ficheiros antigos com um array simples são lidos
+   como sendo do dia atual e migrados na próxima gravação. */
+function tasksDeConteudoVault(content, chave) {
+    try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed[chave])) return parsed[chave];
+    } catch { /* formato inválido: usa-se o local */ }
+    return null;
+}
+
 async function syncTasks() {
     let saved = null;
     try {
-        saved = await Vault.save('tasks.json', JSON.stringify(tasks));
+        let mapa = {};
+        try {
+            const atual = await Vault.load('tasks.json');
+            if (atual.ok && atual.existe) {
+                const parsed = JSON.parse(atual.content);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) mapa = parsed;
+            }
+        } catch { /* sem mapa anterior: grava só este dia */ }
+        mapa[dayKey(selected)] = tasks;
+        saved = await Vault.save('tasks.json', JSON.stringify(mapa));
         if (saved && !saved.ok && saved.reason === 'conflito') {
             // O ficheiro mudou fora da app (ex.: editado no Obsidian):
             // esta versão é a mais fresca, grava por cima e avisa.
@@ -871,253 +892,10 @@ function applyMarkdown(kind) {
     else if (kind === 'list') toggleList();
 }
 
-/* ── Pomodoro ─────────────────────────────────────────── */
-
-const POMODORO_MINUTES = [15, 25, 50, 90];
-const POMODORO_DEFAULT = 25;
-const POMODORO_KEY = 'study-journal-pomodoro-minutes';
+/* ── Pomodoro (legado) ────────────────────────────────────
+   O temporizador pomodoro foi substituído pela Sessão de Estudo.
+   Fica só a chave do histórico, que o heatmap ainda lê. */
 const POMODORO_HISTORY_KEY = 'study-journal-pomodoro-history';
-const POMO_MODE_KEY = 'study-journal-pomodoro-mode';
-const POMO_STATE_KEY = 'study-journal-pomodoro-state';
-const POMO_PAUSA_CURTA = 5;
-const POMO_PAUSA_LONGA = 15;
-const POMO_MODES = ['foco', 'curta', 'longa'];
-const POMO_LABELS = { foco: 'Foco', curta: 'Pausa curta', longa: 'Pausa longa' };
-
-function readPomodoroMinutes() {
-    const saved = Number(read(POMODORO_KEY, POMODORO_DEFAULT));
-    return POMODORO_MINUTES.includes(saved) ? saved : POMODORO_DEFAULT;
-}
-
-function readPomoMode() {
-    const saved = read(POMO_MODE_KEY, 'foco');
-    return POMO_MODES.includes(saved) ? saved : 'foco';
-}
-
-const pomodoro = {
-    minutes: readPomodoroMinutes(),
-    mode: readPomoMode(),
-    remaining: 0,
-    running: false,
-    timer: null,
-    deadline: null,
-};
-
-function minutosDoModo(mode) {
-    if (mode === 'curta') return POMO_PAUSA_CURTA;
-    if (mode === 'longa') return POMO_PAUSA_LONGA;
-    return pomodoro.minutes;
-}
-
-function formatClock(total) {
-    const safe = Math.max(0, Math.ceil(total));
-    const minutes = Math.floor(safe / 60);
-    const seconds = safe % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function renderPomodoro() {
-    const full = pomodoro.minutes * 60;
-
-    if (els.pomodoroTime) els.pomodoroTime.textContent = formatClock(pomodoro.remaining);
-    if (els.pomodoroIcon) els.pomodoroIcon.classList.toggle('running', pomodoro.running);
-    if (els.pomodoroReset) els.pomodoroReset.classList.toggle('hidden', pomodoro.remaining === full);
-    if (els.pomodoroDurationLabel) els.pomodoroDurationLabel.textContent = `${pomodoro.minutes} min`;
-
-    els.pomodoroPresets.forEach((option) => {
-        const selected = Number(option.dataset.pomodoroMinutes) === pomodoro.minutes;
-        option.setAttribute('aria-checked', String(selected));
-        option.classList.toggle('text-fg', selected);
-        option.classList.toggle('text-muted', !selected);
-        option.querySelector('[data-check]').classList.toggle('opacity-0', !selected);
-        option.querySelector('[data-check]').classList.toggle('text-brand-light', selected);
-    });
-
-    renderPomoWidget();
-}
-
-function renderPomoWidget() {
-    const big = document.getElementById('pomo-big');
-    if (!big) return;
-
-    const full = minutosDoModo(pomodoro.mode) * 60;
-    big.textContent = formatClock(pomodoro.remaining);
-    big.style.color = pomodoro.running ? 'var(--color-brand-light)' : '';
-
-    const bar = document.getElementById('pomo-bar');
-    if (bar) bar.style.width = full ? `${((full - pomodoro.remaining) / full) * 100}%` : '0%';
-
-    const label = document.getElementById('pomo-start-label');
-    if (label) label.textContent = pomodoro.running ? 'Pausa' : (pomodoro.remaining < full ? 'Continuar' : 'Começar');
-
-    const use = document.getElementById('pomo-start-use');
-    if (use) use.setAttribute('href', pomodoro.running ? '#i-pause' : '#i-play');
-
-    document.querySelectorAll('[data-pomo-mode]').forEach((tab) => {
-        tab.setAttribute('aria-selected', String(tab.dataset.pomoMode === pomodoro.mode));
-    });
-
-    document.querySelectorAll('[data-pomo-minutes]').forEach((btn) => {
-        btn.setAttribute('aria-pressed', String(Number(btn.dataset.pomoMinutes) === pomodoro.minutes));
-    });
-}
-
-function setModoPomodoro(mode) {
-    if (!POMO_MODES.includes(mode) || (mode === pomodoro.mode && !pomodoro.running)) {
-        renderPomodoro();
-        return;
-    }
-
-    stopPomodoro();
-    pomodoro.mode = mode;
-    write(POMO_MODE_KEY, mode);
-    pomodoro.remaining = minutosDoModo(mode) * 60;
-    renderPomodoro();
-    savePomoState();
-    announcePomodoro(`${POMO_LABELS[mode]}: ${formatClock(pomodoro.remaining)}.`);
-}
-
-function skipPomodoro() {
-    const eraFoco = pomodoro.mode === 'foco';
-    setModoPomodoro(eraFoco ? 'curta' : 'foco');
-    toast(eraFoco ? 'Foco saltado. Pausa curta de 5 min.' : 'Pausa saltada. De volta ao foco.', 'info');
-}
-
-function tickPomodoro() {
-    if (!pomodoro.deadline) return;
-    const restam = Math.max(0, Math.ceil((pomodoro.deadline - Date.now()) / 1000));
-
-    if (restam <= 0) {
-        pomodoro.remaining = 0;
-        renderPomodoro();
-        stopPomodoro();
-        playAlarm();
-        concluirPomodoro();
-        return;
-    }
-
-    if (restam === pomodoro.remaining) return;
-    pomodoro.remaining = restam;
-    renderPomodoro();
-    savePomoState();
-}
-
-function concluirPomodoro() {
-    const eraFoco = pomodoro.mode === 'foco';
-
-    if (eraFoco) {
-        // Só o foco conta no heatmap, pesado pelos minutos da sessão
-        migrarHistoricoMinutos();
-        const history = read(POMODORO_HISTORY_KEY, {});
-        const key = dayKey(new Date());
-        history[key] = (Number(history[key] || 0)) + minutosDoModo(pomodoro.mode);
-        write(POMODORO_HISTORY_KEY, history);
-        StudyStats.renderHeatmap();
-        renderStreak();
-    }
-
-    setModoPomodoro(eraFoco ? 'curta' : 'foco');
-    toast(eraFoco ? 'Pomodoro concluído! Pausa curta de 5 min.' : 'Pausa terminada. De volta ao foco!', 'success');
-}
-
-function savePomoState() {
-    try {
-        localStorage.setItem(POMO_STATE_KEY, JSON.stringify({
-            mode: pomodoro.mode,
-            minutes: pomodoro.minutes,
-            running: pomodoro.running,
-            remaining: pomodoro.remaining,
-            deadline: pomodoro.running ? pomodoro.deadline : null,
-        }));
-    } catch { /* silencioso: gravação por segundo não pode incomodar */ }
-}
-
-function restorePomoState() {
-    let s = null;
-    try {
-        s = JSON.parse(localStorage.getItem(POMO_STATE_KEY));
-    } catch { s = null; }
-
-    if (s && POMO_MODES.includes(s.mode)) {
-        pomodoro.mode = s.mode;
-        write(POMO_MODE_KEY, s.mode);
-    }
-    if (s && POMODORO_MINUTES.includes(Number(s.minutes))) {
-        pomodoro.minutes = Number(s.minutes);
-        write(POMODORO_KEY, pomodoro.minutes);
-    }
-
-    const full = minutosDoModo(pomodoro.mode) * 60;
-
-    if (s && s.running && s.deadline) {
-        const restam = Math.ceil((s.deadline - Date.now()) / 1000);
-        if (restam <= 0) {
-            // Terminou com a página fechada: conclui a sessão sem alarme
-            pomodoro.remaining = 0;
-            pomodoro.running = false;
-            renderPomodoro();
-            concluirPomodoro();
-            return;
-        }
-        pomodoro.remaining = restam;
-        pomodoro.running = false;
-        renderPomodoro();
-        startPomodoro();
-        announcePomodoro('Temporizador retomado após recarregar.');
-        return;
-    }
-
-    const pausado = Number(s?.remaining);
-    pomodoro.remaining = (Number.isFinite(pausado) && pausado >= 0) ? Math.min(pausado, full) : full;
-    pomodoro.running = false;
-    renderPomodoro();
-}
-
-function startPomodoro() {
-    unlockAlarm();
-    if (pomodoro.timer) clearInterval(pomodoro.timer);
-    if (!(pomodoro.remaining > 0)) pomodoro.remaining = minutosDoModo(pomodoro.mode) * 60;
-    pomodoro.deadline = Date.now() + pomodoro.remaining * 1000;
-    pomodoro.timer = setInterval(tickPomodoro, 250);
-    pomodoro.running = true;
-    renderPomodoro();
-    savePomoState();
-    announcePomodoro(`${POMO_LABELS[pomodoro.mode]} de ${minutosDoModo(pomodoro.mode)} min iniciado.`);
-}
-
-function stopPomodoro() {
-    if (pomodoro.timer) clearInterval(pomodoro.timer);
-    pomodoro.timer = null;
-    if (pomodoro.running && pomodoro.deadline) {
-        pomodoro.remaining = Math.max(0, Math.ceil((pomodoro.deadline - Date.now()) / 1000));
-    }
-    pomodoro.deadline = null;
-    pomodoro.running = false;
-    savePomoState();
-}
-
-function togglePomodoro() {
-    if (pomodoro.running) {
-        stopPomodoro();
-        renderPomodoro();
-        announcePomodoro('Pomodoro em pausa.');
-        return;
-    }
-
-    startPomodoro();
-}
-
-function resetPomodoro() {
-    stopPomodoro();
-    pomodoro.deadline = null;
-    pomodoro.remaining = minutosDoModo(pomodoro.mode) * 60;
-    renderPomodoro();
-    savePomoState();
-}
-
-function announcePomodoro(message) {
-    els.pomodoroStatus.textContent = message;
-}
 
 /* ── Alarme ──────────────────────────────────────────── */
 
@@ -1169,26 +947,6 @@ function playAlarm() {
 
     if (context.state === 'running') schedule();
     else context.resume().then(schedule).catch(() => { /* sem gesto o browser bloqueia */ });
-}
-
-function setPomodoroMinutes(minutes) {
-    if (!POMODORO_MINUTES.includes(minutes)) return;
-    if (minutes === pomodoro.minutes && pomodoro.mode === 'foco') return;
-
-    const wasRunning = pomodoro.running;
-    stopPomodoro();
-    pomodoro.minutes = minutes;
-    pomodoro.mode = 'foco';
-    pomodoro.remaining = minutes * 60;
-    write(POMODORO_KEY, minutes);
-    write(POMO_MODE_KEY, 'foco');
-
-    if (wasRunning) startPomodoro();
-    else renderPomodoro();
-    savePomoState();
-
-    announcePomodoro(`Duração do pomodoro: ${minutes} minutos.`);
-    if (wasRunning) toast(`Pomodoro de ${minutes} min. A contagem recomeçou.`, 'info');
 }
 
 /* ── Sessão de Estudo (Timer) ───────────────────────────── */
@@ -2477,28 +2235,22 @@ function renderDate() {
         day: 'numeric',
         month: 'short',
     });
-
-    // els.dayNext.disabled = selected.getTime() >= today.getTime();
 }
 
 async function loadDay() {
-    // 1. Carregar Tarefas
+    // 1. Carregar Tarefas (mapa por dia no vault, array legado, ou local)
     const taskResult = await Vault.load('tasks.json');
     const localTasks = read(tasksKey(), []);
+    const doVault = taskResult.ok && taskResult.existe
+        ? tasksDeConteudoVault(taskResult.content, dayKey(selected))
+        : null;
 
-    if (taskResult.ok && taskResult.existe) {
-        try {
-            tasks = JSON.parse(taskResult.content);
-        } catch {
-            tasks = localTasks;
-        }
+    if (doVault !== null) {
+        tasks = doVault;
     } else {
         tasks = localTasks;
         if (localTasks.length > 0) {
-            const handle = await Vault.localHandle();
-            if (handle) {
-                await syncTasks();
-            }
+            await syncTasks();
         }
     }
 
@@ -2611,10 +2363,6 @@ function bind() {
 
     document.getElementById('heatmap-prev')?.addEventListener('click', () => shiftHeatmap(-1));
     document.getElementById('heatmap-next')?.addEventListener('click', () => shiftHeatmap(1));
-
-    document.querySelectorAll('[data-pomo-mode]').forEach((tab) => {
-        tab.addEventListener('click', () => setModoPomodoro(tab.dataset.pomoMode));
-    });
 
     // Session Timer
     document.getElementById('session-start')?.addEventListener('click', toggleSessionTimer);
@@ -2857,65 +2605,22 @@ function bind() {
     });
 
     window.addEventListener('beforeunload', commitNotes);
-    window.addEventListener('beforeunload', savePomoState);
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-            if (pomodoro.running) tickPomodoro();
             if (sessionTimer.running) tickSessionTimer();
         }
     });
     window.addEventListener('focus', () => {
-        if (pomodoro.running) tickPomodoro();
         if (sessionTimer.running) tickSessionTimer();
     });
 }
 
-function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    const sunIcon = document.getElementById('theme-icon-sun');
-    const moonIcon = document.getElementById('theme-icon-moon');
-    if (sunIcon && moonIcon) {
-        if (theme === 'dark') {
-            sunIcon.classList.add('hidden');
-            moonIcon.classList.remove('hidden');
-        } else {
-            sunIcon.classList.remove('hidden');
-            moonIcon.classList.add('hidden');
-        }
-    }
-}
-
-function initTheme() {
-    const toggle = document.getElementById('theme-toggle');
-    if (!toggle) return;
-
-    const saved = localStorage.getItem('study-journal-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light');
-    applyTheme(theme);
-
-    toggle.addEventListener('click', () => {
-        const current = document.documentElement.getAttribute('data-theme') || 'light';
-        const next = current === 'dark' ? 'light' : 'dark';
-        localStorage.setItem('study-journal-theme', next);
-        applyTheme(next);
-    });
-
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (!localStorage.getItem('study-journal-theme')) {
-            applyTheme(e.matches ? 'dark' : 'light');
-        }
-    });
-}
-
 async function init() {
-    initTheme();
     seed();
     bind();
     await refreshVault();
     await loadDay();
-    restorePomoState();
     const vistaGuardada = read('study-journal-view', 'painel');
     showView(VIEW_LABELS[vistaGuardada] ? vistaGuardada : 'painel');
     startVaultSync();
