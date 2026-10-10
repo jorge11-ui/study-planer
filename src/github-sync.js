@@ -241,6 +241,23 @@ window.GitHubSync = (() => {
     }
 
     function aplicarDadosRemotos(remoto) {
+        // Nunca apagar dados locais com listas vazias vindas de um servidor
+        // fresco (ex.: primeiro login no Render): só substitui se o remoto
+        // trouxer conteúdo ou o local já estiver vazio.
+        const temConteudo = (v) => Array.isArray(v)
+            ? v.length > 0
+            : (v && typeof v === 'object' ? Object.keys(v).length > 0 : !!v);
+        const localTemConteudo = (chave) => {
+            try {
+                const raw = localStorage.getItem(chave);
+                if (raw === null) return false;
+                return temConteudo(JSON.parse(raw));
+            } catch {
+                return false;
+            }
+        };
+        const deveAplicar = (chave, valor) => temConteudo(valor) || !localTemConteudo(chave);
+
         if (remoto.days) {
             Object.entries(remoto.days).forEach(([key, value]) => {
                 if (value.notes !== undefined) localStorage.setItem(`study-journal-notes-${key}`, value.notes);
@@ -248,25 +265,28 @@ window.GitHubSync = (() => {
             });
         }
         if (remoto.semanal) {
-            if (Array.isArray(remoto.semanal.fixos)) {
+            if (Array.isArray(remoto.semanal.fixos) && deveAplicar('study-journal-semanal-fixo', remoto.semanal.fixos)) {
                 localStorage.setItem('study-journal-semanal-fixo', JSON.stringify(remoto.semanal.fixos));
             }
             if (Array.isArray(remoto.semanal.dinamicos) && remoto.semanal.semanaAtual) {
-                localStorage.setItem(`study-journal-semanal-dinamico-${remoto.semanal.semanaAtual}`, JSON.stringify(remoto.semanal.dinamicos));
-                localStorage.setItem('study-journal-semanal-dinamico-atual', remoto.semanal.semanaAtual);
+                const chaveDin = `study-journal-semanal-dinamico-${remoto.semanal.semanaAtual}`;
+                if (deveAplicar(chaveDin, remoto.semanal.dinamicos)) {
+                    localStorage.setItem(chaveDin, JSON.stringify(remoto.semanal.dinamicos));
+                    localStorage.setItem('study-journal-semanal-dinamico-atual', remoto.semanal.semanaAtual);
+                }
             }
         }
         if (remoto.exames) {
-            if (remoto.exames.foco) localStorage.setItem('study-journal-exames-foco', JSON.stringify(remoto.exames.foco));
-            if (Array.isArray(remoto.exames.recursos)) localStorage.setItem('study-journal-exames-recursos', JSON.stringify(remoto.exames.recursos));
-            if (Array.isArray(remoto.exames.track)) localStorage.setItem('study-journal-exames-track', JSON.stringify(remoto.exames.track));
-            if (Array.isArray(remoto.exames.duvidas)) localStorage.setItem('study-journal-exames-duvidas', JSON.stringify(remoto.exames.duvidas));
+            if (remoto.exames.foco && deveAplicar('study-journal-exames-foco', remoto.exames.foco)) localStorage.setItem('study-journal-exames-foco', JSON.stringify(remoto.exames.foco));
+            if (Array.isArray(remoto.exames.recursos) && deveAplicar('study-journal-exames-recursos', remoto.exames.recursos)) localStorage.setItem('study-journal-exames-recursos', JSON.stringify(remoto.exames.recursos));
+            if (Array.isArray(remoto.exames.track) && deveAplicar('study-journal-exames-track', remoto.exames.track)) localStorage.setItem('study-journal-exames-track', JSON.stringify(remoto.exames.track));
+            if (Array.isArray(remoto.exames.duvidas) && deveAplicar('study-journal-exames-duvidas', remoto.exames.duvidas)) localStorage.setItem('study-journal-exames-duvidas', JSON.stringify(remoto.exames.duvidas));
             if (typeof remoto.exames.dataAlvo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(remoto.exames.dataAlvo)) localStorage.setItem('study-journal-exames-data-alvo', JSON.stringify(remoto.exames.dataAlvo));
         }
-        if (Array.isArray(remoto.reviewsV2)) {
+        if (Array.isArray(remoto.reviewsV2) && deveAplicar('study-journal-reviews-v2', remoto.reviewsV2)) {
             localStorage.setItem('study-journal-reviews-v2', JSON.stringify(remoto.reviewsV2));
         }
-        if (Array.isArray(remoto.pdfs)) {
+        if (Array.isArray(remoto.pdfs) && deveAplicar('study-journal-pdfs', remoto.pdfs)) {
             localStorage.setItem('study-journal-pdfs', JSON.stringify(remoto.pdfs));
         }
         if (remoto.sessoes && typeof remoto.sessoes === 'object') {
