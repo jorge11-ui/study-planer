@@ -268,17 +268,11 @@
   .bottom-0 {
     bottom: 0px;
   }
-  .bottom-1 {
-    bottom: var(--spacing);
-  }
   .bottom-5 {
     bottom: calc(var(--spacing) * 5);
   }
   .left-0 {
     left: 0px;
-  }
-  .left-1\/2 {
-    left: calc(1 / 2 * 100%);
   }
   .left-2\.5 {
     left: calc(var(--spacing) * 2.5);
@@ -397,6 +391,9 @@
   .inline-flex {
     display: inline-flex;
   }
+  .table {
+    display: table;
+  }
   .h-1\.5 {
     height: calc(var(--spacing) * 1.5);
   }
@@ -444,12 +441,6 @@
   }
   .min-h-6 {
     min-height: calc(var(--spacing) * 6);
-  }
-  .min-h-\[70px\] {
-    min-height: 70px;
-  }
-  .min-h-\[100px\] {
-    min-height: 100px;
   }
   .min-h-\[300px\] {
     min-height: 300px;
@@ -550,6 +541,9 @@
   .min-w-\[10rem\] {
     min-width: 10rem;
   }
+  .min-w-\[680px\] {
+    min-width: 680px;
+  }
   .min-w-\[760px\] {
     min-width: 760px;
   }
@@ -565,10 +559,6 @@
   .border-collapse {
     border-collapse: collapse;
   }
-  .-translate-x-1\/2 {
-    --tw-translate-x: calc(calc(1 / 2 * 100%) * -1);
-    translate: var(--tw-translate-x) var(--tw-translate-y);
-  }
   .-translate-y-1\/2 {
     --tw-translate-y: calc(calc(1 / 2 * 100%) * -1);
     translate: var(--tw-translate-x) var(--tw-translate-y);
@@ -578,6 +568,9 @@
   }
   .cursor-pointer {
     cursor: pointer;
+  }
+  .resize {
+    resize: both;
   }
   .resize-y {
     resize: vertical;
@@ -743,12 +736,6 @@
       border-color: color-mix(in oklab, var(--color-brand) 30%, transparent);
     }
   }
-  .border-brand\/60 {
-    border-color: color-mix(in srgb, #f0b429 60%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      border-color: color-mix(in oklab, var(--color-brand) 60%, transparent);
-    }
-  }
   .border-line {
     border-color: var(--color-line);
   }
@@ -772,9 +759,6 @@
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-subject-yellow) 40%, transparent);
     }
-  }
-  .border-transparent {
-    border-color: transparent;
   }
   .bg-\[var\(--color-heatmap-0\)\] {
     background-color: var(--color-heatmap-0);
@@ -974,6 +958,9 @@
   .px-6 {
     padding-inline: calc(var(--spacing) * 6);
   }
+  .py-0 {
+    padding-block: 0px;
+  }
   .py-0\.5 {
     padding-block: calc(var(--spacing) * 0.5);
   }
@@ -1070,6 +1057,10 @@
   .text-\[13px\] {
     font-size: 13px;
   }
+  .leading-none {
+    --tw-leading: 1;
+    line-height: 1;
+  }
   .leading-relaxed {
     --tw-leading: var(--leading-relaxed);
     line-height: var(--leading-relaxed);
@@ -1111,12 +1102,6 @@
   .text-brand-light {
     color: var(--color-brand-light);
   }
-  .text-brand\/70 {
-    color: color-mix(in srgb, #f0b429 70%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      color: color-mix(in oklab, var(--color-brand) 70%, transparent);
-    }
-  }
   .text-current\/70 {
     color: currentcolor;
     @supports (color: color-mix(in lab, red, red)) {
@@ -1125,12 +1110,6 @@
   }
   .text-faint {
     color: var(--color-faint);
-  }
-  .text-faint\/40 {
-    color: color-mix(in srgb, rgba(240, 240, 248, 0.38) 40%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      color: color-mix(in oklab, var(--color-faint) 40%, transparent);
-    }
   }
   .text-fg {
     color: var(--color-fg);
@@ -2117,6 +2096,157 @@
     opacity: 0.3;
     cursor: default;
   }
+  .cal-classic-title {
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    text-indent: 0.28em;
+    text-transform: uppercase;
+    color: var(--color-fg);
+  }
+  @media (min-width: 640px) {
+    .cal-classic-title {
+      font-size: 2rem;
+    }
+  }
+  .cal-classic-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    border-bottom: 1px solid var(--color-line-soft);
+  }
+  .cal-classic-weekdays > div {
+    padding: 0.5rem 0.25rem;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-faint);
+  }
+  .cal-classic-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: var(--color-line);
+    border: 1px solid var(--color-line);
+    border-top: 0;
+    border-radius: 0 0 0.625rem 0.625rem;
+    overflow: hidden;
+  }
+  .cal-classic-blank {
+    background: var(--color-surface);
+    opacity: 0.35;
+    min-height: 4.5rem;
+  }
+  @media (min-width: 640px) {
+    .cal-classic-blank {
+      min-height: 7.5rem;
+    }
+  }
+  .cal-classic-day {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-height: 4.5rem;
+    padding: 0.4rem;
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  @media (min-width: 640px) {
+    .cal-classic-day {
+      min-height: 7.5rem;
+      padding: 0.5rem;
+    }
+  }
+  .cal-classic-day:hover {
+    background: var(--color-surface-2);
+  }
+  .cal-classic-day[data-fim-semana="true"] {
+    background: rgba(255, 255, 255, 0.018);
+  }
+  .cal-classic-day[data-fim-semana="true"]:hover {
+    background: var(--color-surface-2);
+  }
+  .cal-classic-num {
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+    line-height: 1.25rem;
+    min-width: 1.25rem;
+    text-align: center;
+  }
+  .cal-classic-day[data-hoje="true"] .cal-classic-num {
+    background: var(--color-brand);
+    color: #1a1400;
+    font-weight: 700;
+    border-radius: 9999px;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-grid;
+    place-items: center;
+  }
+  .cal-classic-day[data-selecionado="true"] {
+    box-shadow: inset 0 0 0 2px var(--color-brand);
+  }
+  .cal-classic-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+  }
+  .calendar-task {
+    font-size: 13px;
+  }
+  .cal-classic-day[data-densidade="2"] .calendar-task {
+    font-size: 12px;
+  }
+  .cal-classic-day[data-densidade="3"] .calendar-task {
+    font-size: 11px;
+  }
+  .cal-classic-more {
+    font-size: 10px;
+    color: var(--color-faint);
+    text-align: center;
+    padding: 1px 0;
+    border-radius: 4px;
+  }
+  .cal-classic-more:hover {
+    color: var(--color-brand);
+  }
+  .cal-classic-notes {
+    font-size: 10px;
+    color: var(--color-brand-light);
+    opacity: 0.75;
+    text-align: center;
+    padding-top: 2px;
+    border-top: 1px solid var(--color-line);
+    margin-top: auto;
+  }
+  .cal-classic-add {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 9999px;
+    display: grid;
+    place-items: center;
+    color: var(--color-brand);
+    background: rgba(240, 180, 41, 0.1);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .cal-classic-day:hover .cal-classic-add, .cal-classic-add:focus-visible {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .cal-classic-add {
+      opacity: 0.7;
+    }
+  }
   .review-item {
     display: flex;
     align-items: center;
@@ -2855,6 +2985,55 @@
     scale: var(--tw-scale-x) var(--tw-scale-y);
     rotate: 1deg;
     opacity: 50%;
+  }
+  .week-now-line {
+    position: absolute;
+    left: 4rem;
+    right: 0;
+    height: 2px;
+    margin-top: -1px;
+    background: var(--color-subject-rose);
+    box-shadow: 0 0 8px rgba(251, 113, 133, 0.6);
+    z-index: 20;
+    pointer-events: none;
+  }
+  .week-now-line::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: -4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: var(--color-subject-rose);
+  }
+  .week-now-line > span {
+    position: absolute;
+    left: 6px;
+    top: -9px;
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    background: var(--color-subject-rose);
+    padding: 0 6px;
+    border-radius: 9999px;
+    line-height: 18px;
+  }
+  .week-cell.drag-select {
+    background: rgba(240, 180, 41, 0.18) !important;
+    box-shadow: inset 0 0 0 1px var(--color-brand);
+    transition: background-color 0.1s ease;
+  }
+  body.week-creating, body.week-creating .week-cell {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .week-grid-placing .week-cell {
+    cursor: copy;
+  }
+  .week-grid-placing .week-cell:hover {
+    box-shadow: inset 0 0 0 1px var(--color-brand);
   }
   #week-empty {
     padding-block: calc(var(--spacing) * 8);

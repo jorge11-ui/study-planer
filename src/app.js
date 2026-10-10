@@ -55,6 +55,7 @@ const SUBJECTS = {
     'Biologia': 'bg-subject-green/15 text-subject-green',
     'Português': 'bg-subject-yellow/15 text-subject-yellow',
     'Aplicações Informáticas (A.I.)': 'bg-subject-cyan/15 text-subject-cyan',
+    'Hobbies': 'bg-subject-rose/15 text-subject-rose',
 };
 
 const DEMO_TASKS = [
@@ -406,7 +407,7 @@ const StudyStats = {
         for (let dia = 1; dia <= diasNoMes; dia += 1) {
             const data = new Date(ano, mes, dia);
             const futuro = startOfDay(data) > today;
-            const esforco = futuro ? { foco: 0, concluidas: 0, total: 0 } : lerEsforcoDoDia(data);
+            const esforco = futuro ? { foco: 0, concluidas: 0, sessoes: 0, total: 0 } : lerEsforcoDoDia(data);
             const score = esforco.total;
 
             let nivel = 0;
@@ -422,7 +423,12 @@ const StudyStats = {
             cell.className = 'heatmap-day';
             cell.dataset.n = String(nivel);
             cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
-            cell.title = `${data.toLocaleDateString('pt-PT')}: ${esforco.foco} min de foco${esforco.concluidas ? ` · ${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}` : ''}${esforco.sessoes ? ` · ${esforco.sessoes} min de sessão` : ''}`;
+            // "foco" (pomodoro legado) + "sessão" (timer atual) são ambos tempo
+            // de estudo — mostrar somados para não parecer 0 com sessão feita.
+            const estudoMin = (esforco.foco || 0) + (esforco.sessoes || 0);
+            const partes = [`${estudoMin} min de estudo`];
+            if (esforco.concluidas) partes.push(`${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}`);
+            cell.title = `${data.toLocaleDateString('pt-PT')}: ${partes.join(' · ')}`;
             if (startOfDay(data).getTime() === today.getTime()) cell.dataset.hoje = 'true';
 
             const num = document.createElement('span');
@@ -660,6 +666,21 @@ function tasksDeConteudoVault(content, chave) {
         if (parsed && typeof parsed === 'object' && Array.isArray(parsed[chave])) return parsed[chave];
     } catch { /* formato inválido: usa-se o local */ }
     return null;
+}
+
+function espelharVaultParaLocal(content) {
+    try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+            write(`study-journal-tasks-${dayKey(selected)}`, parsed);
+            return;
+        }
+        if (!parsed || typeof parsed !== 'object') return;
+        Object.entries(parsed).forEach(([dia, lista]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !Array.isArray(lista)) return;
+            write(`study-journal-tasks-${dia}`, lista);
+        });
+    } catch { /* espelho best-effort: o dia atual já foi resolvido acima */ }
 }
 
 async function syncTasks() {
@@ -993,15 +1014,84 @@ const sessionTimer = {
     timer: null,
     deadline: null,
     subject: 'Matemática A',
+    creditedSec: 0,
 };
 
 const SESSION_PRESETS = [25, 50, 90];
+const SESSION_STATE_KEY = 'study-journal-session-state';
+
+/* O timer perdia-se ao recarregar: guarda o estado (duração, restante,
+   deadline, disciplina) e repõe no arranque. */
+function saveSessionState() {
+    try {
+        localStorage.setItem(SESSION_STATE_KEY, JSON.stringify({
+            minutes: sessionTimer.minutes,
+            remaining: sessionTimer.remaining,
+            running: sessionTimer.running,
+            deadline: sessionTimer.running ? sessionTimer.deadline : null,
+            subject: sessionTimer.subject,
+            creditedSec: sessionTimer.creditedSec,
+        }));
+    } catch { /* silencioso: não pode incomodar o timer */ }
+}
+
+function restoreSessionState() {
+    let s = null;
+    try {
+        s = JSON.parse(localStorage.getItem(SESSION_STATE_KEY));
+    } catch { s = null; }
+    if (!s || typeof s !== 'object') return;
+
+    if (SESSION_PRESETS.includes(Number(s.minutes))) {
+        sessionTimer.minutes = Number(s.minutes);
+    }
+    if (typeof s.subject === 'string' && s.subject.trim()) {
+        sessionTimer.subject = s.subject;
+    }
+    const full = sessionTimer.minutes * 60;
+    const rem = Number(s.remaining);
+    sessionTimer.remaining = Number.isFinite(rem) ? Math.min(Math.max(0, Math.ceil(rem)), full) : full;
+    const cred = Number(s.creditedSec);
+    sessionTimer.creditedSec = Number.isFinite(cred) ? Math.min(Math.max(0, Math.floor(cred)), full) : 0;
+    sessionTimer.running = false;
+    sessionTimer.deadline = null;
+
+    if (s.running && Number.isFinite(Number(s.deadline))) {
+        const restam = Math.max(0, Math.ceil((Number(s.deadline) - Date.now()) / 1000));
+        if (restam <= 0) {
+            // Terminou com a página fechada: credita a sessão sem alarme
+            const jaMin = Math.floor(sessionTimer.creditedSec / 60);
+            const emFalta = Math.max(0, sessionTimer.minutes - jaMin);
+            if (emFalta > 0) StudySessions.adicionarMinutos(sessionTimer.subject, emFalta);
+            sessionTimer.remaining = full;
+            sessionTimer.creditedSec = 0;
+            saveSessionState();
+            setTimeout(() => toast(`Sessão de ${sessionTimer.minutes} min concluída em ${sessionTimer.subject}!`, 'success'), 0);
+            return;
+        }
+        sessionTimer.remaining = restam;
+        startSessionTimer();
+        setTimeout(() => toast('Temporizador retomado após recarregar.', 'info'), 0);
+    }
+}
 
 function formatSessionClock(total) {
     const safe = Math.max(0, Math.ceil(total));
     const minutes = Math.floor(safe / 60);
     const seconds = safe % 60;
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/* Os dois seletores de disciplina (Painel e Estudar) partilham o mesmo
+   sessionTimer — mantê-los sincronizados para a escolha num lado não
+   parecer perdida no outro. */
+function sincronizarSeletoresDisciplina() {
+    ['session-subject', 'estudar-subject'].forEach((id) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const existe = [...sel.options].some((o) => o.value === sessionTimer.subject || o.text === sessionTimer.subject);
+        if (existe && sel.value !== sessionTimer.subject) sel.value = sessionTimer.subject;
+    });
 }
 
 function renderSessionTimer() {
@@ -1038,6 +1128,8 @@ function renderSessionTimer() {
         btn.classList.toggle('text-white', selected);
     });
 
+    sincronizarSeletoresDisciplina();
+
     // Show today's summary for selected subject
     const hoje = StudySessions.obterDoDia(new Date());
     const subjMin = hoje[sessionTimer.subject] || 0;
@@ -1047,11 +1139,15 @@ function renderSessionTimer() {
     } else {
         summaryEl.classList.add('hidden');
     }
+    saveSessionState();
 }
 
 function startSessionTimer() {
     if (sessionTimer.timer) clearInterval(sessionTimer.timer);
-    if (!(sessionTimer.remaining > 0)) sessionTimer.remaining = sessionTimer.minutes * 60;
+    if (!(sessionTimer.remaining > 0)) {
+        sessionTimer.remaining = sessionTimer.minutes * 60;
+        sessionTimer.creditedSec = 0;
+    }
     sessionTimer.deadline = Date.now() + sessionTimer.remaining * 1000;
     sessionTimer.timer = setInterval(tickSessionTimer, 250);
     sessionTimer.running = true;
@@ -1090,34 +1186,111 @@ function tickSessionTimer() {
 }
 
 function concluirSessao() {
-    const minutosCompletos = sessionTimer.minutes;
-    StudySessions.adicionarMinutos(sessionTimer.subject, minutosCompletos);
-    toast(`Sessão de ${minutosCompletos} min concluída em ${sessionTimer.subject}!`, 'success');
+    const jaCreditadoMin = Math.floor(sessionTimer.creditedSec / 60);
+    const emFalta = Math.max(0, sessionTimer.minutes - jaCreditadoMin);
+    if (emFalta > 0) {
+        StudySessions.adicionarMinutos(sessionTimer.subject, emFalta);
+    }
+    const totalCiclo = jaCreditadoMin + emFalta;
+    toast(totalCiclo > 0 && jaCreditadoMin > 0
+        ? `Sessão de ${totalCiclo} min concluída em ${sessionTimer.subject}! (${jaCreditadoMin} min já tinham sido guardados)`
+        : `Sessão de ${sessionTimer.minutes} min concluída em ${sessionTimer.subject}!`, 'success');
+    atualizarVistasAposSessao();
+    sessionTimer.remaining = sessionTimer.minutes * 60;
+    sessionTimer.creditedSec = 0;
+    renderSessionTimer();
+}
+
+/* ── Tempo parcial ───────────────────────────────────────
+   O Stop (e a troca de preset/disciplina a meio) guardava 0 min.
+   Agora credita os minutos inteiros já decorridos (>= 1 min) para
+   não perder tempo de estudo no heatmap. */
+
+function creditarTempoParcial(subject) {
+    const fullSec = sessionTimer.minutes * 60;
+    const decorridoSec = Math.max(0, fullSec - Math.max(0, sessionTimer.remaining));
+    const porCreditarSec = Math.max(0, decorridoSec - sessionTimer.creditedSec);
+    const minutos = Math.floor(porCreditarSec / 60);
+    if (minutos > 0) {
+        StudySessions.adicionarMinutos(subject, minutos);
+        sessionTimer.creditedSec += minutos * 60;
+    }
+    return minutos;
+}
+
+function atualizarVistasAposSessao() {
     StudyStats.renderHeatmap();
     renderStreak();
     if (currentView === 'calendario') renderCalendar();
     if (currentView === 'disciplinas') renderSubjects();
     if (currentView === 'estudar') renderEstudarView();
+}
+
+function cancelarSessao() {
+    stopSessionTimer();
+    const tinhaSidoIniciada = sessionTimer.remaining < sessionTimer.minutes * 60 || sessionTimer.creditedSec > 0;
+    if (!tinhaSidoIniciada) {
+        sessionTimer.creditedSec = 0;
+        renderSessionTimer();
+        if (currentView === 'estudar') renderEstudarView();
+        return;
+    }
+    const guardados = creditarTempoParcial(sessionTimer.subject);
+    const totalCiclo = Math.floor(sessionTimer.creditedSec / 60);
+    if (guardados > 0) {
+        toast(`Sessão parcial de ${guardados} min guardada em ${sessionTimer.subject}.`, 'success');
+    } else if (totalCiclo > 0) {
+        toast(`Sessão terminada (${totalCiclo} min já guardados neste ciclo).`, 'info');
+    } else {
+        toast('Sessão descartada (menos de 1 min).', 'info');
+    }
+    atualizarVistasAposSessao();
     sessionTimer.remaining = sessionTimer.minutes * 60;
+    sessionTimer.creditedSec = 0;
     renderSessionTimer();
+    if (currentView === 'estudar') renderEstudarView();
 }
 
 function setSessionMinutes(minutes) {
     if (!SESSION_PRESETS.includes(minutes)) return;
+    const cicloIniciado = sessionTimer.remaining < sessionTimer.minutes * 60 || sessionTimer.creditedSec > 0;
     if (minutes === sessionTimer.minutes && !sessionTimer.running) {
+        if (cicloIniciado) {
+            const guardados = creditarTempoParcial(sessionTimer.subject);
+            if (guardados > 0) {
+                toast(`Sessão parcial de ${guardados} min guardada em ${sessionTimer.subject}.`, 'success');
+                atualizarVistasAposSessao();
+            }
+        }
         sessionTimer.minutes = minutes;
         sessionTimer.remaining = minutes * 60;
+        sessionTimer.creditedSec = 0;
         renderSessionTimer();
+        if (currentView === 'estudar') renderEstudarView();
         return;
     }
 
     const wasRunning = sessionTimer.running;
-    stopSessionTimer();
+    const disciplinaAntiga = sessionTimer.subject;
+    if (cicloIniciado) {
+        stopSessionTimer();
+        const guardados = creditarTempoParcial(disciplinaAntiga);
+        if (guardados > 0) {
+            toast(`Sessão parcial de ${guardados} min guardada em ${disciplinaAntiga}.`, 'success');
+            atualizarVistasAposSessao();
+        }
+    } else {
+        stopSessionTimer();
+    }
     sessionTimer.minutes = minutes;
     sessionTimer.remaining = minutes * 60;
+    sessionTimer.creditedSec = 0;
 
     if (wasRunning) startSessionTimer();
-    else renderSessionTimer();
+    else {
+        renderSessionTimer();
+        if (currentView === 'estudar') renderEstudarView();
+    }
 }
 
 function toggleSessionTimer() {
@@ -1129,16 +1302,36 @@ function toggleSessionTimer() {
 }
 
 function setSessionSubject(subject) {
+    if (subject === sessionTimer.subject) {
+        renderSessionTimer();
+        return;
+    }
+    const cicloIniciado = sessionTimer.remaining < sessionTimer.minutes * 60 || sessionTimer.creditedSec > 0;
+    if (cicloIniciado) {
+        const wasRunning = sessionTimer.running;
+        if (wasRunning) stopSessionTimer();
+        const disciplinaAntiga = sessionTimer.subject;
+        const guardados = creditarTempoParcial(disciplinaAntiga);
+        sessionTimer.subject = subject;
+        if (guardados > 0) {
+            toast(`Sessão parcial de ${guardados} min guardada em ${disciplinaAntiga}.`, 'success');
+            atualizarVistasAposSessao();
+        }
+        // O restante do ciclo continua a contar para a nova disciplina.
+        if (wasRunning) startSessionTimer();
+        else {
+            renderSessionTimer();
+            if (currentView === 'estudar') renderEstudarView();
+        }
+        return;
+    }
     sessionTimer.subject = subject;
     renderSessionTimer();
 }
 
 function renderEstudarView() {
-    // Sync subject selector with session timer
-    const subjectSelect = document.getElementById('estudar-subject');
-    if (subjectSelect) {
-        subjectSelect.value = sessionTimer.subject;
-    }
+    // Sync subject selectors (Painel + Estudar) with session timer
+    sincronizarSeletoresDisciplina();
 
     // Render timer
     const timerEl = document.getElementById('estudar-timer');
@@ -1461,10 +1654,16 @@ const VIEW_LABELS = {
     definicoes: 'Definições',
 };
 
-const WEEKDAYS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+const WEEKDAYS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
 
 /* Todas as vistas num único ficheiro, trocadas pela navegação lateral. */
 function showView(view) {
+    // No telemóvel sem sync, as vistas de dados locais mostram zeros/
+    // vazios enganadores — redireciona para o Painel em vez disso.
+    if (VISTAS_SOMENTE_SYNC.includes(view) && telemovelSemSync()) {
+        toast('Disponível só com sync ativo. Entra na conta em Definições.', 'warn');
+        view = 'painel';
+    }
     currentView = view;
     write('study-journal-view', view);
 
@@ -1499,6 +1698,43 @@ function showView(view) {
     window.scrollTo({ top: 0 });
 }
 
+/* ── Modo telemóvel sem sync ──────────────────────────
+   Notas e Tarefas do dia vêm do vault (partilhado via servidor) e o
+   Calendário/Disciplinas leem o espelho local — por isso ficam visíveis.
+   Sessões, heatmap, sequência, Estudar, Semanal, Exames e PDFs vivem em
+   localStorage sem sync: no telemóvel sem conta escondem-se em vez de
+   mostrarem dados errados. Assim que houver sync, tudo reaparece. */
+
+const VISTAS_SOMENTE_SYNC = ['estudar', 'semanal', 'exames', 'pdfs'];
+const CARDS_SOMENTE_SYNC = ['card-sessao', 'card-streak', 'card-heatmap'];
+
+function syncAtivo() {
+    try {
+        if (window.ContaSync?.configurado?.()) return true;
+        if (window.GitHubSync?.hasWriteAccess?.()) return true;
+    } catch { /* trata como sem sync */ }
+    return false;
+}
+
+function telemovelSemSync() {
+    try {
+        const ua = navigator.userAgent || '';
+        const telemovel = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+        return telemovel && !syncAtivo();
+    } catch {
+        return false;
+    }
+}
+
+function atualizarModoTelemovel() {
+    const gated = telemovelSemSync();
+    document.querySelectorAll('[data-view]').forEach((b) => {
+        if (VISTAS_SOMENTE_SYNC.includes(b.dataset.view)) b.classList.toggle('hidden', gated);
+    });
+    CARDS_SOMENTE_SYNC.forEach((id) => document.getElementById(id)?.classList.toggle('hidden', gated));
+    if (gated && VISTAS_SOMENTE_SYNC.includes(currentView)) showView('painel');
+}
+
 /* ── Calendário ───────────────────────────────────────── */
 
 let calCursor = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1528,7 +1764,7 @@ function daysWithData() {
 }
 
 function renderCalendar() {
-    els.calMonth.textContent = calCursor.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+    els.calMonth.textContent = `${calCursor.toLocaleDateString('pt-PT', { month: 'long' })} ${calCursor.getFullYear()}`;
 
     if (!els.calWeekdays.childElementCount) {
         WEEKDAYS.forEach((label) => {
@@ -1538,52 +1774,59 @@ function renderCalendar() {
         });
     }
 
-    const first = new Date(calCursor.getFullYear(), calCursor.getMonth(), 1);
+    const ano = calCursor.getFullYear();
+    const mes = calCursor.getMonth();
+    const first = new Date(ano, mes, 1);
     const offset = (first.getDay() + 6) % 7;
+    const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+    // Só as semanas necessárias (como um calendário de parede)
+    const totalCells = Math.ceil((offset + diasNoMes) / 7) * 7;
 
     els.calGrid.replaceChildren();
 
-    for (let i = 0; i < 42; i += 1) {
-        const date = new Date(first);
-        date.setDate(first.getDate() - offset + i);
+    for (let i = 0; i < totalCells; i += 1) {
+        const diaNum = i - offset + 1;
+
+        // Casas vazias antes do dia 1 e depois do fim do mês
+        if (diaNum < 1 || diaNum > diasNoMes) {
+            const blank = document.createElement('div');
+            blank.className = 'cal-classic-blank';
+            blank.setAttribute('aria-hidden', 'true');
+            els.calGrid.append(blank);
+            continue;
+        }
+
+        const date = new Date(ano, mes, diaNum);
 
         const key = dayKey(date);
-        const inMonth = date.getMonth() === calCursor.getMonth();
         const isToday = date.getTime() === today.getTime();
         const isSelected = date.getTime() === selected.getTime();
 
         const tasks = read(`study-journal-tasks-${key}`, []);
         const notes = read(`study-journal-notes-${key}`, '');
-        const hasData = tasks.length > 0 || notes.trim() !== '';
 
         const cell = document.createElement('div');
-        cell.className = 'relative min-h-[100px] p-1 rounded-xl border transition';
+        cell.className = 'cal-classic-day group';
         cell.dataset.dateKey = key;
-        cell.ariaLabel = date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-        if (!inMonth) {
-            cell.classList.add('bg-transparent', 'border-transparent', 'text-faint/40');
-        } else if (isSelected) {
-            cell.classList.add('border-brand', 'bg-brand/5');
-        } else if (isToday) {
-            cell.classList.add('border-brand/60', 'bg-brand/5');
-        } else {
-            cell.classList.add('border-line', 'bg-surface', 'hover:bg-surface-2', 'hover:border-brand/30');
-        }
+        cell.setAttribute('aria-label', date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+        if (isToday) cell.dataset.hoje = 'true';
+        if (isSelected) cell.dataset.selecionado = 'true';
+        // Densidade: fonte maior com poucas tarefas, menor com muitas
+        if (tasks.length === 1) cell.dataset.densidade = '1';
+        else if (tasks.length === 2) cell.dataset.densidade = '2';
+        else if (tasks.length >= 3) cell.dataset.densidade = '3';
+        const dow = date.getDay();
+        if (dow === 0 || dow === 6) cell.dataset.fimSemana = 'true';
 
         // Day number
         const number = document.createElement('div');
-        number.className = 'text-sm font-medium';
-        number.textContent = String(date.getDate());
-        if (!inMonth) number.classList.add('text-faint/40');
-        else if (isToday) number.classList.add('text-brand');
-        else if (isSelected) number.classList.add('text-brand');
-        else number.classList.add('text-fg');
+        number.className = 'cal-classic-num';
+        number.textContent = String(diaNum);
         cell.append(number);
 
         // Tasks container
         const tasksContainer = document.createElement('div');
-        tasksContainer.className = 'mt-1 flex flex-col gap-1 min-h-[70px]';
+        tasksContainer.className = 'cal-classic-tasks';
         tasksContainer.dataset.tasksContainer = 'true';
 
         // Show up to 3 tasks inline
@@ -1596,7 +1839,7 @@ function renderCalendar() {
         // Show "+N more" if more tasks
         if (tasks.length > 3) {
             const moreEl = document.createElement('div');
-            moreEl.className = 'text-[11px] text-muted text-center py-0.5';
+            moreEl.className = 'cal-classic-more';
             moreEl.textContent = `+${tasks.length - 3} mais`;
             moreEl.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1608,7 +1851,7 @@ function renderCalendar() {
         // Show notes indicator
         if (notes.trim()) {
             const notesEl = document.createElement('div');
-            notesEl.className = 'text-[11px] text-brand/70 text-center py-0.5 border-t border-brand/20 mt-1';
+            notesEl.className = 'cal-classic-notes';
             notesEl.innerHTML = '<svg class="icon inline h-3 w-3 mr-0.5"><use href="#i-file-text"/></svg> Notas';
             notesEl.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1617,10 +1860,10 @@ function renderCalendar() {
             tasksContainer.append(notesEl);
         }
 
-        // Add task button (shows on hover or for empty days)
+        // Add task button (shows on hover)
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
-        addBtn.className = 'add-task-btn absolute bottom-1 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-brand/10 text-brand opacity-0 transition hover:opacity-100 group-hover:opacity-100 flex items-center justify-center';
+        addBtn.className = 'cal-classic-add';
         addBtn.innerHTML = '<svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>';
         addBtn.title = 'Adicionar tarefa';
         addBtn.addEventListener('click', (e) => {
@@ -1630,11 +1873,10 @@ function renderCalendar() {
         tasksContainer.append(addBtn);
 
         cell.append(tasksContainer);
-        cell.classList.add('group');
 
         // Click on cell (not task/add btn) to select day
         cell.addEventListener('click', (e) => {
-            if (e.target.closest('.calendar-task') || e.target.closest('.add-task-btn')) return;
+            if (e.target.closest('.calendar-task') || e.target.closest('.cal-classic-add')) return;
             selected = startOfDay(date);
             renderCalendar();
         });
@@ -1645,7 +1887,7 @@ function renderCalendar() {
 
 function createCalendarTaskElement(task, key, date) {
     const el = document.createElement('div');
-    el.className = 'calendar-task flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium truncate cursor-pointer transition hover:shadow-sm';
+    el.className = 'calendar-task flex items-center gap-1.5 px-2 py-1 rounded font-medium truncate cursor-pointer transition hover:shadow-sm';
 
     const categoria = categoriaDaTarefa(task);
     const cat = CATEGORIA_CORES[categoria] || CATEGORIA_CORES.tarefa;
@@ -1722,9 +1964,11 @@ function showInlineTaskForm(cell, key, date) {
                     <select id="inline-task-subject" class="field text-sm">
                         <option>Geral</option>
                         <option>Matemática A</option>
+                        <option>FQA</option>
                         <option>Biologia</option>
                         <option>Português</option>
                         <option>Aplicações Informáticas (A.I.)</option>
+                        <option>Hobbies</option>
                     </select>
                 </div>
                 <div class="flex flex-col gap-1.5">
@@ -1835,9 +2079,11 @@ function createDayTasksDialog(date, key) {
                         <select id="day-tasks-subject" class="field w-full sm:w-auto text-sm">
                             <option>Geral</option>
                             <option>Matemática A</option>
+                            <option>FQA</option>
                             <option>Biologia</option>
                             <option>Português</option>
                             <option>Aplicações Informáticas (A.I.)</option>
+                            <option>Hobbies</option>
                         </select>
                         <select id="day-tasks-category" class="field w-full sm:w-auto text-sm" title="Categoria">
                             <option value="tarefa">🟢 Tarefa</option>
@@ -2280,6 +2526,11 @@ async function loadDay() {
         ? tasksDeConteudoVault(taskResult.content, dayKey(selected))
         : null;
 
+    // Espelho vault → chaves locais (só com o vault acessível): o
+    // Calendário/Disciplinas leem as chaves de cada dia, que no telemóvel
+    // começam vazias. Só corre online, por isso não apaga edições offline.
+    if (taskResult.ok && taskResult.existe) espelharVaultParaLocal(taskResult.content);
+
     if (doVault !== null) {
         tasks = doVault;
     } else {
@@ -2403,9 +2654,7 @@ function bind() {
     document.getElementById('session-start')?.addEventListener('click', toggleSessionTimer);
     document.getElementById('session-pause')?.addEventListener('click', toggleSessionTimer);
     document.getElementById('session-stop')?.addEventListener('click', () => {
-        stopSessionTimer();
-        sessionTimer.remaining = sessionTimer.minutes * 60;
-        renderSessionTimer();
+        cancelarSessao();
     });
     document.getElementById('session-subject')?.addEventListener('change', (e) => setSessionSubject(e.target.value));
     document.querySelectorAll('[data-session-preset]').forEach((btn) => {
@@ -2416,10 +2665,7 @@ function bind() {
     document.getElementById('estudar-start')?.addEventListener('click', toggleSessionTimer);
     document.getElementById('estudar-pause')?.addEventListener('click', toggleSessionTimer);
     document.getElementById('estudar-stop')?.addEventListener('click', () => {
-        stopSessionTimer();
-        sessionTimer.remaining = sessionTimer.minutes * 60;
-        renderSessionTimer();
-        renderEstudarView();
+        cancelarSessao();
     });
     document.getElementById('estudar-subject')?.addEventListener('change', (e) => {
         setSessionSubject(e.target.value);
@@ -2762,6 +3008,7 @@ function bind() {
     });
 
     window.addEventListener('beforeunload', commitNotes);
+    window.addEventListener('beforeunload', saveSessionState);
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
@@ -2776,10 +3023,14 @@ function bind() {
 async function init() {
     seed();
     bind();
+    restoreSessionState();
     await refreshVault();
     await loadDay();
     const vistaGuardada = read('study-journal-view', 'painel');
     showView(VIEW_LABELS[vistaGuardada] ? vistaGuardada : 'painel');
+    atualizarModoTelemovel();
+    if (window.ContaSync?.onSync) window.ContaSync.onSync(() => atualizarModoTelemovel());
+    if (window.GitHubSync?.onSync) window.GitHubSync.onSync(() => atualizarModoTelemovel());
     startVaultSync();
     syncDayFromVault();
 
@@ -2838,7 +3089,7 @@ function applyReadOnlyMode() {
     if (vaultDot) vaultDot.className = 'h-1.5 w-1.5 rounded-full bg-faint';
 
     // Disable calendar add-task buttons
-    document.querySelectorAll('.add-task-btn').forEach(btn => btn.classList.add('hidden'));
+    document.querySelectorAll('.cal-classic-add').forEach(btn => btn.classList.add('hidden'));
 
     // Disable task checkboxes in calendar
     document.querySelectorAll('.calendar-task input[type="checkbox"]').forEach(cb => {

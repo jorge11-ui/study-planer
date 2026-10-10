@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="dark">
     <title>StudyJournal</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%234f46e5'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="app.css?v=4">
+    <link rel="stylesheet" href="app.css?v=5">
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
 
@@ -327,7 +327,7 @@
         <!-- Coluna lateral: utilitários -->
         <section class="flex shrink-0 flex-col gap-6 lg:w-[380px]">
             <!-- Sequência de estudos -->
-            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="card-streak" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="flex items-center gap-2.5">
                     <svg class="icon h-5 w-5 text-brand-light"><use href="#i-flame"/></svg>
                     <h2 class="text-base font-semibold">Sequência</h2>
@@ -340,7 +340,7 @@
             </div>
 
             <!-- Sessão de Estudo -->
-            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="card-sessao" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="flex items-center gap-2.5">
                     <svg class="icon h-5 w-5 text-brand-light"><use href="#i-tomato"/></svg>
                     <h2 class="text-base font-semibold">Sessão de Estudo</h2>
@@ -354,6 +354,7 @@
                             <option>Português</option>
                             <option>Biologia</option>
                             <option>Aplicações Informáticas (A.I.)</option>
+                            <option>Hobbies</option>
                             <option>Geral</option>
                         </select>
                     </div>
@@ -422,6 +423,7 @@
                             <option>Biologia</option>
                             <option>Português</option>
                             <option>Aplicações Informáticas (A.I.)</option>
+                            <option>Hobbies</option>
                         </select>
                     </div>
                     <select id="task-category" class="field cursor-pointer appearance-none py-2 px-2 text-xs" title="Categoria">
@@ -443,7 +445,7 @@
             </div>
 
             <!-- Consistência (Heatmap) -->
-            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <div id="card-heatmap" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
                 <header class="mb-3 flex items-center gap-2.5">
                     <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
                     <h2 class="text-base font-semibold">Consistência</h2>
@@ -476,18 +478,14 @@
         <!-- ══ Vista: Calendário ══ -->
         <section id="view-calendario" data-panel="calendario" hidden
             class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center gap-2.5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
-                <h2 class="text-base font-semibold">Calendário</h2>
-                <div class="ml-auto flex items-center gap-1">
-                    <button id="cal-prev" type="button" aria-label="Mês anterior" class="icon-btn">
-                        <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
-                    </button>
-                    <span id="cal-month" class="min-w-[10rem] text-center text-sm font-medium capitalize"></span>
-                    <button id="cal-next" type="button" aria-label="Mês seguinte" class="icon-btn">
-                        <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
-                    </button>
-                </div>
+            <header class="flex items-center justify-between gap-2">
+                <button id="cal-prev" type="button" aria-label="Mês anterior" class="icon-btn">
+                    <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
+                </button>
+                <h2 id="cal-month" class="cal-classic-title min-w-0 flex-1 text-center capitalize"></h2>
+                <button id="cal-next" type="button" aria-label="Mês seguinte" class="icon-btn">
+                    <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
+                </button>
             </header>
             <div class="flex flex-wrap items-center gap-4 text-[11px] font-medium text-muted" aria-label="Legenda de categorias">
                 <span class="flex items-center gap-1.5">
@@ -504,8 +502,12 @@
                 </span>
             </div>
 
-            <div id="cal-weekdays" class="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-faint"></div>
-            <div id="cal-grid" class="grid grid-cols-7 gap-1.5"></div>
+            <div class="overflow-x-auto">
+                <div class="min-w-[680px]">
+                    <div id="cal-weekdays" class="cal-classic-weekdays"></div>
+                    <div id="cal-grid" class="cal-classic-grid"></div>
+                </div>
+            </div>
 
         </section>
 
@@ -540,6 +542,7 @@
                         <option>Português</option>
                         <option>Biologia</option>
                         <option>Aplicações Informáticas (A.I.)</option>
+                        <option>Hobbies</option>
                         <option>Geral</option>
                     </select>
                 </div>
@@ -651,6 +654,11 @@
                 <span id="week-number" class="ml-auto mr-2 px-2 py-0.5 rounded-full bg-surface-2 text-[10px] font-medium text-muted"></span>
                 <span id="week-label" class="text-xs text-faint"></span>
                 <div class="ml-auto flex items-center gap-1.5">
+                    <div class="flex items-center gap-1" role="group" aria-label="Resolução da grelha">
+                        <button type="button" data-week-passo="0.25" class="pdf-filter" title="Grelha de 15 em 15 minutos">15m</button>
+                        <button type="button" data-week-passo="0.5" class="pdf-filter" title="Grelha de 30 em 30 minutos">30m</button>
+                        <button type="button" data-week-passo="1" class="pdf-filter" title="Grelha de hora a hora">60m</button>
+                    </div>
                     <button id="week-prev" type="button" aria-label="Semana anterior" class="icon-btn" title="Semana anterior">
                         <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
                     </button>
@@ -689,11 +697,12 @@
                 </span>
             </div>
 
-            <div class="overflow-x-auto">
-                <table id="week-grid" class="w-full min-w-[1000px] border-collapse" role="grid">
+            <div class="overflow-x-auto" id="week-scroll">
+                <div class="relative min-w-[1000px]" id="week-grid-wrap">
+                <table id="week-grid" class="w-full border-collapse" role="grid">
                     <thead>
                         <tr class="border-b border-line">
-                            <th class="sticky left-0 w-16 px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface">
+                            <th class="sticky left-0 w-16 px-2 py-0 text-left text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface leading-none">
                                 Hora
                             </th>
                             <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface" data-day="1">Seg</th>
@@ -707,6 +716,7 @@
                     </thead>
                     <tbody id="week-body"></tbody>
                 </table>
+                </div>
             </div>
         </section>
 
@@ -1172,9 +1182,13 @@
                     <div class="flex flex-col gap-1.5">
                         <label class="week-label" for="week-duracao">Duração</label>
                         <select id="week-duracao" class="field w-full">
+                            <option value="0.25">15 minutos</option>
                             <option value="0.5">30 minutos</option>
+                            <option value="0.75">45 minutos</option>
                             <option value="1">1 hora</option>
+                            <option value="1.25">1 hora e 15</option>
                             <option value="1.5">1 hora e 30</option>
+                            <option value="1.75">1 hora e 45</option>
                             <option value="2">2 horas</option>
                             <option value="2.5">2 horas e 30</option>
                             <option value="3">3 horas</option>
@@ -1207,6 +1221,10 @@
                 <button id="week-apagar" type="button" class="btn-soft btn-soft-danger" hidden>
                     <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
                     <span>Apagar</span>
+                </button>
+                <button id="week-duplicar" type="button" class="btn-soft" hidden title="Duplicar: clica no horário onde queres a cópia">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                    <span>Duplicar</span>
                 </button>
                 <button id="week-salvar" type="button" class="btn-primary">
                     <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>

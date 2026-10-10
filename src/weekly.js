@@ -7,23 +7,45 @@ window.Weekly = (() => {
     const DIAS_COMPLETOS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
     const HORA_INICIO = 6;
     const HORA_FIM = 24;
-    const PASSO_HORAS = 0.5; // slots de 30 em 30 minutos
+    const PASSOS_VALIDOS = [0.25, 0.5, 1]; // 15, 30 ou 60 minutos
+    const CHAVE_PASSO = 'study-journal-semanal-passo';
     const PX_POR_HORA = 48; // altura em px de 1h de bloco
-    const SLOTS = [];
-    for (let h = HORA_INICIO; h < HORA_FIM; h = Math.round((h + PASSO_HORAS) * 2) / 2) {
-        SLOTS.push(h);
+    let passoHoras = 0.5;
+    let SLOTS = [];
+
+    function construirSlots() {
+        SLOTS = [];
+        for (let h = HORA_INICIO; h < HORA_FIM; h = Math.round((h + passoHoras) * 100) / 100) {
+            SLOTS.push(h);
+        }
+    }
+
+    function lerPasso() {
+        try {
+            const v = Number(localStorage.getItem(CHAVE_PASSO));
+            if (PASSOS_VALIDOS.includes(v)) passoHoras = v;
+        } catch { /* resolução padrão */ }
+        construirSlots();
+    }
+
+    function guardarPasso() {
+        try {
+            localStorage.setItem(CHAVE_PASSO, String(passoHoras));
+        } catch { /* segue sem persistir */ }
     }
 
     function fmtHora(h) {
         const hh = Math.floor(h);
-        const mm = (h % 1) ? '30' : '00';
-        return `${String(hh).padStart(2, '0')}:${mm}`;
+        const mm = Math.round((h - hh) * 60);
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     }
 
     function fmtDuracao(d) {
-        if (d < 1) return '30 min';
-        const h = Math.floor(d);
-        return (d % 1) ? `${h}h30` : `${h}h`;
+        const totalMin = Math.round(d * 60);
+        if (totalMin < 60) return `${totalMin} min`;
+        const h = Math.floor(totalMin / 60);
+        const m = totalMin % 60;
+        return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
     }
 
     const TEXTOS = {
@@ -52,6 +74,9 @@ window.Weekly = (() => {
     let semanaAtual = '';
     let editandoId = null;
     let arrastando = null;
+    let duplicando = null;
+    let criacaoArrastada = false;
+    let relogioTimer = null;
 
     function normalizar(t) {
         return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -112,6 +137,7 @@ window.Weekly = (() => {
     }
 
     function carregar() {
+        lerPasso();
         fixos = lerFixos().map(normalizarEvento);
         semanaAtual = semanaAtual || semanaKey();
         localStorage.setItem(CHAVE_DINAMICO_ATUAL, semanaAtual);
@@ -166,6 +192,7 @@ window.Weekly = (() => {
 
     function irParaSemanaAtual() {
         mudarSemana(new Date());
+        rolarParaLinha();
     }
 
     function render() {
@@ -205,16 +232,24 @@ window.Weekly = (() => {
 
         if (!tbody) return;
 
+        document.querySelectorAll('[data-week-passo]').forEach(b => {
+            b.setAttribute('aria-pressed', String(Number(b.dataset.weekPasso) === passoHoras));
+        });
+
         let temEventos = false;
         let html = '';
+        const alturaLinha = passoHoras * PX_POR_HORA;
 
         for (const hora of SLOTS) {
-            const horaLabel = fmtHora(hora);
-            html += `<tr><th class="sticky left-0 w-16 px-2 py-1 text-right text-[10px] font-medium text-faint bg-surface border-r border-line">${horaLabel}</th>`;
+            // Na resolução de 15 min só as meias-horas levam rótulo
+            const mostraLabel = passoHoras >= 0.5 || Number.isInteger(hora * 2);
+            const horaLabel = mostraLabel ? fmtHora(hora) : '';
+            html += `<tr><th class="sticky left-0 w-16 px-2 py-0 text-right text-[10px] font-medium leading-none text-faint bg-surface border-r border-line">${horaLabel}</th>`;
 
             for (let dia = 1; dia <= 7; dia++) {
-                const fixosQueComecam = fixos.filter(e => e.dia === dia && e.hora === hora);
-                const dinamicosQueComecam = dinamicos.filter(e => e.dia === dia && e.hora === hora);
+                // Eventos que começam dentro deste slot (funciona em qualquer resolução)
+                const fixosQueComecam = fixos.filter(e => e.dia === dia && e.hora >= hora && e.hora < hora + passoHoras);
+                const dinamicosQueComecam = dinamicos.filter(e => e.dia === dia && e.hora >= hora && e.hora < hora + passoHoras);
                 
                 let cellHtml = '';
                 if (fixosQueComecam.length > 0 || dinamicosQueComecam.length > 0) {
@@ -249,7 +284,8 @@ window.Weekly = (() => {
                 const isToday = cellDate.toDateString() === hoje.toDateString();
                 const isWeekend = dia === 6 || dia === 7;
 
-                html += `<td tabindex="0" class="week-cell relative min-h-6 p-0.5 border-r border-line ${isToday ? 'bg-brand/5' : ''} ${isWeekend ? 'bg-surface-2/50' : ''}" 
+                html += `<td tabindex="0" class="week-cell relative min-h-6 p-0.5 border-r border-line ${isToday ? 'bg-brand/5' : ''} ${isWeekend ? 'bg-surface-2/50' : ''}"
+                          style="height:${alturaLinha}px"
                           data-dia="${dia}" data-hora="${hora}" ${isToday ? 'data-hoje="true"' : ''} ${isWeekend ? 'data-fim-semana="true"' : ''}>
                     ${cellHtml}
                 </td>`;
@@ -260,19 +296,71 @@ window.Weekly = (() => {
         tbody.innerHTML = html;
 
         if (empty) empty.hidden = temEventos;
+
+        desenharLinhaAtual();
+    }
+
+    /* ── Linha da hora atual ───────────────────────────── */
+    function desenharLinhaAtual() {
+        const wrap = document.getElementById('week-grid-wrap');
+        const table = document.getElementById('week-grid');
+        if (!wrap || !table) return;
+        wrap.querySelector('.week-now-line')?.remove();
+
+        const agora = new Date();
+        const inicioSemana = new Date(semanaAtual);
+        const fimSemana = new Date(inicioSemana);
+        fimSemana.setDate(fimSemana.getDate() + 6);
+        fimSemana.setHours(23, 59, 59, 999);
+        if (agora < inicioSemana || agora > fimSemana) return;
+
+        const decimal = agora.getHours() + agora.getMinutes() / 60 + agora.getSeconds() / 3600;
+        if (decimal < HORA_INICIO || decimal >= HORA_FIM) return;
+
+        const thead = table.querySelector('thead');
+        const topo = (thead ? thead.offsetHeight : 0) + (decimal - HORA_INICIO) * PX_POR_HORA;
+
+        const linha = document.createElement('div');
+        linha.className = 'week-now-line';
+        linha.style.top = `${topo}px`;
+        const rotulo = document.createElement('span');
+        rotulo.textContent = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+        linha.append(rotulo);
+        wrap.append(linha);
+    }
+
+    function rolarParaLinha() {
+        const vista = document.getElementById('view-semanal');
+        if (vista && vista.hidden) return;
+        const linha = document.querySelector('#week-grid-wrap .week-now-line');
+        if (linha) linha.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
+    function garantirOpcao(select, valor, rotulo) {
+        if (!select) return;
+        const existe = [...select.options].some(o => o.value === valor);
+        if (!existe) {
+            const opt = document.createElement('option');
+            opt.value = valor;
+            opt.textContent = rotulo;
+            select.append(opt);
+        }
     }
 
     function abrirFormulario(evento = null, dia = null, hora = null) {
+        sairModoColocacao();
         const dlg = document.getElementById('week-form');
         const form = dlg.querySelector('form');
         form.reset();
 
         const title = dlg.querySelector('#week-form-title');
         const apagarBtn = dlg.querySelector('#week-apagar');
+        const duplicarBtn = dlg.querySelector('#week-duplicar');
         const layerFixo = dlg.querySelector('[data-week-layer="fixo"]');
         const layerDinamico = dlg.querySelector('[data-week-layer="dinamico"]');
         const horaSelect = dlg.querySelector('#week-hora');
         const diaSelect = dlg.querySelector('#week-dia');
+        const duracaoSelect = dlg.querySelector('#week-duracao');
 
         horaSelect.innerHTML = SLOTS.map(h => `<option value="${h}">${fmtHora(h)}</option>`).join('');
         diaSelect.innerHTML = DIAS.map((d, i) => `<option value="${i + 1}">${DIAS_COMPLETOS[i]}</option>`).join('');
@@ -281,6 +369,10 @@ window.Weekly = (() => {
             editandoId = evento.id;
             title.textContent = TEXTOS.editarTitulo;
             apagarBtn.hidden = false;
+            if (duplicarBtn) duplicarBtn.hidden = false;
+
+            garantirOpcao(horaSelect, String(evento.hora), fmtHora(evento.hora));
+            garantirOpcao(duracaoSelect, String(evento.duracao), fmtDuracao(evento.duracao));
 
             dlg.querySelector('#week-titulo').value = evento.titulo;
             dlg.querySelector('#week-dia').value = String(evento.dia);
@@ -300,6 +392,7 @@ window.Weekly = (() => {
             editandoId = null;
             title.textContent = TEXTOS.novoTitulo;
             apagarBtn.hidden = true;
+            if (duplicarBtn) duplicarBtn.hidden = true;
 
             if (dia !== null) dlg.querySelector('#week-dia').value = String(dia);
             if (hora !== null) dlg.querySelector('#week-hora').value = String(hora);
@@ -377,6 +470,60 @@ window.Weekly = (() => {
         toast('Compromisso apagado.', 'success');
     }
 
+    /* ── Duplicar rotina ─────────────────────────────────
+       Guarda uma cópia e entra em modo colocação: o próximo clique
+       numa célula põe a cópia nesse horário. Esc cancela. */
+
+    function modoColocacao() {
+        return duplicando !== null;
+    }
+
+    function entrarModoColocacao(copia) {
+        duplicando = copia;
+        document.getElementById('week-grid')?.classList.add('week-grid-placing');
+        toast('Clica no horário onde queres a cópia. (Esc cancela)', 'info');
+        const alvo = document.querySelector(
+            `#week-body .week-cell[data-dia="${copia.origemDia}"][data-hora="${copia.origemHora}"]`
+        ) || document.querySelector('#week-body .week-cell');
+        alvo?.focus({ preventScroll: true });
+    }
+
+    function sairModoColocacao() {
+        duplicando = null;
+        document.getElementById('week-grid')?.classList.remove('week-grid-placing');
+    }
+
+    function colocarCopia(dia, hora) {
+        const { origemDia, origemHora, ...dados } = duplicando;
+        const copia = { ...dados, id: gerarId(), dia, hora };
+        if (copia.layer === 'dinamico') dinamicos.push(copia);
+        else fixos.push(copia);
+        sairModoColocacao();
+        salvar();
+        render();
+        toast('Cópia colocada.', 'success');
+    }
+
+    function duplicarAtual() {
+        const dlg = document.getElementById('week-form');
+        const titulo = dlg.querySelector('#week-titulo').value.trim() || 'Cópia';
+        const duracao = Number(dlg.querySelector('#week-duracao').value) || passoHoras;
+        const cor = dlg.querySelector('#week-cor').value;
+        const notas = dlg.querySelector('#week-notas').value.trim();
+        const layer = getLayerAtivo();
+        let origem = { dia: 1, hora: HORA_INICIO };
+        if (editandoId) {
+            const lista = layer === 'dinamico' ? dinamicos : fixos;
+            const original = lista.find(e => e.id === editandoId);
+            if (original) origem = { dia: original.dia, hora: original.hora };
+        }
+        fecharFormulario();
+        entrarModoColocacao({
+            titulo, duracao, cor, notas, layer,
+            origemDia: origem.dia, origemHora: origem.hora,
+        });
+    }
+
     function ligarOuvintes() {
         const tbody = document.getElementById('week-body');
         const dlg = document.getElementById('week-form');
@@ -407,8 +554,10 @@ window.Weekly = (() => {
                 if (!block) return;
 
                 const rect = block.getBoundingClientRect();
+                // Zona de resize adapta-se à altura do bloco (blocos de 15 min são baixos)
+                const zona = Math.min(15, Math.max(6, rect.height * 0.35));
                 const offsetY = e.clientY - rect.top;
-                if (offsetY < rect.height - 15) return;
+                if (offsetY < rect.height - zona) return;
 
                 e.preventDefault();
                 e.stopPropagation();
@@ -426,17 +575,22 @@ window.Weekly = (() => {
                     startY: e.clientY,
                     startDuracao: evento.duracao,
                     blockElement: block,
+                    raf: 0,
+                    evt: null,
                 };
 
                 document.addEventListener('mousemove', onResizeMove);
                 document.addEventListener('mouseup', onResizeEnd);
             };
 
-            const onResizeMove = (e) => {
+            const aplicarResize = () => {
+                resizeData.raf = 0;
                 if (!resizeData) return;
+                const e = resizeData.evt;
                 const deltaY = e.clientY - resizeData.startY;
-                const deltaDuracao = Math.round((deltaY / PX_POR_HORA) * 2) / 2;
-                const novaDuracao = Math.max(0.5, resizeData.startDuracao + deltaDuracao);
+                // Encaixa à resolução atual (15/30/60 min)
+                const deltaDuracao = Math.round(deltaY / PX_POR_HORA / passoHoras) * passoHoras;
+                const novaDuracao = Math.max(passoHoras, Math.round((resizeData.startDuracao + deltaDuracao) * 100) / 100);
 
                 if (novaDuracao !== resizeData.evento.duracao) {
                     resizeData.evento.duracao = novaDuracao;
@@ -449,8 +603,15 @@ window.Weekly = (() => {
                 }
             };
 
+            const onResizeMove = (e) => {
+                if (!resizeData || resizeData.raf) return;
+                resizeData.evt = e;
+                resizeData.raf = requestAnimationFrame(aplicarResize);
+            };
+
             const onResizeEnd = () => {
                 if (resizeData) {
+                    if (resizeData.raf) cancelAnimationFrame(resizeData.raf);
                     salvar();
                     render();
                     resizeData = null;
@@ -461,7 +622,106 @@ window.Weekly = (() => {
 
             tbody.addEventListener('mousedown', startResize);
 
+            /* ── Criar por arrasto: prime na célula e arrasta para baixo.
+               O destaque atualiza via rAF (suave); ao largar abre o
+               formulário já com dia/hora/duração. Sem arrasto = clique normal. */
+            let criacao = null;
+            let rafCriacao = 0;
+
+            const limparDestaqueCriacao = () => {
+                tbody.querySelectorAll('.drag-select').forEach(c => c.classList.remove('drag-select'));
+            };
+
+            const pintarCriacao = () => {
+                rafCriacao = 0;
+                if (!criacao) return;
+                limparDestaqueCriacao();
+                const ini = Math.min(criacao.inicioHora, criacao.fimHora);
+                const fim = Math.max(criacao.inicioHora, criacao.fimHora);
+                tbody.querySelectorAll(`.week-cell[data-dia="${criacao.dia}"]`).forEach(cell => {
+                    const h = Number(cell.dataset.hora);
+                    if (h >= ini && h <= fim) cell.classList.add('drag-select');
+                });
+            };
+
+            const terminarCriacao = (cancelar) => {
+                if (rafCriacao) {
+                    cancelAnimationFrame(rafCriacao);
+                    rafCriacao = 0;
+                }
+                document.body.classList.remove('week-creating');
+                if (!criacao) return;
+                const { dia, inicioHora, fimHora, moveu } = criacao;
+                criacao = null;
+                limparDestaqueCriacao();
+                if (cancelar || !moveu) return;
+                const ini = Math.min(inicioHora, fimHora);
+                const fim = Math.max(inicioHora, fimHora);
+                const duracao = Math.round((fim - ini + passoHoras) * 100) / 100;
+                criacaoArrastada = true;
+                abrirFormulario(null, dia, ini);
+                const duracaoSelect = document.getElementById('week-duracao');
+                garantirOpcao(duracaoSelect, String(duracao), fmtDuracao(duracao));
+                if (duracaoSelect) duracaoSelect.value = String(duracao);
+            };
+
+            tbody.addEventListener('pointerdown', (e) => {
+                if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
+                if (e.button !== undefined && e.button !== 0) return;
+                if (modoColocacao()) return;
+                if (e.target.closest('.week-block')) return;
+                const cell = e.target.closest('.week-cell');
+                if (!cell) return;
+                criacao = {
+                    dia: Number(cell.dataset.dia),
+                    inicioHora: Number(cell.dataset.hora),
+                    fimHora: Number(cell.dataset.hora),
+                    moveu: false,
+                };
+                try {
+                    tbody.setPointerCapture(e.pointerId);
+                } catch { /* sem captura: o pointerup pode perder-se fora da tabela */ }
+            });
+
+            tbody.addEventListener('pointermove', (e) => {
+                if (!criacao) return;
+                let cell = null;
+                try {
+                    const el = document.elementFromPoint(e.clientX, e.clientY);
+                    cell = el ? el.closest('.week-cell') : null;
+                } catch { cell = null; }
+                if (!cell || Number(cell.dataset.dia) !== criacao.dia) return;
+                const h = Number(cell.dataset.hora);
+                if (h !== criacao.fimHora) {
+                    criacao.fimHora = h;
+                    criacao.moveu = true;
+                    document.body.classList.add('week-creating');
+                    if (!rafCriacao) rafCriacao = requestAnimationFrame(pintarCriacao);
+                }
+            });
+
+            tbody.addEventListener('pointerup', () => terminarCriacao(false));
+            tbody.addEventListener('pointercancel', () => terminarCriacao(true));
+
             tbody.addEventListener('click', (e) => {
+                if (criacaoArrastada) {
+                    criacaoArrastada = false;
+                    return;
+                }
+                if (modoColocacao()) {
+                    const block = e.target.closest('.week-block');
+                    if (block) {
+                        sairModoColocacao();
+                    } else {
+                        const cell = e.target.closest('.week-cell');
+                        if (cell) {
+                            colocarCopia(Number(cell.dataset.dia), Number(cell.dataset.hora));
+                            return;
+                        }
+                        sairModoColocacao();
+                        return;
+                    }
+                }
                 const cell = e.target.closest('.week-cell');
                 const block = e.target.closest('.week-block');
                 if (block) {
@@ -549,11 +809,11 @@ window.Weekly = (() => {
                         break;
                     case 'ArrowDown':
                         e.preventDefault();
-                        novaHora = Math.min(HORA_FIM - PASSO_HORAS, Math.round((hora + PASSO_HORAS) * 2) / 2);
+                        novaHora = Math.min(HORA_FIM - passoHoras, Math.round((hora + passoHoras) * 100) / 100);
                         break;
                     case 'ArrowUp':
                         e.preventDefault();
-                        novaHora = Math.max(HORA_INICIO, Math.round((hora - PASSO_HORAS) * 2) / 2);
+                        novaHora = Math.max(HORA_INICIO, Math.round((hora - passoHoras) * 100) / 100);
                         break;
                     case 'Enter':
                     case ' ':
@@ -585,6 +845,13 @@ window.Weekly = (() => {
                             }
                         }
                         break;
+                    case 'Escape':
+                        if (modoColocacao()) {
+                            e.preventDefault();
+                            sairModoColocacao();
+                            toast('Duplicação cancelada.', 'info');
+                        }
+                        break;
                 }
 
                 if (novoDia !== dia || novaHora !== hora) {
@@ -610,6 +877,9 @@ window.Weekly = (() => {
                 } else if (e.target.closest('#week-apagar')) {
                     e.preventDefault();
                     apagarEvento();
+                } else if (e.target.closest('#week-duplicar')) {
+                    e.preventDefault();
+                    duplicarAtual();
                 } else if (e.target.closest('[data-week-layer]')) {
                     const btn = e.target.closest('[data-week-layer]');
                     dlg.querySelectorAll('[data-week-layer]').forEach(b => {
@@ -635,12 +905,33 @@ window.Weekly = (() => {
             addBtn.dataset.weekBound = 'true';
             addBtn.addEventListener('click', () => abrirFormulario());
         }
+
+        document.querySelectorAll('[data-week-passo]').forEach(btn => {
+            if (btn.dataset.weekBound) return;
+            btn.dataset.weekBound = 'true';
+            btn.addEventListener('click', () => {
+                const v = Number(btn.dataset.weekPasso);
+                if (!PASSOS_VALIDOS.includes(v) || v === passoHoras) return;
+                passoHoras = v;
+                guardarPasso();
+                construirSlots();
+                render();
+            });
+        });
+
+        if (!relogioTimer) {
+            relogioTimer = setInterval(() => {
+                const vista = document.getElementById('view-semanal');
+                if (!document.hidden && vista && !vista.hidden) desenharLinhaAtual();
+            }, 30000);
+        }
     }
 
     function ligar() {
         carregar();
         render();
         ligarOuvintes();
+        rolarParaLinha();
     }
 
     return { 

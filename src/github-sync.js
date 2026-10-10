@@ -230,6 +230,10 @@ window.GitHubSync = (() => {
                 dataAlvo: lerJson('study-journal-exames-data-alvo', null),
             },
             reviewsV2: lerJson('study-journal-reviews-v2', null),
+            // Sessões do timer (heatmap/estatísticas). O pomodoro legado não
+            // sincroniza de propósito: os valores antigos (contagens) e novos
+            // (minutos) misturar-se-iam na migração entre aparelhos.
+            sessoes: lerJson('study-journal-sessions', null),
         };
     }
 
@@ -258,6 +262,28 @@ window.GitHubSync = (() => {
         }
         if (Array.isArray(remoto.reviewsV2)) {
             localStorage.setItem('study-journal-reviews-v2', JSON.stringify(remoto.reviewsV2));
+        }
+        if (remoto.sessoes && typeof remoto.sessoes === 'object') {
+            // Fusão por máximo (dia, disciplina): os minutos só crescem,
+            // por isso o max converge sem duplicar em syncs repetidos.
+            const CHAVE_SESSOES = 'study-journal-sessions';
+            let locais = {};
+            try {
+                locais = JSON.parse(localStorage.getItem(CHAVE_SESSOES) || '{}');
+                if (!locais || typeof locais !== 'object') locais = {};
+            } catch { locais = {}; }
+            Object.entries(remoto.sessoes).forEach(([dia, materias]) => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+                if (!locais[dia] || typeof locais[dia] !== 'object') locais[dia] = {};
+                Object.entries(materias).forEach(([materia, min]) => {
+                    const n = Number(min);
+                    if (!Number.isFinite(n) || n <= 0) return;
+                    locais[dia][materia] = Math.max(Number(locais[dia][materia]) || 0, n);
+                });
+            });
+            try {
+                localStorage.setItem(CHAVE_SESSOES, JSON.stringify(locais));
+            } catch { /* segue sem persistir */ }
         }
     }
 
