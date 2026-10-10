@@ -230,6 +230,9 @@ window.GitHubSync = (() => {
                 dataAlvo: lerJson('study-journal-exames-data-alvo', null),
             },
             reviewsV2: lerJson('study-journal-reviews-v2', null),
+            // Metadados dos PDFs (a lista; os bytes vão por /api/ficheiros).
+            // Sem isto, no Render (sem vault) a galeria não viajava.
+            pdfs: lerJson('study-journal-pdfs', null),
             // Sessões do timer (heatmap/estatísticas). O pomodoro legado não
             // sincroniza de propósito: os valores antigos (contagens) e novos
             // (minutos) misturar-se-iam na migração entre aparelhos.
@@ -262,6 +265,9 @@ window.GitHubSync = (() => {
         }
         if (Array.isArray(remoto.reviewsV2)) {
             localStorage.setItem('study-journal-reviews-v2', JSON.stringify(remoto.reviewsV2));
+        }
+        if (Array.isArray(remoto.pdfs)) {
+            localStorage.setItem('study-journal-pdfs', JSON.stringify(remoto.pdfs));
         }
         if (remoto.sessoes && typeof remoto.sessoes === 'object') {
             // Fusão por máximo (dia, disciplina): os minutos só crescem,

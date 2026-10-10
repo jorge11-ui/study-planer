@@ -684,6 +684,7 @@ function recarregarAposSync() {
     if (currentView === 'definicoes') renderSettings();
     if (currentView === 'exames' && window.Exames) window.Exames.ligar();
     if (currentView === 'semanal' && window.Weekly) window.Weekly.ligar();
+    if (currentView === 'pdfs' && window.Pdfs) window.Pdfs.carregar();
 
     return !notasFocadas;
 }
