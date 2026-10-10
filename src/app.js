@@ -2509,6 +2509,13 @@ function exportData() {
 
     payload.exames = window.Exames ? window.Exames.lerTudo() : null;
     payload.reviewsV2 = ReviewSystem.lerV2();
+    payload.sessoes = StudySessions.ler();
+    try {
+        const rawPdfs = localStorage.getItem('study-journal-pdfs');
+        payload.pdfs = rawPdfs ? JSON.parse(rawPdfs) : [];
+    } catch {
+        payload.pdfs = [];
+    }
 
     if (!Object.keys(payload.days).length && !payload.semanal.fixos.length && !payload.semanal.dinamicos.length && !payload.exames && !payload.reviewsV2.length) {
         toast('Não há nada para exportar.', 'warn');
@@ -2556,6 +2563,23 @@ async function importData(file) {
 
         if (Array.isArray(payload.reviewsV2)) {
             ReviewSystem.escreverV2(payload.reviewsV2);
+        }
+
+        if (payload.sessoes && typeof payload.sessoes === 'object') {
+            const atuais = StudySessions.ler();
+            Object.entries(payload.sessoes).forEach(([dia, materias]) => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+                if (!atuais[dia] || typeof atuais[dia] !== 'object') atuais[dia] = {};
+                Object.entries(materias).forEach(([materia, min]) => {
+                    const n = Number(min);
+                    if (Number.isFinite(n) && n > 0) atuais[dia][materia] = Math.max(Number(atuais[dia][materia]) || 0, n);
+                });
+            });
+            StudySessions.escrever(atuais);
+        }
+
+        if (Array.isArray(payload.pdfs)) {
+            localStorage.setItem('study-journal-pdfs', JSON.stringify(payload.pdfs));
         }
 
         if (!count && (!payload.semanal || (!payload.semanal.fixos.length && !payload.semanal.dinamicos.length)) && !payload.exames && !(payload.reviewsV2 && payload.reviewsV2.length)) {
