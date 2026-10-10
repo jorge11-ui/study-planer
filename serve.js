@@ -31,6 +31,7 @@ const TYPES = {
     '.js': 'text/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
     '.svg': 'image/svg+xml',
+    '.webmanifest': 'application/manifest+json',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
@@ -157,6 +158,33 @@ async function api(req, res, url) {
         } catch (error) {
             json(res, 500, { ok: false, reason: 'erro' });
         }
+        return;
+    }
+
+    if (route === '/dias-notas' && req.method === 'GET') {
+        // Dias com notas (ficheiros .md não vazios) num mês — para o
+        // Calendário mostrar o indicador também onde o localStorage é vazio.
+        const mes = url.searchParams.get('mes') ?? '';
+        if (!/^\d{4}-\d{2}$/.test(mes)) return json(res, 400, { ok: false, reason: 'conteudo' });
+
+        const folder = vaultFolder();
+        if (!folder) return json(res, 503, { ok: false, reason: 'sem-vault' });
+
+        let ficheiros = [];
+        try {
+            ficheiros = fs.readdirSync(folder);
+        } catch {
+            return json(res, 500, { ok: false, reason: 'erro' });
+        }
+        const dias = ficheiros.filter((f) => {
+            if (!DAY_NAME.test(f) || !f.startsWith(`${mes}-`)) return false;
+            try {
+                return fs.statSync(path.join(folder, f)).size > 0;
+            } catch {
+                return false;
+            }
+        }).map((f) => f.slice(0, 10)).sort();
+        json(res, 200, { ok: true, dias });
         return;
     }
 
@@ -352,6 +380,91 @@ async function apiSync(req, res) {
     json(res, 404, { ok: false, reason: 'rota' });
 }
 
+/* ── Ficheiros (bytes dos PDFs) ────────────────────────
+   Os metadados vão no vault (pdfs.json, texto); os bytes vêm para cá
+   porque o vault só aceita texto. GET faz download on-demand para o
+   outro aparelho; tudo best-effort como o resto do sync. */
+
+const FICHEIROS_DIR = path.join(DATA_DIR, 'ficheiros');
+const FICHEIROS_MAX_BYTES = 30 * 1024 * 1024;
+const FICHEIRO_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+try {
+    fs.mkdirSync(FICHEIROS_DIR, { recursive: true });
+} catch (error) {
+    console.log(`  ! Não foi possível preparar ${FICHEIROS_DIR}: ${error.message}`);
+}
+
+function caminhoFicheiro(id) {
+    return path.join(FICHEIROS_DIR, id);
+}
+
+async function apiFicheiros(req, res, url) {
+    if (req.method === 'POST' && url.pathname === '/api/ficheiros') {
+        const body = await lerJsonBody(req, res, FICHEIROS_MAX_BYTES + 1024 * 1024);
+        if (!body) return;
+        const id = String(body.id ?? '');
+        const nome = String(body.nome ?? 'ficheiro.pdf').slice(0, 200);
+        const tipo = String(body.tipo ?? 'application/pdf').slice(0, 100);
+        const dados = String(body.dados ?? '');
+        if (!FICHEIRO_ID.test(id) || !dados) {
+            return json(res, 400, { ok: false, reason: 'conteudo' });
+        }
+        let bytes;
+        try {
+            bytes = Buffer.from(dados, 'base64');
+        } catch {
+            return json(res, 400, { ok: false, reason: 'conteudo' });
+        }
+        if (!bytes.length || bytes.length > FICHEIROS_MAX_BYTES) {
+            return json(res, 413, { ok: false, reason: 'demasiado-grande' });
+        }
+        try {
+            fs.writeFileSync(caminhoFicheiro(id), bytes, { mode: 0o600 });
+            fs.writeFileSync(`${caminhoFicheiro(id)}.meta.json`, JSON.stringify({ nome, tipo, tamanho: bytes.length }), { mode: 0o600 });
+        } catch {
+            return json(res, 500, { ok: false, reason: 'erro' });
+        }
+        json(res, 200, { ok: true, id, tamanho: bytes.length });
+        return;
+    }
+
+    const m = /^\/api\/ficheiros\/([^/]+)$/.exec(url.pathname);
+    if (!m) return json(res, 404, { ok: false, reason: 'rota' });
+    const id = decodeURIComponent(m[1]);
+    if (!FICHEIRO_ID.test(id)) return json(res, 400, { ok: false, reason: 'nome' });
+
+    if (req.method === 'GET') {
+        let meta = { nome: 'ficheiro.pdf', tipo: 'application/pdf' };
+        try {
+            meta = { ...meta, ...JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8')) };
+        } catch { /* segue com o genérico */ }
+        let bytes;
+        try {
+            bytes = fs.readFileSync(caminhoFicheiro(id));
+        } catch (error) {
+            if (error.code === 'ENOENT') return json(res, 404, { ok: false, reason: 'ausente' });
+            return json(res, 500, { ok: false, reason: 'erro' });
+        }
+        res.writeHead(200, {
+            'content-type': String(meta.tipo || 'application/pdf'),
+            'content-length': bytes.length,
+            'content-disposition': `inline; filename="${String(meta.nome || 'ficheiro.pdf').replace(/"/g, '')}"`,
+            'cache-control': 'private, max-age=86400',
+        }).end(bytes);
+        return;
+    }
+
+    if (req.method === 'DELETE') {
+        try { fs.unlinkSync(caminhoFicheiro(id)); } catch { /* já não existe */ }
+        try { fs.unlinkSync(`${caminhoFicheiro(id)}.meta.json`); } catch { /* já não existe */ }
+        json(res, 200, { ok: true, id });
+        return;
+    }
+
+    json(res, 404, { ok: false, reason: 'rota' });
+}
+
 function serveStatic(req, res, url) {
     const pathname = decodeURIComponent(url.pathname);
     const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
@@ -392,6 +505,15 @@ async function handle(req, res) {
     if (url.pathname === '/api/sync') {
         try {
             await apiSync(req, res);
+        } catch {
+            json(res, 500, { ok: false, reason: 'erro' });
+        }
+        return;
+    }
+
+    if (url.pathname === '/api/ficheiros' || url.pathname.startsWith('/api/ficheiros/')) {
+        try {
+            await apiFicheiros(req, res, url);
         } catch {
             json(res, 500, { ok: false, reason: 'erro' });
         }

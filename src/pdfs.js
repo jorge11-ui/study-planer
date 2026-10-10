@@ -67,6 +67,82 @@ window.Pdfs = (() => {
     const lerFicheiro = (id) => comLoja('readonly', (loja) => loja.get(id));
     const apagarFicheiro = (id) => comLoja('readwrite', (loja) => loja.delete(id));
 
+    /* ── Sync dos bytes via servidor ───────────────────────
+       Metadados vão no vault (pdfs.json); os bytes vêm para
+       /api/ficheiros para o outro aparelho os ir buscar. */
+
+    const CHAVE_ENVIADOS = 'study-journal-pdfs-enviados';
+    const FICHEIROS_MAX_BYTES = 30 * 1024 * 1024;
+
+    const lerEnviados = () => {
+        try {
+            const v = JSON.parse(localStorage.getItem(CHAVE_ENVIADOS) || '[]');
+            return new Set(Array.isArray(v) ? v : []);
+        } catch {
+            return new Set();
+        }
+    };
+
+    const guardarEnviados = (set) => {
+        try {
+            localStorage.setItem(CHAVE_ENVIADOS, JSON.stringify([...set]));
+        } catch { /* segue sem registar */ }
+    };
+
+    const blobParaBase64 = (blob) => new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(String(fr.result || '').split(',')[1] || '');
+        fr.onerror = () => rej(fr.error);
+        fr.readAsDataURL(blob);
+    });
+
+    async function enviarFicheiro(doc, blob) {
+        if (!blob || blob.size > FICHEIROS_MAX_BYTES) return false;
+        try {
+            const dados = await blobParaBase64(blob);
+            if (!dados) return false;
+            const resp = await fetch('/api/ficheiros', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: doc.id,
+                    nome: doc.ficheiro || doc.titulo || 'ficheiro.pdf',
+                    tipo: blob.type || 'application/pdf',
+                    dados,
+                }),
+            });
+            if (!resp.ok) return false;
+            const r = await resp.json().catch(() => null);
+            return !!(r && r.ok);
+        } catch {
+            return false;
+        }
+    }
+
+    async function buscarFicheiroRemoto(doc) {
+        try {
+            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(doc.id)}`);
+            if (!resp.ok) return null;
+            const blob = await resp.blob();
+            if (!blob || !blob.size) return null;
+            await guardarFicheiro(doc.id, blob);
+            const enviados = lerEnviados();
+            enviados.add(doc.id);
+            guardarEnviados(enviados);
+            return blob;
+        } catch {
+            return null;
+        }
+    }
+
+    async function apagarFicheiroRemoto(id) {
+        try {
+            await fetch(`/api/ficheiros/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        } catch { /* best-effort */ }
+        const enviados = lerEnviados();
+        if (enviados.delete(id)) guardarEnviados(enviados);
+    }
+
     /* ── Metadados ──────────────────────────────────────── */
 
     function ler() {
@@ -178,7 +254,8 @@ window.Pdfs = (() => {
 
     const porId = (id) => docs.find((d) => d.id === id);
 
-    /* O URL de visualização: blob do IndexedDB, link remoto ou o alvo interno. */
+    /* O URL de visualização: blob do IndexedDB, cópia do servidor,
+       link remoto ou o alvo interno (por esta ordem). */
     async function urlDe(doc) {
         if (urls.has(doc.id)) return urls.get(doc.id);
 
@@ -192,7 +269,11 @@ window.Pdfs = (() => {
                 url = doc.url;
             }
         } else {
-            const blob = await lerFicheiro(doc.id);
+            let blob = null;
+            try {
+                blob = await lerFicheiro(doc.id);
+            } catch { blob = null; }
+            if (!blob) blob = await buscarFicheiroRemoto(doc);
             if (blob) url = URL.createObjectURL(blob);
         }
 
@@ -424,10 +505,24 @@ window.Pdfs = (() => {
 
         const url = await urlDe(doc);
         if (!url) {
-            toast('O ficheiro já não está no browser.', 'error');
+            toast('Este ficheiro ainda só existe no outro aparelho.', 'error');
             return;
         }
 
+        // No telemóvel o iframe não renderiza PDFs de forma fiável:
+        // abre em aba nova (gesto direto; com fallback para o diálogo).
+        try {
+            const telemovel = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || '');
+            if (telemovel) {
+                const nova = window.open(url, '_blank', 'noopener');
+                if (nova) return;
+            }
+        } catch { /* segue para o diálogo */ }
+
+        mostrarNoDialogo(doc, url);
+    }
+
+    function mostrarNoDialogo(doc, url) {
         aplicarMax(false);
         document.getElementById('pdf-viewer-title').textContent = doc.titulo;
         const link = document.getElementById('pdf-viewer-link');
@@ -532,7 +627,7 @@ window.Pdfs = (() => {
 
         const url = await urlDe(doc);
         if (!url) {
-            toast('O ficheiro já não está no browser.', 'error');
+            toast('Este ficheiro ainda só existe no outro aparelho.', 'error');
             return;
         }
 
@@ -563,6 +658,7 @@ window.Pdfs = (() => {
             if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
             urls.delete(alvo);
             await apagarFicheiro(alvo).catch(() => {});
+            await apagarFicheiroRemoto(alvo);
         }
 
         docs = docs.filter((d) => !doomed.has(d.id));
@@ -707,12 +803,24 @@ window.Pdfs = (() => {
         }
 
         try {
+            const grandes = [];
             for (const entrada of entradas) {
                 if (entrada._blob) {
-                    await guardarFicheiro(entrada.id, entrada._blob);
+                    const blob = entrada._blob;
+                    await guardarFicheiro(entrada.id, blob);
                     delete entrada._blob;
+                    if (blob.size > FICHEIROS_MAX_BYTES) {
+                        grandes.push(entrada.titulo);
+                    } else if (await enviarFicheiro(entrada, blob)) {
+                        const enviados = lerEnviados();
+                        enviados.add(entrada.id);
+                        guardarEnviados(enviados);
+                    }
                 }
                 docs.push(entrada);
+            }
+            if (grandes.length) {
+                toast(`“${grandes[0]}” é demasiado grande para sync (>30MB) — fica só neste browser.`, 'warn');
             }
         } catch {
             toast('Não foi possível guardar o ficheiro no browser.', 'error');
@@ -927,6 +1035,47 @@ window.Pdfs = (() => {
     function carregar() {
         docs = ordenar(ler().map(normalizarEntrada));
         ligar();
+        puxarEspelho();
+    }
+
+    /* O espelho pdfs.json manda quando existe (last-writer-wins, como as
+       tarefas): é assim que os links e a lista chegam ao outro aparelho. */
+    async function puxarEspelho() {
+        try {
+            if (!window.Vault) return;
+            const r = await Vault.load(FICHEIRO_VAULT);
+            if (!r || !r.ok || !r.existe) return;
+            const lista = JSON.parse(r.content);
+            if (!Array.isArray(lista)) return;
+            const validos = ordenar(lista.filter((d) => d && d.id && d.titulo).map(normalizarEntrada));
+            const antes = docs.map((d) => d.id).sort().join('|');
+            const depois = validos.map((d) => d.id).sort().join('|');
+            if (antes !== depois) {
+                docs = validos;
+                guardarLocais();
+                desenhar();
+            }
+        } catch { /* espelho best-effort */ }
+        backfillFicheiros();
+    }
+
+    /* Envia uma vez os ficheiros antigos que ainda só vivem neste browser. */
+    async function backfillFicheiros() {
+        const enviados = lerEnviados();
+        let mudou = false;
+        for (const doc of docs) {
+            if (doc.tipo !== 'ficheiro' || enviados.has(doc.id)) continue;
+            let blob = null;
+            try {
+                blob = await lerFicheiro(doc.id);
+            } catch { blob = null; }
+            if (!blob || blob.size > FICHEIROS_MAX_BYTES) continue;
+            if (await enviarFicheiro(doc, blob)) {
+                enviados.add(doc.id);
+                mudou = true;
+            }
+        }
+        if (mudou) guardarEnviados(enviados);
     }
 
     return { carregar, ligar, docs: () => docs, abrir, apagar };

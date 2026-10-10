@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>StudyJournal</title>
+    <meta name="theme-color" content="#06060c">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%234f46e5'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="app.css?v=5">
 </head>
@@ -470,7 +476,7 @@
                     <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-4)]"></div>
                     <span>Mais</span>
                 </div>
-                <p class="mt-1 text-right text-[10px] text-faint">40+ min para o 2.º nível · 150+ min (2h30) para o máximo</p>
+                <p class="mt-1 text-right text-[10px] text-faint">40+ min nível 2 · 90+ min nível 3 · 150+ min (2h30) máximo</p>
             </div>
         </section>
         </div>
@@ -503,7 +509,7 @@
             </div>
 
             <div class="overflow-x-auto">
-                <div class="min-w-[680px]">
+                <div id="cal-grid-wrap" class="min-w-[680px]">
                     <div id="cal-weekdays" class="cal-classic-weekdays"></div>
                     <div id="cal-grid" class="cal-classic-grid"></div>
                 </div>
@@ -698,6 +704,15 @@
             </div>
 
             <div class="overflow-x-auto" id="week-scroll">
+                <div id="week-day-pager" class="mb-2 flex gap-1 sm:hidden" role="group" aria-label="Dia visível">
+                    <button type="button" data-week-dia="1" class="pdf-filter flex-1" title="Segunda-feira">S</button>
+                    <button type="button" data-week-dia="2" class="pdf-filter flex-1" title="Terça-feira">T</button>
+                    <button type="button" data-week-dia="3" class="pdf-filter flex-1" title="Quarta-feira">Q</button>
+                    <button type="button" data-week-dia="4" class="pdf-filter flex-1" title="Quinta-feira">Q</button>
+                    <button type="button" data-week-dia="5" class="pdf-filter flex-1" title="Sexta-feira">S</button>
+                    <button type="button" data-week-dia="6" class="pdf-filter flex-1" title="Sábado">S</button>
+                    <button type="button" data-week-dia="7" class="pdf-filter flex-1" title="Domingo">D</button>
+                </div>
                 <div class="relative min-w-[1000px]" id="week-grid-wrap">
                 <table id="week-grid" class="w-full border-collapse" role="grid">
                     <thead>
@@ -1096,7 +1111,7 @@
 
     <!-- Navegação em ecrãs pequenos -->
     <nav aria-label="Navegação principal" id="nav-mobile"
-        class="fixed inset-x-0 bottom-0 z-30 flex justify-around gap-1 border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur lg:hidden">
+        class="fixed inset-x-0 bottom-0 z-30 flex justify-start gap-1 overflow-x-auto border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur lg:hidden">
         <button type="button" data-view="painel" class="nav-mobile nav-mobile-active">
             <svg class="icon h-5 w-5"><use href="#i-panel"/></svg>
             <span>Painel</span>

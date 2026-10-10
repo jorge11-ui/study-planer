@@ -77,6 +77,11 @@ window.Weekly = (() => {
     let duplicando = null;
     let criacaoArrastada = false;
     let relogioTimer = null;
+    let diaVisivel = null; // telemóvel: um dia de cada vez (1=Seg … 7=Dom)
+
+    function diaDaSemanaHoje() {
+        return (new Date().getDay() + 6) % 7 + 1;
+    }
 
     function normalizar(t) {
         return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -191,8 +196,17 @@ window.Weekly = (() => {
     }
 
     function irParaSemanaAtual() {
+        diaVisivel = diaDaSemanaHoje();
         mudarSemana(new Date());
+        render();
         rolarParaLinha();
+    }
+
+    function verDia(dia) {
+        const n = Number(dia);
+        if (n < 1 || n > 7) return;
+        diaVisivel = n;
+        render();
     }
 
     function render() {
@@ -234,6 +248,13 @@ window.Weekly = (() => {
 
         document.querySelectorAll('[data-week-passo]').forEach(b => {
             b.setAttribute('aria-pressed', String(Number(b.dataset.weekPasso) === passoHoras));
+        });
+
+        if (diaVisivel === null) diaVisivel = isCurrentWeek ? diaDaSemanaHoje() : 1;
+        const tabela = document.getElementById('week-grid');
+        if (tabela) tabela.setAttribute('data-dia-visivel', String(diaVisivel));
+        document.querySelectorAll('[data-week-dia]').forEach(b => {
+            b.setAttribute('aria-pressed', String(Number(b.dataset.weekDia) === diaVisivel));
         });
 
         let temEventos = false;
@@ -919,6 +940,12 @@ window.Weekly = (() => {
             });
         });
 
+        document.querySelectorAll('[data-week-dia]').forEach(btn => {
+            if (btn.dataset.weekBound) return;
+            btn.dataset.weekBound = 'true';
+            btn.addEventListener('click', () => verDia(btn.dataset.weekDia));
+        });
+
         if (!relogioTimer) {
             relogioTimer = setInterval(() => {
                 const vista = document.getElementById('view-semanal');
@@ -929,6 +956,7 @@ window.Weekly = (() => {
 
     function ligar() {
         carregar();
+        if (semanaAtual === semanaKey(new Date())) diaVisivel = diaDaSemanaHoje();
         render();
         ligarOuvintes();
         rolarParaLinha();
@@ -938,6 +966,7 @@ window.Weekly = (() => {
         carregar, 
         ligar, 
         render, 
+        verDia,
         fixos: () => fixos, 
         dinamicos: () => dinamicos, 
         semanaAtual: () => semanaAtual,

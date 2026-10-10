@@ -279,35 +279,18 @@ const StudySessions = {
     }
 };
 
-const HEATMAP_MINUTOS_POR_TAREFA = 3;
 const HEATMAP_NIVEIS = [150, 90, 40];
-let historicoMinutosOk = false;
 
-function migrarHistoricoMinutos() {
-    if (historicoMinutosOk) return;
-    historicoMinutosOk = true;
-    try {
-        if (localStorage.getItem('study-journal-pomodoro-history-v2')) return;
-        const history = read(POMODORO_HISTORY_KEY, {});
-        Object.keys(history).forEach((k) => {
-            const sessoes = Math.max(0, Math.round(Number(history[k] || 0)));
-            history[k] = sessoes * 25;
-        });
-        write(POMODORO_HISTORY_KEY, history);
-        localStorage.setItem('study-journal-pomodoro-history-v2', '1');
-    } catch { /* sem migração: o heatmap usa os valores como estão */ }
-}
-
+/* O heatmap mede tempo de estudo (sessões do timer). Tarefas concluídas
+   aparecem no tooltip mas não pintam o dia — sem "minutos fantasma".
+   O pomodoro legado foi removido: só as sessões contam. */
 function lerEsforcoDoDia(date) {
-    migrarHistoricoMinutos();
     const key = dayKey(date);
-    const history = read(POMODORO_HISTORY_KEY, {});
-    const foco = Math.max(0, Number(history[key] || 0));
     const tasks = read(`study-journal-tasks-${key}`, []);
     const concluidas = tasks.filter((t) => t.done).length;
     const sessoes = StudySessions.obterDoDia(date);
     const sessaoTotal = Object.values(sessoes).reduce((a, b) => a + b, 0);
-    return { foco, concluidas, sessoes: sessaoTotal, total: foco + concluidas * HEATMAP_MINUTOS_POR_TAREFA + sessaoTotal };
+    return { foco: 0, concluidas, sessoes: sessaoTotal, total: sessaoTotal };
 }
 
 /* ── Sequência de estudos (streak) ──────────────────────── */
@@ -600,16 +583,79 @@ function toast(message, type = 'info', { timeout = 4000 } = {}) {
 }
 
 /* ── Sync entre aparelhos ───────────────────────────────
-   Conta única do servidor quando há login, senão o GitHub Gist. */
+   Conta única do servidor quando há login, senão o GitHub Gist.
+   Push com fila: sem rede o envio fica pendente e segue quando a
+   ligação volta (laptop ligado de novo). */
+
+const SYNC_PENDENTE_KEY = 'study-journal-sync-pendente';
+
+function marcarSyncPendente() {
+    try {
+        localStorage.setItem(SYNC_PENDENTE_KEY, '1');
+    } catch { /* segue sem fila */ }
+}
+
+function limparSyncPendente() {
+    try {
+        localStorage.removeItem(SYNC_PENDENTE_KEY);
+    } catch { /* segue */ }
+}
+
+function temSyncPendente() {
+    try {
+        return localStorage.getItem(SYNC_PENDENTE_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function anotarResultadoPush(r) {
+    if (r && r.ok) limparSyncPendente();
+    else if (!r || r.reason !== 'sem-conta') marcarSyncPendente();
+    else limparSyncPendente();
+}
 
 function sincronizarDispositivos() {
     if (window.ContaSync && window.ContaSync.configurado()) {
-        window.ContaSync.push().catch(() => {});
+        window.ContaSync.push().then(anotarResultadoPush).catch(() => marcarSyncPendente());
         return;
     }
     if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-        window.GitHubSync.sync(false).catch(() => {});
+        window.GitHubSync.sync(false).then(anotarResultadoPush).catch(() => marcarSyncPendente());
     }
+}
+
+/* Tenta esvaziar a fila quando há rede (regresso do laptop). */
+let flushSyncTimer = null;
+
+async function descarregarSyncPendente() {
+    if (!temSyncPendente()) return;
+    try {
+        if (window.ContaSync && window.ContaSync.configurado()) {
+            const r = await window.ContaSync.push();
+            anotarResultadoPush(r);
+            return;
+        }
+        if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+            const r = await window.GitHubSync.sync(false);
+            anotarResultadoPush(r);
+        }
+    } catch {
+        marcarSyncPendente();
+    }
+}
+
+function iniciarFlushSync() {
+    if (flushSyncTimer) return;
+    flushSyncTimer = setInterval(() => {
+        descarregarSyncPendente().catch(() => {});
+    }, 60000);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') descarregarSyncPendente().catch(() => {});
+    });
+    window.addEventListener('focus', () => {
+        descarregarSyncPendente().catch(() => {});
+    });
 }
 
 /* Re-renderiza o dia atual a partir do localStorage (após pull).
@@ -709,6 +755,39 @@ async function syncTasks() {
         toast('Não foi possível gravar no vault — as tarefas ficaram só neste browser.', 'warn');
     }
     write(tasksKey(), tasks);
+}
+
+/* Grava as tarefas de um dia qualquer (não só o selecionado): local +
+   mapa do vault + push de sync + heatmap/streak. As edições do Calendário
+   usavam só o local — o vault/sync repunham o apagado a seguir. */
+async function persistirTarefasDia(key, lista) {
+    write(`study-journal-tasks-${key}`, lista);
+    if (key === dayKey(selected)) {
+        tasks = [...lista];
+        renderTasks();
+    }
+    try {
+        let mapa = {};
+        try {
+            const atual = await Vault.load('tasks.json');
+            if (atual.ok && atual.existe) {
+                const parsed = JSON.parse(atual.content);
+                if (Array.isArray(parsed)) mapa[dayKey(selected)] = parsed;
+                else if (parsed && typeof parsed === 'object') mapa = parsed;
+            }
+        } catch { /* sem mapa anterior: grava só este dia */ }
+        mapa[key] = lista;
+        const saved = await Vault.save('tasks.json', JSON.stringify(mapa));
+        if (saved && !saved.ok && saved.reason === 'conflito') {
+            await Vault.save('tasks.json', JSON.stringify(mapa), { force: true });
+        }
+    } catch (e) {
+        console.error('Erro ao persistir tarefas do dia:', e);
+    }
+    sincronizarDispositivos();
+    renderStreak();
+    StudyStats.renderHeatmap();
+    if (currentView === 'disciplinas') renderSubjects();
 }
 
 function renderTasks() {
@@ -817,15 +896,34 @@ function categoriaDaTarefa(task) {
 
 /* Remove os blocos de revisão gerados automaticamente (ids `estudo-…`).
    As tarefas de estudo criadas manualmente têm outro formato de id e ficam. */
-function limparBlocosEstudoGerados() {
+async function limparBlocosEstudoGerados() {
     try {
+        const alterados = [];
         for (let i = 0; i < localStorage.length; i += 1) {
             const k = localStorage.key(i);
             if (!k || !k.startsWith('study-journal-tasks-')) continue;
             const tarefas = read(k, []);
             const filtradas = tarefas.filter((t) => !(t && typeof t.id === 'string' && t.id.startsWith('estudo-')));
-            if (filtradas.length !== tarefas.length) write(k, filtradas);
+            if (filtradas.length !== tarefas.length) {
+                write(k, filtradas);
+                alterados.push(k);
+            }
         }
+        if (!alterados.length) return;
+        // Persiste senão o espelho do vault repõe-nos no próximo loadDay
+        let mapa = {};
+        try {
+            const atual = await Vault.load('tasks.json');
+            if (atual.ok && atual.existe) {
+                const parsed = JSON.parse(atual.content);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) mapa = parsed;
+            }
+        } catch { /* segue com o mapa parcial */ }
+        alterados.forEach((k) => {
+            mapa[k.slice('study-journal-tasks-'.length)] = read(k, []);
+        });
+        await Vault.save('tasks.json', JSON.stringify(mapa));
+        sincronizarDispositivos();
     } catch { /* nunca parte o arranque */ }
 }
 
@@ -947,11 +1045,6 @@ function applyMarkdown(kind) {
     else if (kind === 'code') replaceRange('`', '`');
     else if (kind === 'list') toggleList();
 }
-
-/* ── Pomodoro (legado) ────────────────────────────────────
-   O temporizador pomodoro foi substituído pela Sessão de Estudo.
-   Fica só a chave do histórico, que o heatmap ainda lê. */
-const POMODORO_HISTORY_KEY = 'study-journal-pomodoro-history';
 
 /* ── Alarme ──────────────────────────────────────────── */
 
@@ -1658,12 +1751,6 @@ const WEEKDAYS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', '
 
 /* Todas as vistas num único ficheiro, trocadas pela navegação lateral. */
 function showView(view) {
-    // No telemóvel sem sync, as vistas de dados locais mostram zeros/
-    // vazios enganadores — redireciona para o Painel em vez disso.
-    if (VISTAS_SOMENTE_SYNC.includes(view) && telemovelSemSync()) {
-        toast('Disponível só com sync ativo. Entra na conta em Definições.', 'warn');
-        view = 'painel';
-    }
     currentView = view;
     write('study-journal-view', view);
 
@@ -1696,43 +1783,6 @@ function showView(view) {
 
     document.title = `${VIEW_LABELS[view]} · StudyJournal`;
     window.scrollTo({ top: 0 });
-}
-
-/* ── Modo telemóvel sem sync ──────────────────────────
-   Notas e Tarefas do dia vêm do vault (partilhado via servidor) e o
-   Calendário/Disciplinas leem o espelho local — por isso ficam visíveis.
-   Sessões, heatmap, sequência, Estudar, Semanal, Exames e PDFs vivem em
-   localStorage sem sync: no telemóvel sem conta escondem-se em vez de
-   mostrarem dados errados. Assim que houver sync, tudo reaparece. */
-
-const VISTAS_SOMENTE_SYNC = ['estudar', 'semanal', 'exames', 'pdfs'];
-const CARDS_SOMENTE_SYNC = ['card-sessao', 'card-streak', 'card-heatmap'];
-
-function syncAtivo() {
-    try {
-        if (window.ContaSync?.configurado?.()) return true;
-        if (window.GitHubSync?.hasWriteAccess?.()) return true;
-    } catch { /* trata como sem sync */ }
-    return false;
-}
-
-function telemovelSemSync() {
-    try {
-        const ua = navigator.userAgent || '';
-        const telemovel = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
-        return telemovel && !syncAtivo();
-    } catch {
-        return false;
-    }
-}
-
-function atualizarModoTelemovel() {
-    const gated = telemovelSemSync();
-    document.querySelectorAll('[data-view]').forEach((b) => {
-        if (VISTAS_SOMENTE_SYNC.includes(b.dataset.view)) b.classList.toggle('hidden', gated);
-    });
-    CARDS_SOMENTE_SYNC.forEach((id) => document.getElementById(id)?.classList.toggle('hidden', gated));
-    if (gated && VISTAS_SOMENTE_SYNC.includes(currentView)) showView('painel');
 }
 
 /* ── Calendário ───────────────────────────────────────── */
@@ -1874,15 +1924,58 @@ function renderCalendar() {
 
         cell.append(tasksContainer);
 
-        // Click on cell (not task/add btn) to select day
+        // Click on cell (not task/add btn) to select day.
+        // No telemóvel abre logo o diálogo (ver + adicionar tarefas).
         cell.addEventListener('click', (e) => {
             if (e.target.closest('.calendar-task') || e.target.closest('.cal-classic-add')) return;
             selected = startOfDay(date);
             renderCalendar();
+            try {
+                if (window.matchMedia?.('(max-width: 639px)').matches) openDay(date);
+            } catch { /* desktop: só seleciona */ }
         });
 
         els.calGrid.append(cell);
     }
+
+    atualizarNotasRemotasCalendario(ano, mes);
+}
+
+/* Indicadores de notas vindos do vault: no telemóvel o localStorage
+   começa vazio, por isso os "Notas" do calendário vinham sempre vazios.
+   Um pedido por mês, em cache; a grelha local continua a mandar. */
+let notasRemotasCache = { mes: '', dias: new Set() };
+
+async function atualizarNotasRemotasCalendario(ano, mes) {
+    const chave = `${ano}-${String(mes + 1).padStart(2, '0')}`;
+    try {
+        if (notasRemotasCache.mes !== chave) {
+            notasRemotasCache = { mes: chave, dias: new Set() };
+            const resp = await fetch(`/api/vault/dias-notas?mes=${chave}`);
+            const r = await resp.json().catch(() => null);
+            if (!r || !r.ok || !Array.isArray(r.dias)) return;
+            notasRemotasCache.dias = new Set(r.dias.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)));
+        }
+        // A grelha pode já ser de outro mês quando a resposta chega
+        if (calCursor.getFullYear() !== ano || calCursor.getMonth() !== mes) return;
+        if (!notasRemotasCache.dias.size || !els.calGrid) return;
+        els.calGrid.querySelectorAll('.cal-classic-day').forEach((cell) => {
+            const key = cell.dataset.dateKey;
+            if (!key || !notasRemotasCache.dias.has(key)) return;
+            if (cell.querySelector('.cal-classic-notes')) return;
+            const box = cell.querySelector('.cal-classic-tasks');
+            if (!box) return;
+            const notesEl = document.createElement('div');
+            notesEl.className = 'cal-classic-notes';
+            notesEl.innerHTML = '<svg class="icon inline h-3 w-3 mr-0.5"><use href="#i-file-text"/></svg> Notas';
+            notesEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const [y, m, d] = key.split('-').map(Number);
+                showDayTasksDialog(new Date(y, m - 1, d), key);
+            });
+            box.append(notesEl);
+        });
+    } catch { /* indicador best-effort */ }
 }
 
 function createCalendarTaskElement(task, key, date) {
@@ -1908,7 +2001,7 @@ function createCalendarTaskElement(task, key, date) {
         const t = tasks.find(x => x.id === task.id);
         if (t) {
             t.done = e.target.checked;
-            write(`study-journal-tasks-${key}`, tasks);
+            await persistirTarefasDia(key, tasks);
             renderCalendar();
         }
     });
@@ -1922,11 +2015,11 @@ function createCalendarTaskElement(task, key, date) {
     deleteBtn.className = 'shrink-0 p-0.5 rounded text-current/70 hover:text-current hover:bg-current/20 transition opacity-0 group-hover:opacity-100';
     deleteBtn.innerHTML = '<svg class="icon h-3 w-3"><use href="#i-trash"/></svg>';
     deleteBtn.title = 'Apagar tarefa';
-    deleteBtn.addEventListener('click', (e) => {
+    deleteBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (confirm('Apagar esta tarefa?')) {
             const tasks = read(`study-journal-tasks-${key}`, []).filter(t => t.id !== task.id);
-            write(`study-journal-tasks-${key}`, tasks);
+            await persistirTarefasDia(key, tasks);
             renderCalendar();
         }
     });
@@ -2006,7 +2099,7 @@ function showInlineTaskForm(cell, key, date) {
         if (e.target === dlg) close();
     });
 
-    dlg.addEventListener('submit', (e) => {
+    dlg.addEventListener('submit', async (e) => {
         e.preventDefault();
         const title = input.value.trim();
         const subject = dlg.querySelector('#inline-task-subject').value;
@@ -2022,7 +2115,7 @@ function showInlineTaskForm(cell, key, date) {
             done: false,
         };
         tasks.push(nova);
-        write(`study-journal-tasks-${key}`, tasks);
+        await persistirTarefasDia(key, tasks);
         close();
         renderCalendar();
     });
@@ -2131,20 +2224,11 @@ function bindDayTasksDialog(dlg) {
             done: false,
         };
         tasks.push(nova);
-        write(`study-journal-tasks-${key}`, tasks);
-        
-        // Update vault if connected
-        if (window.Vault && Vault.supported()) {
-            const allTasks = {};
-            daysWithData().forEach(k => {
-                allTasks[k] = read(`study-journal-tasks-${k}`, []);
-            });
-            await Vault.save('tasks.json', JSON.stringify(allTasks));
-        }
-        
+        await persistirTarefasDia(key, tasks);
+
         dlg.querySelector('#day-tasks-title').value = '';
         renderDayTasksInDialog(key);
-        
+
         // Update calendar dots
         if (currentView === 'calendario') renderCalendar();
     });
@@ -2208,7 +2292,7 @@ function renderDayTasksInDialog(key) {
             const task = tasks.find(t => t.id === id);
             if (task) {
                 task.done = e.target.checked;
-                write(`study-journal-tasks-${key}`, tasks);
+                await persistirTarefasDia(key, tasks);
                 renderDayTasksInDialog(key);
                 if (currentView === 'calendario') renderCalendar();
             }
@@ -2216,11 +2300,11 @@ function renderDayTasksInDialog(key) {
     });
     
     container.querySelectorAll('.task-remove').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             const key = dlg?.dataset.dateKey;
             const id = e.target.closest('button').dataset.id;
             const tasks = read(`study-journal-tasks-${key}`, []).filter(t => t.id !== id);
-            write(`study-journal-tasks-${key}`, tasks);
+            await persistirTarefasDia(key, tasks);
             renderDayTasksInDialog(key);
             if (currentView === 'calendario') renderCalendar();
         });
@@ -2553,7 +2637,7 @@ async function loadDay() {
 
     renderDate();
     renderTasks();
-    limparBlocosEstudoGerados();
+    await limparBlocosEstudoGerados();
     renderStreak();
     renderSessionTimer();
 
@@ -2626,14 +2710,30 @@ function responderReviewFocus(grade) {
 /* ── Arranque ─────────────────────────────────────────── */
 
 function seed() {
-    if (localStorage.getItem('study-journal-seeded')) return;
-
-    write(tasksKey(), DEMO_TASKS.map((task, index) => ({ id: `demo-${index}`, ...task })));
-    write(notesKey(), DEMO_NOTES);
-
+    // As tarefas/notas de demonstração já não são criadas. Esta purga
+    // remove as que o seed antigo deixou (ids demo-* e a nota de exemplo
+    // intacta) em todos os aparelhos, incluindo telemóvel.
+    limparDemo();
     try {
         localStorage.setItem('study-journal-seeded', '1');
-    } catch { /* sem flag: volta a semear, nada de grave */ }
+    } catch { /* sem flag: tenta de novo no próximo arranque */ }
+}
+
+function limparDemo() {
+    try {
+        const chaves = [];
+        for (let i = 0; i < localStorage.length; i += 1) chaves.push(localStorage.key(i) || '');
+        chaves.forEach((k) => {
+            if (/^study-journal-tasks-\d{4}-\d{2}-\d{2}$/.test(k)) {
+                const list = read(k, []);
+                if (!Array.isArray(list)) return;
+                const filtrada = list.filter((t) => !(t && typeof t.id === 'string' && t.id.startsWith('demo-')));
+                if (filtrada.length !== list.length) write(k, filtrada);
+            } else if (/^study-journal-notes-\d{4}-\d{2}-\d{2}$/.test(k)) {
+                if (read(k, '') === DEMO_NOTES) localStorage.removeItem(k);
+            }
+        });
+    } catch { /* purga best-effort */ }
 }
 
 function bind() {
@@ -3009,6 +3109,7 @@ function bind() {
 
     window.addEventListener('beforeunload', commitNotes);
     window.addEventListener('beforeunload', saveSessionState);
+    iniciarFlushSync();
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
@@ -3028,9 +3129,6 @@ async function init() {
     await loadDay();
     const vistaGuardada = read('study-journal-view', 'painel');
     showView(VIEW_LABELS[vistaGuardada] ? vistaGuardada : 'painel');
-    atualizarModoTelemovel();
-    if (window.ContaSync?.onSync) window.ContaSync.onSync(() => atualizarModoTelemovel());
-    if (window.GitHubSync?.onSync) window.GitHubSync.onSync(() => atualizarModoTelemovel());
     startVaultSync();
     syncDayFromVault();
 
@@ -3056,6 +3154,16 @@ async function init() {
     if (window.ContaSync && window.ContaSync.configurado()) {
         window.ContaSync.pull().catch(() => {});
     }
+    // Envia o que ficou pendente sem rede
+    descarregarSyncPendente().catch(() => {});
+
+    // PWA: regista o service worker (shell offline). Falha silenciosa
+    // em contextos sem suporte — a app funciona na mesma.
+    try {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
+    } catch { /* segue sem PWA */ }
 }
 
 function applyReadOnlyMode() {

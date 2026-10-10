@@ -582,6 +582,10 @@
     }
 
     .task-item:hover .task-remove,
+    .task-item:focus-within .task-remove {
+        opacity: 1;
+    }
+
     @media (hover: none) {
         .task-remove {
             opacity: 1;
@@ -941,4 +945,159 @@ dialog::backdrop {
 
 #view-exames #exames-track-body tr:nth-child(even) {
     background-color: var(--color-surface-2);
+}
+
+/* ── Telemóvel: leveza + respiro ─────────────────────────
+   Sem layers (ganha a utilities): mata o blur/aurora que fazem
+   lag no scroll e aperta paddings/larguras. Só < 640px. */
+@media (max-width: 639px) {
+    /* Perf: fundo estático, zero blur animado */
+    .aurora {
+        display: none;
+    }
+
+    .glass,
+    .glass-strong,
+    .glass-subtle,
+    .glass-subtle-strong,
+    .card,
+    .field,
+    body > header.sticky,
+    dialog,
+    dialog::backdrop {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    /* Semanal no telemóvel: um dia de cada vez, sem scroll lateral */
+    #week-grid-wrap {
+        min-width: 0 !important;
+    }
+
+    #week-grid[data-dia-visivel="1"] th[data-day]:not([data-day="1"]),
+    #week-grid[data-dia-visivel="1"] td[data-dia]:not([data-dia="1"]),
+    #week-grid[data-dia-visivel="2"] th[data-day]:not([data-day="2"]),
+    #week-grid[data-dia-visivel="2"] td[data-dia]:not([data-dia="2"]),
+    #week-grid[data-dia-visivel="3"] th[data-day]:not([data-day="3"]),
+    #week-grid[data-dia-visivel="3"] td[data-dia]:not([data-dia="3"]),
+    #week-grid[data-dia-visivel="4"] th[data-day]:not([data-day="4"]),
+    #week-grid[data-dia-visivel="4"] td[data-dia]:not([data-dia="4"]),
+    #week-grid[data-dia-visivel="5"] th[data-day]:not([data-day="5"]),
+    #week-grid[data-dia-visivel="5"] td[data-dia]:not([data-dia="5"]),
+    #week-grid[data-dia-visivel="6"] th[data-day]:not([data-day="6"]),
+    #week-grid[data-dia-visivel="6"] td[data-dia]:not([data-dia="6"]),
+    #week-grid[data-dia-visivel="7"] th[data-day]:not([data-day="7"]),
+    #week-grid[data-dia-visivel="7"] td[data-dia]:not([data-dia="7"]) {
+        display: none;
+    }
+
+    #cal-grid-wrap {
+        min-width: 460px !important;
+    }
+
+    .cal-classic-title {
+        font-size: 1.15rem;
+        letter-spacing: 0.12em;
+        text-indent: 0.12em;
+    }
+
+    /* Calendário compacto: barras de cor em vez de pills (tocar abre o dia) */
+    .cal-classic-day,
+    .cal-classic-blank {
+        min-height: 3.75rem;
+    }
+
+    .cal-classic-tasks .calendar-task {
+        min-height: 10px;
+        padding: 2px 4px;
+    }
+
+    .cal-classic-tasks .calendar-task > * {
+        display: none;
+    }
+
+    .cal-classic-add {
+        display: none;
+    }
+
+    /* Cartões: p-6 (24px) → 16px de cada lado */
+    #view-semanal,
+    #view-calendario,
+    #view-disciplinas,
+    #view-estudar,
+    #view-pdfs,
+    #view-painel > section,
+    #view-painel div.glass {
+        padding: 1rem !important;
+    }
+
+    /* Tipografia: micro-textos sobem (10px→12px, 11px→13px) */
+    .text-\[10px\] {
+        font-size: 0.75rem;
+    }
+
+    .text-\[11px\] {
+        font-size: 0.8125rem;
+    }
+
+    .week-block {
+        font-size: 11px;
+    }
+
+    .nav-mobile {
+        flex: 1 0 auto;
+        min-width: 3.75rem;
+        font-size: 11px;
+    }
+
+    .nav-mobile > span {
+        white-space: nowrap;
+    }
+
+    .cal-classic-num {
+        font-size: 13px;
+    }
+
+    .cal-classic-day[data-densidade="3"] .calendar-task {
+        font-size: 12px;
+    }
+
+    /* Touch: sem hover, os botões de apagar têm de se ver sempre */
+    .calendar-task button {
+        opacity: 1;
+    }
+
+    .chip {
+        font-size: 12px;
+    }
+}
+
+/* ── Semanal: cabeçalho fixo + calha opaca ────────────────
+   Sem layers: os th usam bg translúcido e sem z-index, por isso os
+   blocos (absolute, z-10) pintavam por cima das horas no scroll. */
+#week-grid thead {
+    position: sticky;
+    top: 4rem;
+    z-index: 30;
+}
+
+#week-grid thead th,
+#week-grid tbody th {
+    background-color: #0c0c15;
+}
+
+#week-grid tbody th {
+    z-index: 20;
+}
+
+@media (max-width: 639px) {
+    #week-grid tbody th:not([data-day]) {
+        width: 2.75rem !important;
+        padding-left: 0.25rem;
+        padding-right: 0.25rem;
+    }
+
+    .week-now-line {
+        left: 2.75rem;
+    }
 }
