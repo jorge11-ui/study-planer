@@ -2506,6 +2506,14 @@ function exportData() {
         dinamicos: Weekly.dinamicos ? Weekly.dinamicos() : [],
         semanaAtual: Weekly.semanaAtual ? Weekly.semanaAtual() : '',
     };
+    payload.semanalTodas = {};
+    try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const k = localStorage.key(i) || '';
+            const m = /^study-journal-semanal-dinamico-(\d{4}-\d{2}-\d{2})$/.exec(k);
+            if (m) payload.semanalTodas[m[1]] = JSON.parse(localStorage.getItem(k) || '[]');
+        }
+    } catch { /* segue sem as antigas */ }
 
     payload.exames = window.Exames ? window.Exames.lerTudo() : null;
     payload.reviewsV2 = ReviewSystem.lerV2();
@@ -2555,6 +2563,14 @@ async function importData(file) {
                 localStorage.setItem(`study-journal-semanal-dinamico-${payload.semanal.semanaAtual}`, JSON.stringify(payload.semanal.dinamicos));
                 localStorage.setItem('study-journal-semanal-dinamico-atual', payload.semanal.semanaAtual);
             }
+        }
+
+        if (payload.semanalTodas && typeof payload.semanalTodas === 'object') {
+            Object.entries(payload.semanalTodas).forEach(([sem, lista]) => {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(sem) && Array.isArray(lista)) {
+                    localStorage.setItem(`study-journal-semanal-dinamico-${sem}`, JSON.stringify(lista));
+                }
+            });
         }
 
         if (payload.exames && window.Exames) {
