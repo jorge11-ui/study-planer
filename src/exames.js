@@ -70,17 +70,26 @@ const DISC_CHIP = {
     'Geral': 'bg-surface-3 text-muted',
 };
 
-/* ── 0. Seed inicial ── */
+/* ── 0. Seed inicial ──
+   Escrita direta sem push: o seed corre no load, antes do pull inicial —
+   com push, um arranque frio ganhava a corrida e espalhava os exemplos
+   para o servidor. */
+function seedSilencioso(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch { /* segue sem demo */ }
+}
+
 function seedIfEmpty() {
     if (!localStorage.getItem(FOCO_KEY)) {
-        exWrite(FOCO_KEY, {
+        seedSilencioso(FOCO_KEY, {
             'Portugues': { topico: 'Os Maias — Eça de Queirós', objetivo: 'Dominar caracterização das personagens e contexto histórico.', progresso: 45 },
             'Matematica A': { topico: 'Cálculo Diferencial: Derivadas', objetivo: 'Resolver 15 exercícios de otimização de exames anteriores.', progresso: 70 },
             'FQA': { topico: 'Termodinâmica e Entropia', objetivo: 'Memorizar fórmulas de calorimetria e resolver fichas IAVE.', progresso: 30 },
         });
     }
     if (!localStorage.getItem(RECURSOS_KEY)) {
-        exWrite(RECURSOS_KEY, [
+        seedSilencioso(RECURSOS_KEY, [
             { id: uid('res'), disciplina: 'Português', nome: 'Fichas IAVE - Texto', url: '' },
             { id: uid('res'), disciplina: 'Português', nome: 'Resumos de Matéria', url: '' },
             { id: uid('res'), disciplina: 'Português', nome: 'Exames Resolvidos', url: '' },
@@ -96,14 +105,14 @@ function seedIfEmpty() {
         ]);
     }
     if (!localStorage.getItem(TRACK_KEY)) {
-        exWrite(TRACK_KEY, [
+        seedSilencioso(TRACK_KEY, [
             { id: uid('trk'), disciplina: 'Matemática A', topico: 'Derivadas de Funções Compostas', ficha: 'ficha_der_01.pdf', dificuldade: 4, estado: 'Em progresso' },
             { id: uid('trk'), disciplina: 'FQA', topico: 'Equilíbrio Químico', ficha: 'ficha_equil_02.pdf', dificuldade: 2, estado: 'Concluído' },
             { id: uid('trk'), disciplina: 'Português', topico: 'Sintaxe: Orações Subordinadas', ficha: 'sintaxe_resumo.pdf', dificuldade: 3, estado: 'A iniciar' },
         ]);
     }
     if (!localStorage.getItem(DUVIDAS_KEY)) {
-        exWrite(DUVIDAS_KEY, [
+        seedSilencioso(DUVIDAS_KEY, [
             { id: uid('duv'), tipo: 'conceito', disciplina: 'Matemática A', titulo: 'Regra da Cadeia', texto: "f'(g(x)) · g'(x) — derivada da exterior × derivada da interior." },
             { id: uid('duv'), tipo: 'conceito', disciplina: 'FQA', titulo: '1ª Lei da Termodinâmica', texto: 'ΔU = Q + W (cuidado com os sinais do trabalho!).' },
             { id: uid('duv'), tipo: 'erro', disciplina: 'Matemática A', titulo: 'Exame 2022 — Q3', texto: 'Perdi pontos por erro de sinal na integração. Rever sinais.' },
