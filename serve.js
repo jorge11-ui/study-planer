@@ -361,12 +361,14 @@ async function apiSync(req, res) {
         if (!Number.isInteger(baseRev) || baseRev < 0 || !dadosSyncValidos(body.data)) {
             return json(res, 400, { ok: false, reason: 'conteudo' });
         }
-        if (baseRev !== syncDoc.rev) {
+        if (baseRev !== syncDoc.rev && body.forcar !== true) {
             return json(res, 409, {
                 ok: false, reason: 'conflito',
                 rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, data: syncDoc.data,
             });
         }
+        // forcar=true: o cliente detetou que o servidor recuou (wipe/
+        // redeploy com disco efémero) e repõe o estado completo dele.
         syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), data: body.data };
         try {
             guardarSync();

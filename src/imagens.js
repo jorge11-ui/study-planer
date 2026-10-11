@@ -133,12 +133,16 @@ window.Imagens = (() => {
         } catch { /* segue para o servidor */ }
         try {
             const resp = await fetch(`/api/ficheiros/${encodeURIComponent(id)}`);
-            if (!resp.ok) return null;
+            if (!resp.ok) {
+                if (resp.status === 404) desmarcarEnviada(id);
+                return null;
+            }
             const blob = await resp.blob();
             if (!blob || !blob.size) return null;
             try {
                 await guardarBlob(id, blob);
             } catch { /* só leitura */ }
+            marcarEnviada(id);
             return blob;
         } catch {
             return null;
@@ -146,6 +150,33 @@ window.Imagens = (() => {
     }
 
     const urls = new Map();
+
+    /* Registo do que já subiu: após wipe, o 404 limpa e o backfill repõe. */
+    const CHAVE_ENVIADAS = 'study-journal-imagens-enviadas';
+
+    const lerEnviadas = () => {
+        try {
+            const v = JSON.parse(localStorage.getItem(CHAVE_ENVIADAS) || '[]');
+            return new Set(Array.isArray(v) ? v : []);
+        } catch {
+            return new Set();
+        }
+    };
+
+    const marcarEnviada = (id) => {
+        try {
+            const s = lerEnviadas();
+            s.add(id);
+            localStorage.setItem(CHAVE_ENVIADAS, JSON.stringify([...s]));
+        } catch { /* segue */ }
+    };
+
+    const desmarcarEnviada = (id) => {
+        try {
+            const s = lerEnviadas();
+            if (s.delete(id)) localStorage.setItem(CHAVE_ENVIADAS, JSON.stringify([...s]));
+        } catch { /* segue */ }
+    };
 
     /* Preenche os <img data-sjimg> de um preview com os bytes locais/remotos. */
     async function hidratar(raiz) {
@@ -199,12 +230,37 @@ window.Imagens = (() => {
                 try {
                     await guardarBlob(id, blob);
                 } catch { continue; }
-                enviarImagem(id, blob, `${m[1] || 'imagem'}.jpg`).catch(() => {});
+                if (await enviarImagem(id, blob, `${m[1] || 'imagem'}.jpg`).catch(() => false)) marcarEnviada(id);
                 out = out.replace(m[0], `![${m[1]}](sjimg:${id})`);
                 mudou = true;
             } catch { /* mantém o bloco original */ }
         }
         return { texto: out, mudou };
+    }
+
+    /* Repõe no servidor as imagens que ainda vivem neste browser
+       (cura após wipe: o 404 anterior desmarcou-as). */
+    async function backfill() {
+        try {
+            const enviadas = lerEnviadas();
+            const ids = new Set();
+            for (let i = 0; i < localStorage.length; i += 1) {
+                const k = localStorage.key(i) || '';
+                if (!/^study-journal-notes-\d{4}-\d{2}-\d{2}$/.test(k)) continue;
+                const v = localStorage.getItem(k) || '';
+                for (const m of v.matchAll(/sjimg:([A-Za-z0-9_-]+)/g)) {
+                    if (!enviadas.has(m[1])) ids.add(m[1]);
+                }
+            }
+            for (const id of ids) {
+                let blob = null;
+                try {
+                    blob = await lerBlob(id);
+                } catch { blob = null; }
+                if (!blob || blob.size > FICHEIROS_MAX_BYTES) continue;
+                if (await enviarImagem(id, blob, `${id}.jpg`)) marcarEnviada(id);
+            }
+        } catch { /* best-effort */ }
     }
 
     function proximoNome(area) {
@@ -241,7 +297,9 @@ window.Imagens = (() => {
                     toast('Não foi possível guardar a imagem no browser.', 'error');
                     continue;
                 }
-                enviarImagem(id, blob, `${nome}.jpg`).catch(() => {});
+                enviarImagem(id, blob, `${nome}.jpg`).then((ok) => {
+                    if (ok) marcarEnviada(id);
+                }).catch(() => {});
                 inserir(area, id, nome);
                 inseridas += 1;
             } catch {
@@ -300,5 +358,5 @@ window.Imagens = (() => {
         });
     }
 
-    return { ligar, hidratar, expandirParaVault, colapsarEmbutidas, blobDe };
+    return { ligar, hidratar, expandirParaVault, colapsarEmbutidas, blobDe, backfill };
 })();

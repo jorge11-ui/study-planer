@@ -2761,6 +2761,7 @@ async function loadDay() {
             }
         } catch { /* fica como está */ }
     }
+    if (window.Imagens) window.Imagens.backfill().catch(() => {});
 
     els.wordCount.textContent = String(countWords(els.notes.value));
     setSaveStatus('');

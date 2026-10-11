@@ -172,7 +172,16 @@ window.ContaSync = (() => {
 
         const antes = lerRev();
         const atual = Number(data.rev) || 0;
-        if (atual <= antes) return { atualizou: false };
+        if (atual <= antes) {
+            if (atual < antes) {
+                // O servidor recuou (wipe/redeploy): não aplicar nada e
+                // repô-lo em background com o estado completo deste aparelho.
+                setTimeout(() => {
+                    if (token) push().catch(() => {});
+                }, 3000);
+            }
+            return { atualizou: false };
+        }
 
         aplicar(data.data);
         guardarRev(atual);
@@ -194,16 +203,26 @@ window.ContaSync = (() => {
         if (r.status === 503) throw new Error('Servidor sem conta configurada.');
 
         if (r.status === 409 && r.data) {
-            // Alguém escreveu entretanto: aplica, refaz a recolha e repete uma vez
-            aplicar(r.data.data);
-            guardarRev(Number(r.data.rev) || 0);
-            notificar('pull-done', { rev: lerRev(), conflito: true });
-            if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
-            const payload2 = coletar();
-            r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: payload2 } });
-            if (r.status === 401) {
-                limparSessao();
-                throw new Error('Sessão expirada — entra de novo na conta.');
+            const revServidor = Number(r.data.rev) || 0;
+            if (revServidor < lerRev()) {
+                // Servidor perdeu dados: forçar reposição SEM aplicar o
+                // vazio por cima dos dados locais (era isso que apagava tudo).
+                r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), forcar: true, data: payload } });
+                if (r.status === 409) {
+                    throw new Error('Servidor incompatível — atualiza a app nos dois aparelhos.');
+                }
+            } else {
+                // Alguém escreveu entretanto: aplica, refaz a recolha e repete uma vez
+                aplicar(r.data.data);
+                guardarRev(Number(r.data.rev) || 0);
+                notificar('pull-done', { rev: lerRev(), conflito: true });
+                if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
+                const payload2 = coletar();
+                r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: payload2 } });
+                if (r.status === 401) {
+                    limparSessao();
+                    throw new Error('Sessão expirada — entra de novo na conta.');
+                }
             }
         }
 

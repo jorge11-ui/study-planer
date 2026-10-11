@@ -122,7 +122,15 @@ window.Pdfs = (() => {
     async function buscarFicheiroRemoto(doc) {
         try {
             const resp = await fetch(`/api/ficheiros/${encodeURIComponent(doc.id)}`);
-            if (!resp.ok) return null;
+            if (!resp.ok) {
+                // 404 após wipe: esquecer o registo para o backfill voltar
+                // a subir os bytes que ainda vivem neste browser.
+                if (resp.status === 404) {
+                    const enviados = lerEnviados();
+                    if (enviados.delete(doc.id)) guardarEnviados(enviados);
+                }
+                return null;
+            }
             const blob = await resp.blob();
             if (!blob || !blob.size) return null;
             await guardarFicheiro(doc.id, blob);
