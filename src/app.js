@@ -2502,6 +2502,10 @@ function renderSubjects() {
 
 /* ── Definições ───────────────────────────────────────── */
 
+// Mudar quando a lógica de sync/storage mudar: visível em Definições para
+// confirmar que os dois aparelhos correm o mesmo código.
+const APP_VERSION = '2026.10.11-sync3';
+
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -2561,7 +2565,7 @@ function renderSettings() {
     const notes = daysWithData().size;
     els.stats.textContent = `${notes} ${notes === 1 ? 'dia' : 'dias'} com notas · ${stats.tasks} tarefas guardadas neste browser.`;
 
-    els.origin.textContent = `Origem: ${window.location.origin} — os dados vivem no localStorage desta origem.`;
+    els.origin.textContent = `Origem: ${window.location.origin} — os dados vivem no localStorage desta origem. · v${APP_VERSION}`;
 }
 
 function exportData() {

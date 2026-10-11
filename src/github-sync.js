@@ -240,10 +240,12 @@ window.GitHubSync = (() => {
         };
     }
 
-    function aplicarDadosRemotos(remoto) {
-        // Nunca apagar dados locais com listas vazias vindas de um servidor
-        // fresco (ex.: primeiro login no Render): só substitui se o remoto
-        // trouxer conteúdo ou o local já estiver vazio.
+    function aplicarDadosRemotos(remoto, { protegeVazios = true } = {}) {
+        // protegeVazios=true (Gist, sem revisões): nunca apagar dados locais
+        // com listas vazias vindas de um estado fresco.
+        // protegeVazios=false (conta, com revisões): a revisão já distingue
+        // "servidor fresco" de "apagado noutro aparelho", por isso aplica
+        // sempre — senão os apagados legítimos nunca chegavam.
         const temConteudo = (v) => Array.isArray(v)
             ? v.length > 0
             : (v && typeof v === 'object' ? Object.keys(v).length > 0 : !!v);
@@ -256,7 +258,7 @@ window.GitHubSync = (() => {
                 return false;
             }
         };
-        const deveAplicar = (chave, valor) => temConteudo(valor) || !localTemConteudo(chave);
+        const deveAplicar = (chave, valor) => !protegeVazios || temConteudo(valor) || !localTemConteudo(chave);
 
         if (remoto.days) {
             Object.entries(remoto.days).forEach(([key, value]) => {
@@ -379,7 +381,7 @@ window.GitHubSync = (() => {
         isPublicReadOnly,
         hasWriteAccess,
         coletarLocais: coletarDadosLocais,
-        aplicarRemotos: aplicarDadosRemotos,
+        aplicarRemotos: (remoto, opts) => aplicarDadosRemotos(remoto, opts),
         getToken: () => token,
         getGistId: () => gistId,
         setConfig: salvarConfig,

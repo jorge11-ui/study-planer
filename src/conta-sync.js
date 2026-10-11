@@ -65,7 +65,10 @@ window.ContaSync = (() => {
 
     function aplicar(remoto) {
         if (window.GitHubSync && window.GitHubSync.aplicarRemotos) {
-            window.GitHubSync.aplicarRemotos(remoto || {});
+            // Sem proteção de vazios: a revisão (rev) já nos diz se o
+            // servidor avançou — inclusive quando avançou para vazio
+            // porque alguém apagou no outro aparelho.
+            window.GitHubSync.aplicarRemotos(remoto || {}, { protegeVazios: false });
         }
     }
 
