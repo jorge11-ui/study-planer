@@ -169,6 +169,7 @@ window.Pdfs = (() => {
     async function guardar() {
         guardarLocais();
         desenhar();
+        if (typeof pushDebounced === 'function') pushDebounced();
 
         if (!window.Vault) return;
 

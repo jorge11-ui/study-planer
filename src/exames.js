@@ -38,6 +38,7 @@ function exRead(key, fallback) {
 function exWrite(key, value) {
     try {
         localStorage.setItem(key, JSON.stringify(value));
+        if (typeof pushDebounced === 'function') pushDebounced();
         return true;
     } catch {
         return false;

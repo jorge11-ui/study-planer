@@ -193,6 +193,7 @@ const ReviewSystem = {
         carta.proxima = this.somarDias(this.hojeChave(), carta.intervalo);
         carta.revistaEm = new Date().toISOString();
         this.escreverV2(lista);
+        if (typeof pushDebounced === 'function') pushDebounced();
         return carta;
     }
 };
@@ -226,6 +227,7 @@ const StudySessions = {
         if (!dados[key]) dados[key] = {};
         dados[key][subject] = (dados[key][subject] || 0) + minutos;
         this.escrever(dados);
+        if (typeof pushDebounced === 'function') pushDebounced();
     },
 
     obterDoDia(date) {
@@ -613,6 +615,24 @@ function anotarResultadoPush(r) {
     if (r && r.ok) limparSyncPendente();
     else if (!r || r.reason !== 'sem-conta') marcarSyncPendente();
     else limparSyncPendente();
+}
+
+/* Push com debounce: os pontos de escrita chamam isto em vez de push
+   imediato, para não disparar um PUT por keystroke (ex.: exames). */
+let pushDebounceTimer = null;
+
+function pushDebounced(ms = 5000) {
+    try {
+        const háSync = (window.ContaSync && window.ContaSync.configurado())
+            || (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado());
+        if (!háSync) return;
+    } catch {
+        return;
+    }
+    clearTimeout(pushDebounceTimer);
+    pushDebounceTimer = setTimeout(() => {
+        sincronizarDispositivos();
+    }, ms);
 }
 
 function sincronizarDispositivos() {
