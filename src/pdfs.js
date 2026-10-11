@@ -464,6 +464,33 @@ window.Pdfs = (() => {
 
         if (contagem) contagem.textContent = TEXTOS.documentos.replace('{total}', String(docs.length));
 
+        const stats = document.getElementById('pdf-stats');
+        if (stats) {
+            stats.replaceChildren();
+            if (docs.length > 0) {
+                const totalBytes = docs.reduce((a, d) => a + (Number(d.tamanho) || 0), 0);
+                const porCat = new Map();
+                for (const d of docs) {
+                    const nome = (d.categoria || '').trim() || TEXTOS.semCategoria;
+                    porCat.set(nome, (porCat.get(nome) || 0) + 1);
+                }
+                const partes = [
+                    `${docs.length} ${docs.length === 1 ? 'documento' : 'documentos'}`,
+                    tamanhoLegivel(totalBytes),
+                    ...[...porCat.entries()]
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 4)
+                        .map(([nome, n]) => `${nome} (${n})`),
+                ];
+                partes.forEach((t, i) => {
+                    const s = document.createElement('span');
+                    s.textContent = t;
+                    if (i === 0) s.className = 'font-medium text-muted';
+                    stats.append(s);
+                });
+            }
+        }
+
         if (filtros) {
             const lista = categorias();
 

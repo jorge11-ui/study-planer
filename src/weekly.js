@@ -318,7 +318,40 @@ window.Weekly = (() => {
 
         if (empty) empty.hidden = temEventos;
 
+        desenharEstatisticas();
         desenharLinhaAtual();
+    }
+
+    /* ── Estatísticas da semana ──────────────────────────── */
+    function desenharEstatisticas() {
+        const stats = document.getElementById('week-stats');
+        if (!stats) return;
+        stats.replaceChildren();
+
+        const todos = [...fixos, ...dinamicos];
+        if (!todos.length) return;
+
+        const porDia = [0, 0, 0, 0, 0, 0, 0];
+        let fixoMin = 0;
+        let dinMin = 0;
+        todos.forEach((e) => {
+            const min = Math.round(Number(e.duracao || 0) * 60);
+            if (e.dia >= 1 && e.dia <= 7) porDia[e.dia - 1] += min;
+            if (e.layer === 'dinamico') dinMin += min;
+            else fixoMin += min;
+        });
+
+        const fmtMin = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`);
+        const total = document.createElement('span');
+        total.className = 'font-medium text-muted';
+        total.textContent = `${fmtMin(fixoMin + dinMin)} na semana (${fmtMin(fixoMin)} fixos · ${fmtMin(dinMin)} dinâmicos)`;
+        stats.append(total);
+
+        DIAS.forEach((d, i) => {
+            const s = document.createElement('span');
+            s.textContent = `${d} ${porDia[i] ? fmtMin(porDia[i]) : '—'}`;
+            stats.append(s);
+        });
     }
 
     /* ── Linha da hora atual ───────────────────────────── */

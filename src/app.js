@@ -1481,6 +1481,44 @@ function renderEstudarView() {
         btn.classList.toggle('text-white', selected);
     });
 
+    // Últimos 7 dias
+    const faixa7 = document.getElementById('estudar-7dias');
+    const total7El = document.getElementById('estudar-7dias-total');
+    if (faixa7) {
+        const dias = [];
+        let max = 0;
+        let soma = 0;
+        for (let i = 6; i >= 0; i -= 1) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const mins = Object.values(StudySessions.obterDoDia(d)).reduce((a, b) => a + b, 0);
+            dias.push({ d, mins });
+            if (mins > max) max = mins;
+            soma += mins;
+        }
+        if (total7El) total7El.textContent = StudySessions.formatar(soma);
+        faixa7.replaceChildren();
+        const letras = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']; // getDay(): Dom=0 … Sáb=6
+        dias.forEach(({ d, mins }) => {
+            const col = document.createElement('div');
+            col.className = 'flex flex-1 flex-col items-center gap-1';
+            const barra = document.createElement('div');
+            const h = max > 0 ? Math.max(mins > 0 ? 6 : 2, Math.round((mins / max) * 56)) : 2;
+            barra.className = 'w-full rounded';
+            barra.style.height = `${h}px`;
+            barra.style.background = mins > 0 ? 'var(--color-brand)' : 'var(--color-line)';
+            barra.style.opacity = mins > 0 ? '0.9' : '0.6';
+            const rot = document.createElement('span');
+            rot.className = 'text-[10px] text-faint';
+            rot.textContent = letras[d.getDay()];
+            const dica = `${d.toLocaleDateString('pt-PT', { weekday: 'short', day: 'numeric', month: 'short' })}: ${StudySessions.formatar(mins)}`;
+            col.title = dica;
+            col.setAttribute('aria-label', dica);
+            col.append(barra, rot);
+            faixa7.append(col);
+        });
+    }
+
     // Hoje
     const hoje = StudySessions.obterDoDia(new Date());
     const hojeList = document.getElementById('estudar-hoje-list');

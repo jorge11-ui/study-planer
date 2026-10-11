@@ -577,6 +577,15 @@
             </div>
 
             <!-- Estatísticas -->
+            <div class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-4">
+                <header class="flex items-center gap-2 mb-3">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-week"/></svg>
+                    <h3 class="text-sm font-semibold">Últimos 7 dias</h3>
+                    <span id="estudar-7dias-total" class="ml-auto text-xs font-mono tabular-nums text-brand-light"></span>
+                </header>
+                <div id="estudar-7dias" class="flex items-end gap-1.5" aria-live="polite"></div>
+            </div>
+
             <div class="grid gap-4 md:grid-cols-3">
                 <!-- Hoje -->
                 <article class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-4">
@@ -637,6 +646,7 @@
                         class="field w-full pl-9" autocomplete="off">
                 </div>
                 <div id="pdf-filters" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por categoria"></div>
+                <div id="pdf-stats" class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-faint" aria-live="polite"></div>
                 <p id="pdf-status" class="text-[11px] text-faint" role="status" aria-live="polite"></p>
             </div>
 
@@ -702,6 +712,8 @@
                     <span class="text-muted">Fim de semana</span>
                 </span>
             </div>
+
+            <div id="week-stats" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-faint" aria-live="polite"></div>
 
             <div class="overflow-x-auto" id="week-scroll">
                 <div id="week-day-pager" class="mb-2 flex gap-1 sm:hidden" role="group" aria-label="Dia visível">
