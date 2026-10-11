@@ -693,6 +693,7 @@ function recarregarAposSync() {
         if (vista && !vista.hidden && window.NotasPro) {
             vista.innerHTML = window.NotasPro.renderMarkdownLite(els.notes.value)
                 || '<p class="text-xs text-faint">Nada para pré-visualizar.</p>';
+            if (window.Imagens) window.Imagens.hidratar(vista).catch(() => {});
         }
     }
 
@@ -1017,6 +1018,7 @@ function onNotesInput() {
     const vista = document.getElementById('notes-preview');
     if (vista && !vista.hidden && window.NotasPro) {
         vista.innerHTML = window.NotasPro.renderMarkdownLite(els.notes.value) || '<p class="text-xs text-faint">Nada para pré-visualizar.</p>';
+        if (window.Imagens) window.Imagens.hidratar(vista).catch(() => {});
     }
 
     clearTimeout(saveTimer);
@@ -1718,7 +1720,11 @@ async function persistToVault(force = false) {
 
     if (!(await ensureVault())) return;
 
-    const result = await Vault.save(name, text, { force });
+    // No vault vão dataURLs reais (Obsidian); no editor ficam tokens curtos
+    const paraVault = window.Imagens
+        ? await window.Imagens.expandirParaVault(text).catch(() => text)
+        : text;
+    const result = await Vault.save(name, paraVault, { force });
 
     if (result.ok) {
         toast(`Guardado em ${result.path}`, 'success');
@@ -1760,6 +1766,15 @@ async function syncDayFromVault() {
 
         els.notes.value = result.content;
         els.wordCount.textContent = String(countWords(result.content));
+        if (window.Imagens) {
+            try {
+                const { texto, mudou } = await window.Imagens.colapsarEmbutidas(result.content);
+                if (mudou && key === dayKey(selected)) {
+                    els.notes.value = texto;
+                    els.wordCount.textContent = String(countWords(texto));
+                }
+            } catch { /* fica o texto original */ }
+        }
         commitNotes();
         await Vault.mark(`${key}.md`, result.content);
 
@@ -2729,6 +2744,18 @@ async function loadDay() {
         els.notes.value = noteResult.content;
     } else {
         els.notes.value = read(notesKey(), '');
+    }
+
+    // Migra dataURLs antigos para tokens curtos (uma vez por conteúdo)
+    const chaveNotas = dayKey(selected);
+    if (window.Imagens && /data:image\//.test(els.notes.value)) {
+        try {
+            const { texto, mudou } = await window.Imagens.colapsarEmbutidas(els.notes.value);
+            if (mudou && chaveNotas === dayKey(selected)) {
+                els.notes.value = texto;
+                commitNotes();
+            }
+        } catch { /* fica como está */ }
     }
 
     els.wordCount.textContent = String(countWords(els.notes.value));

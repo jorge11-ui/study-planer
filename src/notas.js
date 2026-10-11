@@ -73,8 +73,8 @@ window.NotasPro = (() => {
     }
 
     function trecho(texto, pos, raio = 70) {
-        // dataURLs de imagens coladas não cabem num excerto
-        const semImagens = String(texto || '').replace(/!\[[^\]]*\]\(data:image\/[^)]*\)/g, '[imagem]');
+        // Imagens coladas (dataURLs ou tokens) não cabem num excerto
+        const semImagens = String(texto || '').replace(/!\[[^\]]*\]\((?:data:image\/[^)]*|sjimg:[A-Za-z0-9_-]+)\)/g, '[imagem]');
         const limpo = semImagens.replace(/\s+/g, ' ').trim();
         if (limpo.length <= raio * 2) return limpo;
         const inicio = Math.max(0, pos - raio);
@@ -162,6 +162,7 @@ window.NotasPro = (() => {
         let lista = [];
 
         const inline = (s) => s
+            .replace(/!\[([^\]]*)\]\(sjimg:([A-Za-z0-9_-]+)\)/g, '<img data-sjimg="$2" alt="$1" class="md-img" loading="lazy">')
             .replace(/!\[([^\]]*)\]\((data:image\/[^)\s]+)\)/g, '<img src="$2" alt="$1" class="md-img" loading="lazy">')
             .replace(/`([^`]+)`/g, '<code class="rounded bg-surface-3 px-1 font-mono text-[12px]">$1</code>')
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -379,6 +380,7 @@ window.NotasPro = (() => {
         if (btn) btn.setAttribute('aria-pressed', String(ativa));
         if (ativa) {
             vista.innerHTML = renderMarkdownLite(area.value) || '<p class="text-xs text-faint">Nada para pré-visualizar.</p>';
+            if (window.Imagens) window.Imagens.hidratar(vista).catch(() => {});
         }
     }
 
