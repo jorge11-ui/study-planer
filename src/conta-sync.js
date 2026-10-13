@@ -8,6 +8,7 @@ window.ContaSync = (() => {
     const K_TOKEN = 'study-journal-conta-token';
     const K_USER = 'study-journal-conta-user';
     const K_REV = 'study-journal-conta-rev';
+    const K_GID = 'study-journal-conta-gid';
     const K_LAST = 'study-journal-conta-last-sync';
     const POLL_MS = 30000;
     const AUTO_MIN_GAP_MS = 15000;
@@ -49,11 +50,20 @@ window.ContaSync = (() => {
         }
     }
 
-    function guardarRev(rev) {
+    function guardarRev(rev, gid = null) {
         try {
             localStorage.setItem(K_REV, String(rev));
             localStorage.setItem(K_LAST, new Date().toISOString());
+            if (gid) localStorage.setItem(K_GID, String(gid));
         } catch { /* segue */ }
+    }
+
+    function lerGid() {
+        try {
+            return localStorage.getItem(K_GID) || null;
+        } catch {
+            return null;
+        }
     }
 
     function coletar() {
@@ -155,6 +165,7 @@ window.ContaSync = (() => {
         } catch { /* best-effort */ }
         try {
             localStorage.removeItem(K_REV);
+            localStorage.removeItem(K_GID);
             localStorage.removeItem(K_LAST);
         } catch { /* segue */ }
         limparSessao();
@@ -172,19 +183,34 @@ window.ContaSync = (() => {
 
         const antes = lerRev();
         const atual = Number(data.rev) || 0;
+        const gid = (data.gid && typeof data.gid === 'string') ? data.gid : null;
+        const gidGuardado = lerGid();
+        if (gid && !gidGuardado) {
+            try { localStorage.setItem(K_GID, gid); } catch { /* segue */ }
+        }
+        // gid novo com o mesmo rev = o disco do servidor foi limpo e a
+        // contagem recomeçou: o conteúdo é outro, mesmo com rev igual.
+        const geracaoNova = gid && gidGuardado && gid !== gidGuardado;
+        if (atual < antes || geracaoNova) {
+            // O servidor recuou (wipe/redeploy com disco efémero): funde o
+            // que ele tem — pode incluir trabalho fresco que outro aparelho
+            // já repôs após o wipe — adota a revisão dele e devolve sinal
+            // para fazerPush() a seguir enviar o fundido. Sem isto, um
+            // aparelho desatualizado repunha por cima e apagava tudo.
+            aplicar(data.data);
+            guardarRev(atual, gid);
+            notificar('pull-done', { rev: atual });
+            const notasOk = typeof window.recarregarAposSync === 'function'
+                ? window.recarregarAposSync()
+                : true;
+            return { atualizou: true, notasAdiadas: !notasOk, fundiuWipe: true };
+        }
         if (atual <= antes) {
-            if (atual < antes) {
-                // O servidor recuou (wipe/redeploy): não aplicar nada e
-                // repô-lo em background com o estado completo deste aparelho.
-                setTimeout(() => {
-                    if (token) push().catch(() => {});
-                }, 3000);
-            }
             return { atualizou: false };
         }
 
         aplicar(data.data);
-        guardarRev(atual);
+        guardarRev(atual, gid);
         notificar('pull-done', { rev: atual });
         const notasOk = typeof window.recarregarAposSync === 'function'
             ? window.recarregarAposSync()
@@ -205,16 +231,22 @@ window.ContaSync = (() => {
         if (r.status === 409 && r.data) {
             const revServidor = Number(r.data.rev) || 0;
             if (revServidor < lerRev()) {
-                // Servidor perdeu dados: forçar reposição SEM aplicar o
-                // vazio por cima dos dados locais (era isso que apagava tudo).
-                r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), forcar: true, data: payload } });
+                // Servidor recuou (wipe/redeploy) depois da nossa recolha:
+                // funde primeiro (o servidor pode ter trabalho fresco de
+                // outro aparelho) e repõe o fundido, em vez de apagar por cima.
+                aplicar(r.data.data);
+                guardarRev(revServidor, (r.data.gid && typeof r.data.gid === 'string') ? r.data.gid : null);
+                notificar('pull-done', { rev: lerRev(), conflito: true });
+                if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
+                const payloadF = coletar();
+                r = await api('/api/sync', { method: 'PUT', body: { baseRev: revServidor, forcar: true, data: payloadF } });
                 if (r.status === 409) {
                     throw new Error('Servidor incompatível — atualiza a app nos dois aparelhos.');
                 }
             } else {
                 // Alguém escreveu entretanto: aplica, refaz a recolha e repete uma vez
                 aplicar(r.data.data);
-                guardarRev(Number(r.data.rev) || 0);
+                guardarRev(Number(r.data.rev) || 0, (r.data.gid && typeof r.data.gid === 'string') ? r.data.gid : null);
                 notificar('pull-done', { rev: lerRev(), conflito: true });
                 if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
                 const payload2 = coletar();
@@ -229,7 +261,7 @@ window.ContaSync = (() => {
         if (!r.data || !r.data.ok) {
             throw new Error((r.data && r.data.reason) || `HTTP ${r.status}`);
         }
-        guardarRev(Number(r.data.rev) || lerRev());
+        guardarRev(Number(r.data.rev) || lerRev(), (r.data.gid && typeof r.data.gid === 'string') ? r.data.gid : null);
         notificar('push-done', { rev: lerRev() });
         return { ok: true };
     }
@@ -254,20 +286,10 @@ window.ContaSync = (() => {
     }
 
     async function push() {
-        if (!token) return { ok: false, reason: 'sem-conta' };
-        if (aSyncando) return { ok: false, reason: 'a-syncar' };
-        aSyncando = true;
-        notificar('sync-start');
-        try {
-            await fazerPush();
-            notificar('sync-done', { success: true });
-            return { ok: true };
-        } catch (err) {
-            notificar('sync-error', { error: String((err && err.message) || err) });
-            return { ok: false, error: String((err && err.message) || err) };
-        } finally {
-            aSyncando = false;
-        }
+        // Pull-first: nunca empurrar por cima sem ver o que o servidor tem.
+        // É o que fecha a janela em que dois pushes concorrentes (ou um
+        // wipe com rev reutilizada) deitavam fora minutos do Estudar.
+        return sync(true);
     }
 
     async function pullAuto() {
@@ -287,6 +309,10 @@ window.ContaSync = (() => {
         notificar('sync-start');
         try {
             const r = await fazerPull();
+            if (r && r.fundiuWipe) {
+                // Servidor recém-limpado: repõe já o estado fundido.
+                await fazerPush();
+            }
             notificar('sync-done', { success: true, ...r });
             return { ok: true, ...r };
         } catch (err) {

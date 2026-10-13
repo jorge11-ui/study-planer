@@ -198,35 +198,206 @@ const ReviewSystem = {
     }
 };
 
-/* ── Sessões de Estudo ─────────────────────────────────── */
+/* ── Sessões de Estudo ───────────────────────────────────
+   Totais por dia/disciplina + registo por aparelho.
+   Cada aparelho soma os seus minutos no seu próprio compartimento
+   (slots[dia][materia][deviceId]); a fusão no sync é união com máximo
+   por compartimento, por isso dois aparelhos a estudar em simultâneo
+   nunca perdem minutos um do outro (o máximo direto nos totais
+   perdia o incremento concorrente). A base congela os totais
+   pré-migração e funde por máximo. O study-journal-sessions continua
+   a ser o cache dos totais para leituras (heatmap, vistas). */
 
 const SESSIONS_KEY = 'study-journal-sessions';
+const SESSIONS_BASE_KEY = 'study-journal-sessions-base';
+const SESSIONS_SLOTS_KEY = 'study-journal-sessions-slots';
+const SESSIONS_MIG_KEY = 'study-journal-sessions-migrado-v2';
+const DEVICE_ID_KEY = 'study-journal-device-id';
+
+function obterDeviceId() {
+    try {
+        let id = localStorage.getItem(DEVICE_ID_KEY);
+        if (!id) {
+            id = `dev-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+            localStorage.setItem(DEVICE_ID_KEY, id);
+        }
+        return id;
+    } catch {
+        return 'dev-desconhecido';
+    }
+}
+
+function lerMapa(chave) {
+    try {
+        const v = JSON.parse(localStorage.getItem(chave) || '{}');
+        return v && typeof v === 'object' ? v : {};
+    } catch {
+        return {};
+    }
+}
 
 const StudySessions = {
-    ler() {
-        try {
-            const raw = localStorage.getItem(SESSIONS_KEY);
-            return raw ? JSON.parse(raw) : {};
-        } catch {
-            return {};
-        }
+    lerBase() {
+        return lerMapa(SESSIONS_BASE_KEY);
     },
 
-    escrever(dados) {
+    escreverBase(base) {
         try {
-            localStorage.setItem(SESSIONS_KEY, JSON.stringify(dados));
+            localStorage.setItem(SESSIONS_BASE_KEY, JSON.stringify(base));
             return true;
         } catch {
             return false;
         }
     },
 
+    lerSlots() {
+        return lerMapa(SESSIONS_SLOTS_KEY);
+    },
+
+    escreverSlots(slots) {
+        try {
+            localStorage.setItem(SESSIONS_SLOTS_KEY, JSON.stringify(slots));
+            return true;
+        } catch {
+            return false;
+        }
+    },
+
+    /* Congela os totais existentes como base (uma vez por aparelho).
+       Sem isto, os minutos antigos seriam contados duas vezes quando
+       os slots começassem a somar por cima. */
+    migrarV2() {
+        try {
+            if (localStorage.getItem(SESSIONS_MIG_KEY)) return;
+            const atuais = lerMapa(SESSIONS_KEY);
+            const base = this.lerBase();
+            if (!Object.keys(base).length && Object.keys(atuais).length) {
+                this.escreverBase(atuais);
+            }
+            localStorage.setItem(SESSIONS_MIG_KEY, '1');
+        } catch { /* segue sem migrar */ }
+    },
+
+    /* Totais = base + soma dos slots de todos os aparelhos. */
+    recalcularTotais() {
+        const base = this.lerBase();
+        const slots = this.lerSlots();
+        const totais = {};
+        Object.entries(base).forEach(([dia, materias]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+            Object.entries(materias).forEach(([materia, min]) => {
+                const n = Number(min);
+                if (typeof materia === 'string' && Number.isFinite(n) && n > 0) {
+                    if (!totais[dia]) totais[dia] = {};
+                    totais[dia][materia] = (totais[dia][materia] || 0) + n;
+                }
+            });
+        });
+        Object.entries(slots).forEach(([dia, materias]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+            Object.entries(materias).forEach(([materia, aparelhos]) => {
+                if (typeof materia !== 'string' || !aparelhos || typeof aparelhos !== 'object') return;
+                const soma = Object.values(aparelhos).reduce((a, v) => {
+                    const n = Number(v);
+                    return a + (Number.isFinite(n) && n > 0 ? n : 0);
+                }, 0);
+                if (soma > 0) {
+                    if (!totais[dia]) totais[dia] = {};
+                    totais[dia][materia] = (totais[dia][materia] || 0) + soma;
+                }
+            });
+        });
+        try {
+            localStorage.setItem(SESSIONS_KEY, JSON.stringify(totais));
+        } catch { /* segue sem cache */ }
+        return totais;
+    },
+
+    ler() {
+        this.migrarV2();
+        const emCache = lerMapa(SESSIONS_KEY);
+        if (Object.keys(emCache).length) return emCache;
+        // Sem cache (ou só slots novos): recalcula em vez de devolver vazio.
+        return this.recalcularTotais();
+    },
+
+    /* Compat (import/export): funde na base por máximo e recalcula,
+       para nunca deitar fora os slots dos outros aparelhos. */
+    escrever(dados) {
+        if (!dados || typeof dados !== 'object') return false;
+        this.migrarV2();
+        const base = this.lerBase();
+        Object.entries(dados).forEach(([dia, materias]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+            if (!base[dia] || typeof base[dia] !== 'object') base[dia] = {};
+            Object.entries(materias).forEach(([materia, min]) => {
+                const n = Number(min);
+                if (typeof materia === 'string' && Number.isFinite(n) && n > 0) {
+                    base[dia][materia] = Math.max(Number(base[dia][materia]) || 0, n);
+                }
+            });
+        });
+        this.escreverBase(base);
+        this.recalcularTotais();
+        return true;
+    },
+
+    /* União de slots vindos do sync/import: máximo por compartimento
+       de aparelho (cada aparelho só escreve no seu). */
+    fundirSlotsRemotos(slotsRemotos) {
+        if (!slotsRemotos || typeof slotsRemotos !== 'object') return;
+        this.migrarV2();
+        const slots = this.lerSlots();
+        Object.entries(slotsRemotos).forEach(([dia, materias]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+            if (!slots[dia] || typeof slots[dia] !== 'object') slots[dia] = {};
+            Object.entries(materias).forEach(([materia, aparelhos]) => {
+                if (typeof materia !== 'string' || !materia || !aparelhos || typeof aparelhos !== 'object') return;
+                if (!slots[dia][materia] || typeof slots[dia][materia] !== 'object') slots[dia][materia] = {};
+                Object.entries(aparelhos).forEach(([dev, min]) => {
+                    const n = Number(min);
+                    if (typeof dev !== 'string' || !dev || !Number.isFinite(n) || n <= 0) return;
+                    slots[dia][materia][dev] = Math.max(Number(slots[dia][materia][dev]) || 0, n);
+                });
+            });
+        });
+        this.escreverSlots(slots);
+        this.recalcularTotais();
+    },
+
+    /* Totais de um export antigo (sem separação base/slots, logo sem os
+       slots atuais lá dentro): tudo acima da base é trabalho novo e entra
+       por inteiro, sem duplicar o que já vive nos slots. */
+    fundirLegado(totais) {
+        if (!totais || typeof totais !== 'object') return;
+        this.migrarV2();
+        const base = this.lerBase();
+        Object.entries(totais).forEach(([dia, materias]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+            Object.entries(materias).forEach(([materia, min]) => {
+                const n = Number(min);
+                if (typeof materia !== 'string' || !Number.isFinite(n) || n <= 0) return;
+                if (!base[dia] || typeof base[dia] !== 'object') base[dia] = {};
+                const vBase = Number(base[dia][materia]) || 0;
+                if (n > vBase) base[dia][materia] = n;
+            });
+        });
+        this.escreverBase(base);
+        this.recalcularTotais();
+    },
+
     adicionarMinutos(subject, minutos, date = new Date()) {
+        const n = Number(minutos);
+        if (!subject || !Number.isFinite(n) || n <= 0) return;
+        this.migrarV2();
         const key = dayKey(date);
-        const dados = this.ler();
-        if (!dados[key]) dados[key] = {};
-        dados[key][subject] = (dados[key][subject] || 0) + minutos;
-        this.escrever(dados);
+        const slots = this.lerSlots();
+        if (!slots[key] || typeof slots[key] !== 'object') slots[key] = {};
+        if (!slots[key][subject] || typeof slots[key][subject] !== 'object') slots[key][subject] = {};
+        const dev = obterDeviceId();
+        slots[key][subject][dev] = (Number(slots[key][subject][dev]) || 0) + n;
+        this.escreverSlots(slots);
+        this.recalcularTotais();
         if (typeof pushDebounced === 'function') pushDebounced();
     },
 
@@ -629,6 +800,9 @@ function pushDebounced(ms = 5000) {
     } catch {
         return;
     }
+    // Marca já como pendente: se a página fechar antes do temporizador,
+    // o próximo arranque envia o que ficou por enviar.
+    marcarSyncPendente();
     clearTimeout(pushDebounceTimer);
     pushDebounceTimer = setTimeout(() => {
         sincronizarDispositivos();
@@ -1365,6 +1539,22 @@ function cancelarSessao() {
     sessionTimer.creditedSec = 0;
     renderSessionTimer();
     if (currentView === 'estudar') renderEstudarView();
+}
+
+/* Ao fechar/trocar de aparelho a meio de uma sessão, credita já os
+   minutos inteiros decorridos (idempotente via creditedSec) e marca o
+   sync como pendente, para nada se perder se o debounce não disparar. */
+function guardarSessaoAoSair() {
+    try {
+        const cicloIniciado = sessionTimer.remaining < sessionTimer.minutes * 60 || sessionTimer.creditedSec > 0;
+        if (cicloIniciado) creditarTempoParcial(sessionTimer.subject);
+    } catch { /* nunca partir o unload */ }
+    try {
+        saveSessionState();
+    } catch { /* segue */ }
+    try {
+        marcarSyncPendente();
+    } catch { /* segue */ }
 }
 
 function setSessionMinutes(minutes) {
@@ -2504,7 +2694,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.11-sync3';
+const APP_VERSION = '2026.10.13-sync4';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -2563,7 +2753,12 @@ function renderSettings() {
 
     const stats = allTimeStats();
     const notes = daysWithData().size;
-    els.stats.textContent = `${notes} ${notes === 1 ? 'dia' : 'dias'} com notas · ${stats.tasks} tarefas guardadas neste browser.`;
+    let estudoTxt = '';
+    try {
+        const totalMin = Object.values(StudySessions.obterTotal()).reduce((a, b) => a + b, 0);
+        if (totalMin > 0) estudoTxt = ` · ${StudySessions.formatar(totalMin)} de estudo`;
+    } catch { /* segue sem o total */ }
+    els.stats.textContent = `${notes} ${notes === 1 ? 'dia' : 'dias'} com notas · ${stats.tasks} tarefas guardadas neste browser${estudoTxt}.`;
 
     els.origin.textContent = `Origem: ${window.location.origin} — os dados vivem no localStorage desta origem. · v${APP_VERSION}`;
 }
@@ -2595,6 +2790,8 @@ function exportData() {
     payload.exames = window.Exames ? window.Exames.lerTudo() : null;
     payload.reviewsV2 = ReviewSystem.lerV2();
     payload.sessoes = StudySessions.ler();
+    payload.sessoesBase = StudySessions.lerBase();
+    payload.sessoesSlots = StudySessions.lerSlots();
     try {
         const rawPdfs = localStorage.getItem('study-journal-pdfs');
         payload.pdfs = rawPdfs ? JSON.parse(rawPdfs) : [];
@@ -2658,17 +2855,14 @@ async function importData(file) {
             ReviewSystem.escreverV2(payload.reviewsV2);
         }
 
-        if (payload.sessoes && typeof payload.sessoes === 'object') {
-            const atuais = StudySessions.ler();
-            Object.entries(payload.sessoes).forEach(([dia, materias]) => {
-                if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
-                if (!atuais[dia] || typeof atuais[dia] !== 'object') atuais[dia] = {};
-                Object.entries(materias).forEach(([materia, min]) => {
-                    const n = Number(min);
-                    if (Number.isFinite(n) && n > 0) atuais[dia][materia] = Math.max(Number(atuais[dia][materia]) || 0, n);
-                });
-            });
-            StudySessions.escrever(atuais);
+        if (payload.sessoesSlots && typeof payload.sessoesSlots === 'object') {
+            StudySessions.fundirSlotsRemotos(payload.sessoesSlots);
+        }
+        if (payload.sessoesBase && typeof payload.sessoesBase === 'object') {
+            StudySessions.escrever(payload.sessoesBase);
+        } else if (payload.sessoes && typeof payload.sessoes === 'object') {
+            // Export antigo (totais sem separação base/slots).
+            StudySessions.fundirLegado(payload.sessoes);
         }
 
         if (Array.isArray(payload.pdfs)) {
@@ -3240,6 +3434,8 @@ function bind() {
 
     window.addEventListener('beforeunload', commitNotes);
     window.addEventListener('beforeunload', saveSessionState);
+    window.addEventListener('beforeunload', guardarSessaoAoSair);
+    window.addEventListener('pagehide', guardarSessaoAoSair);
     iniciarFlushSync();
 
     document.addEventListener('visibilitychange', () => {

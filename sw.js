@@ -2,7 +2,7 @@
    Estratégia: navegação = rede-primeiro (nunca guarda interstitials);
    estáticos = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v1';
+const CACHE = 'study-journal-v2';
 
 const NUCLEO = [
     '/',

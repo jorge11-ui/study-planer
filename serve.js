@@ -210,7 +210,7 @@ const SESSAO_MS = 180 * 24 * 60 * 60 * 1000;
 const LOGIN_JANELA_MS = 60 * 1000;
 const LOGIN_MAX_TENTATIVAS = 12;
 
-let syncDoc = { rev: 0, updatedAt: null, data: { days: {} } };
+let syncDoc = { rev: 0, updatedAt: null, gid: crypto.randomBytes(8).toString('hex'), data: { days: {} } };
 let sessoes = {};
 const tentativasLogin = new Map();
 
@@ -219,7 +219,15 @@ try {
     try {
         const raw = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8'));
         if (raw && typeof raw.rev === 'number' && raw.data && typeof raw.data === 'object') {
-            syncDoc = { rev: raw.rev, updatedAt: raw.updatedAt ?? null, data: raw.data };
+            syncDoc = {
+                rev: raw.rev,
+                updatedAt: raw.updatedAt ?? null,
+                // gid identifica a "geração" do disco: após um wipe (disco
+                // efémero) o ficheiro desaparece e nasce um gid novo, para os
+                // aparelhos distinguirem "rev igual" de "conteúdo igual".
+                gid: typeof raw.gid === 'string' && raw.gid ? raw.gid : crypto.randomBytes(8).toString('hex'),
+                data: raw.data,
+            };
         }
     } catch (error) {
         if (error.code !== 'ENOENT') console.log('  ! sync.json ilegível, a começar do zero.');
@@ -343,6 +351,61 @@ function dadosSyncValidos(data) {
         && data.days && typeof data.days === 'object' && !Array.isArray(data.days);
 }
 
+function numMinSync(n) {
+    const x = Number(n);
+    return Number.isFinite(x) && x > 0 ? x : 0;
+}
+
+/* Fusão do documento de sync.
+   Regra geral: cada secção enviada substitui a guardada — EXCETO as
+   sessões do Estudar, que fundem de forma monotónica: a base por máximo
+   e os slots por máximo em cada compartimento de aparelho. Sem isto, um
+   push de um aparelho desatualizado (ex.: mesma rev após um wipe com
+   disco efémero) apagava os minutos já repostos por outro aparelho. */
+function fundirSyncData(guardado, recebido) {
+    const out = { ...guardado, ...recebido };
+
+    if (recebido.sessoesBase && typeof recebido.sessoesBase === 'object'
+        && guardado.sessoesBase && typeof guardado.sessoesBase === 'object') {
+        const base = {};
+        new Set([...Object.keys(guardado.sessoesBase), ...Object.keys(recebido.sessoesBase)]).forEach((dia) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return;
+            const gb = guardado.sessoesBase[dia];
+            const rb = recebido.sessoesBase[dia];
+            if ((!gb || typeof gb !== 'object') && (!rb || typeof rb !== 'object')) return;
+            const materias = new Set([...Object.keys(gb || {}), ...Object.keys(rb || {})]);
+            const outDia = {};
+            materias.forEach((m) => {
+                const v = Math.max(numMinSync(gb && gb[m]), numMinSync(rb && rb[m]));
+                if (v > 0) outDia[m] = v;
+            });
+            if (Object.keys(outDia).length) base[dia] = outDia;
+        });
+        out.sessoesBase = base;
+        if (!recebido.sessoes || typeof recebido.sessoes !== 'object') out.sessoes = base;
+    }
+
+    if (recebido.sessoesSlots && typeof recebido.sessoesSlots === 'object'
+        && guardado.sessoesSlots && typeof guardado.sessoesSlots === 'object') {
+        const slots = JSON.parse(JSON.stringify(guardado.sessoesSlots));
+        Object.entries(recebido.sessoesSlots).forEach(([dia, materias]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
+            if (!slots[dia] || typeof slots[dia] !== 'object') slots[dia] = {};
+            Object.entries(materias).forEach(([materia, aparelhos]) => {
+                if (typeof materia !== 'string' || !materia || !aparelhos || typeof aparelhos !== 'object') return;
+                if (!slots[dia][materia] || typeof slots[dia][materia] !== 'object') slots[dia][materia] = {};
+                Object.entries(aparelhos).forEach(([dev, min]) => {
+                    if (typeof dev !== 'string' || !dev) return;
+                    slots[dia][materia][dev] = Math.max(numMinSync(slots[dia][materia][dev]), numMinSync(min));
+                });
+            });
+        });
+        out.sessoesSlots = slots;
+    }
+
+    return out;
+}
+
 async function apiSync(req, res) {
     if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
 
@@ -350,7 +413,7 @@ async function apiSync(req, res) {
     if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
 
     if (req.method === 'GET') {
-        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, data: syncDoc.data });
+        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid, data: syncDoc.data });
         return;
     }
 
@@ -364,18 +427,21 @@ async function apiSync(req, res) {
         if (baseRev !== syncDoc.rev && body.forcar !== true) {
             return json(res, 409, {
                 ok: false, reason: 'conflito',
-                rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, data: syncDoc.data,
+                rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid, data: syncDoc.data,
             });
         }
         // forcar=true: o cliente detetou que o servidor recuou (wipe/
         // redeploy com disco efémero) e repõe o estado completo dele.
-        syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), data: body.data };
+        // Fusão por secção (ver fundirSyncData): um cliente antigo que não
+        // conhece campos novos (ex.: sessoesBase) não os apaga ao fazer push,
+        // e um push desatualizado nunca apaga minutos de outro aparelho.
+        syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), data: fundirSyncData(syncDoc.data, body.data) };
         try {
             guardarSync();
         } catch {
             return json(res, 500, { ok: false, reason: 'erro' });
         }
-        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt });
+        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid });
         return;
     }
 

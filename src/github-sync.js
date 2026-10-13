@@ -233,10 +233,13 @@ window.GitHubSync = (() => {
             // Metadados dos PDFs (a lista; os bytes vão por /api/ficheiros).
             // Sem isto, no Render (sem vault) a galeria não viajava.
             pdfs: lerJson('study-journal-pdfs', null),
-            // Sessões do timer (heatmap/estatísticas). O pomodoro legado não
-            // sincroniza de propósito: os valores antigos (contagens) e novos
-            // (minutos) misturar-se-iam na migração entre aparelhos.
-            sessoes: lerJson('study-journal-sessions', null),
+            // Sessões do timer (heatmap/estatísticas): base (máximo) + slots
+            // por aparelho (união). Ver StudySessions em app.js: dois
+            // aparelhos a estudar ao mesmo tempo nunca perdem minutos.
+            // `sessoes` mantém a base para clientes antigos lerem.
+            sessoes: lerJson('study-journal-sessions-base', null),
+            sessoesBase: lerJson('study-journal-sessions-base', null),
+            sessoesSlots: lerJson('study-journal-sessions-slots', null),
         };
     }
 
@@ -291,28 +294,119 @@ window.GitHubSync = (() => {
         if (Array.isArray(remoto.pdfs) && deveAplicar('study-journal-pdfs', remoto.pdfs)) {
             localStorage.setItem('study-journal-pdfs', JSON.stringify(remoto.pdfs));
         }
-        if (remoto.sessoes && typeof remoto.sessoes === 'object') {
-            // Fusão por máximo (dia, disciplina): os minutos só crescem,
-            // por isso o max converge sem duplicar em syncs repetidos.
-            const CHAVE_SESSOES = 'study-journal-sessions';
-            let locais = {};
+        fundirSessoes(remoto);
+    }
+
+    function numMin(n) {
+        const x = Number(n);
+        return Number.isFinite(x) && x > 0 ? x : 0;
+    }
+
+    /* Sessões do Estudar: a base funde por máximo; os slots por união
+       (máximo por compartimento de aparelho); o campo `sessoes` de
+       clientes antigos entra na base só pelo excedente, para não contar
+       duas vezes o que já vive nos slots. No fim recompõe o cache de
+       totais (study-journal-sessions) para heatmap e vistas. */
+    function fundirSessoes(remoto) {
+        const BASE_KEY = 'study-journal-sessions-base';
+        const SLOTS_KEY = 'study-journal-sessions-slots';
+        const TOTAL_KEY = 'study-journal-sessions';
+        let base = {};
+        let slots = {};
+        try {
+            base = JSON.parse(localStorage.getItem(BASE_KEY) || '{}') || {};
+            if (!base || typeof base !== 'object') base = {};
+        } catch { base = {}; }
+        try {
+            slots = JSON.parse(localStorage.getItem(SLOTS_KEY) || '{}') || {};
+            if (!slots || typeof slots !== 'object') slots = {};
+        } catch { slots = {}; }
+
+        const baseRemota = (remoto.sessoesBase && typeof remoto.sessoesBase === 'object') ? remoto.sessoesBase : null;
+        const slotsRemotos = (remoto.sessoesSlots && typeof remoto.sessoesSlots === 'object') ? remoto.sessoesSlots : null;
+        const legadoRemoto = (remoto.sessoes && typeof remoto.sessoes === 'object') ? remoto.sessoes : null;
+        const fonteBase = baseRemota || legadoRemoto;
+
+        // Migração (uma vez): se nunca houve base nem slots, os totais
+        // guardados são legado puro e congelam como base. Com slots já
+        // existentes NÃO se congela — o cache de totais já os inclui e
+        // congelá-lo duplicava os minutos (detetado em teste).
+        if (!Object.keys(base).length && !Object.keys(slots).length) {
             try {
-                locais = JSON.parse(localStorage.getItem(CHAVE_SESSOES) || '{}');
-                if (!locais || typeof locais !== 'object') locais = {};
-            } catch { locais = {}; }
-            Object.entries(remoto.sessoes).forEach(([dia, materias]) => {
+                const antigos = JSON.parse(localStorage.getItem(TOTAL_KEY) || '{}');
+                if (antigos && typeof antigos === 'object' && Object.keys(antigos).length) {
+                    base = antigos;
+                }
+            } catch { /* segue sem base */ }
+        }
+
+        if (slotsRemotos) {
+            Object.entries(slotsRemotos).forEach(([dia, materias]) => {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
-                if (!locais[dia] || typeof locais[dia] !== 'object') locais[dia] = {};
-                Object.entries(materias).forEach(([materia, min]) => {
-                    const n = Number(min);
-                    if (!Number.isFinite(n) || n <= 0) return;
-                    locais[dia][materia] = Math.max(Number(locais[dia][materia]) || 0, n);
+                if (!slots[dia] || typeof slots[dia] !== 'object') slots[dia] = {};
+                Object.entries(materias).forEach(([materia, aparelhos]) => {
+                    if (typeof materia !== 'string' || !materia || !aparelhos || typeof aparelhos !== 'object') return;
+                    if (!slots[dia][materia] || typeof slots[dia][materia] !== 'object') slots[dia][materia] = {};
+                    Object.entries(aparelhos).forEach(([dev, min]) => {
+                        if (typeof dev !== 'string' || !dev) return;
+                        slots[dia][materia][dev] = Math.max(numMin(slots[dia][materia][dev]), numMin(min));
+                    });
                 });
             });
-            try {
-                localStorage.setItem(CHAVE_SESSOES, JSON.stringify(locais));
-            } catch { /* segue sem persistir */ }
         }
+
+        const somaSlots = {};
+        Object.entries(slots).forEach(([dia, materias]) => {
+            if (!materias || typeof materias !== 'object') return;
+            Object.entries(materias).forEach(([materia, aparelhos]) => {
+                if (!aparelhos || typeof aparelhos !== 'object') return;
+                const s = Object.values(aparelhos).reduce((a, v) => a + numMin(v), 0);
+                if (s > 0) {
+                    if (!somaSlots[dia]) somaSlots[dia] = {};
+                    somaSlots[dia][materia] = s;
+                }
+            });
+        });
+
+        const dias = new Set([...Object.keys(base), ...Object.keys(fonteBase || {})]);
+        dias.forEach((dia) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return;
+            const lb = (base[dia] && typeof base[dia] === 'object') ? base[dia] : {};
+            const rb = (fonteBase && fonteBase[dia] && typeof fonteBase[dia] === 'object') ? fonteBase[dia] : {};
+            const out = {};
+            new Set([...Object.keys(lb), ...Object.keys(rb)]).forEach((materia) => {
+                const vBase = numMin(lb[materia]);
+                let v = vBase;
+                if (baseRemota) {
+                    v = Math.max(v, numMin(rb[materia]));
+                } else if (legadoRemoto) {
+                    // Cliente antigo: o campo `sessoes` nunca contém os slots
+                    // (não os conhece), por isso tudo acima da nossa base é
+                    // trabalho novo dele e entra por inteiro.
+                    const excesso = numMin(rb[materia]) - vBase;
+                    if (excesso > 0) v = vBase + excesso;
+                }
+                if (v > 0) out[materia] = v;
+            });
+            if (Object.keys(out).length) base[dia] = out;
+            else delete base[dia];
+        });
+
+        try {
+            localStorage.setItem(BASE_KEY, JSON.stringify(base));
+            localStorage.setItem(SLOTS_KEY, JSON.stringify(slots));
+        } catch { /* segue sem persistir */ }
+
+        const totais = JSON.parse(JSON.stringify(base));
+        Object.entries(somaSlots).forEach(([dia, materias]) => {
+            if (!totais[dia]) totais[dia] = {};
+            Object.entries(materias).forEach(([materia, s]) => {
+                totais[dia][materia] = numMin(totais[dia][materia]) + s;
+            });
+        });
+        try {
+            localStorage.setItem(TOTAL_KEY, JSON.stringify(totais));
+        } catch { /* segue sem cache */ }
     }
 
     async function sync(pullFirst = true) {
