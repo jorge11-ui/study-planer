@@ -90,6 +90,9 @@
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
             </symbol>
+            <symbol id="i-chat" viewBox="0 0 24 24">
+                <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
+            </symbol>
             <symbol id="i-download" viewBox="0 0 24 24">
                 <path d="M12 3v12"/>
                 <path d="m7 11 5 5 5-5"/>
@@ -259,6 +262,10 @@
             <button type="button" data-view="exames" title="Exames Nacionais" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-grad"/></svg>
                 <span>Exames</span>
+            </button>
+            <button type="button" data-view="assistente" title="Assistente" class="nav-item-wide">
+                <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
+                <span>Assistente</span>
             </button>
             <button type="button" data-view="definicoes" title="Definições" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-settings"/></svg>
@@ -1061,6 +1068,36 @@
             </div>
         </section>
 
+        <!-- ══ Vista: Assistente ══ -->
+        <section id="view-assistente" data-panel="assistente" hidden
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <header class="flex flex-wrap items-center gap-2.5">
+                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-chat"/></svg>
+                <h2 class="text-base font-semibold">Assistente</h2>
+                <span id="assistente-modelo" class="text-xs text-faint"></span>
+                <button id="assistente-limpar" type="button" class="btn-soft ml-auto inline-flex items-center gap-1.5">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
+                    <span>Limpar</span>
+                </button>
+            </header>
+
+            <p id="assistente-estado" class="text-xs leading-relaxed text-muted" role="status" aria-live="polite">
+                A ligar ao LLM local…
+            </p>
+
+            <div id="assistente-msgs" class="scroll-area flex max-h-[55vh] min-h-[16rem] flex-col gap-3 overflow-auto rounded-xl border border-line-soft bg-surface-2 p-4" aria-live="polite"></div>
+
+            <form id="assistente-form" class="flex flex-wrap items-center gap-2">
+                <input id="assistente-input" type="text" placeholder="Pergunta sobre a matéria…" autocomplete="off"
+                    class="field min-w-[10rem] flex-1">
+                <button type="submit" aria-label="Enviar pergunta"
+                    class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-xl bg-brand text-white transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+                    <svg class="icon h-4 w-4"><use href="#i-plus"/></svg>
+                </button>
+            </form>
+            <p class="text-[11px] text-faint">Corre no teu portátil (Ollama) — nada sai para a cloud. No link oficial sem túnel, fica indisponível.</p>
+        </section>
+
         <!-- ══ Vista: Definições ══ -->
         <section id="view-definicoes" data-panel="definicoes" hidden
             class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
@@ -1246,6 +1283,10 @@
         <button type="button" data-view="exames" class="nav-mobile">
             <svg class="icon h-5 w-5"><use href="#i-grad"/></svg>
             <span>Exames</span>
+        </button>
+        <button type="button" data-view="assistente" class="nav-mobile">
+            <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
+            <span>Assistente</span>
         </button>
         <button type="button" data-view="definicoes" class="nav-mobile">
             <svg class="icon h-5 w-5"><use href="#i-settings"/></svg>
@@ -1523,7 +1564,8 @@
     <script src="src/exames.js?v=2"></script>
     <script src="src/notas.js?v=2"></script>
     <script src="src/imagens.js?v=2"></script>
-    <script src="src/caderno.js?v=1"></script>
-    <script src="src/app.js?v=10"></script>
+    <script src="src/caderno.js?v=2"></script>
+    <script src="src/assistente.js?v=1"></script>
+    <script src="src/app.js?v=11"></script>
 </body>
 </html>

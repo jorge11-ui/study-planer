@@ -311,6 +311,19 @@ window.Caderno = (() => {
         }
         corpo.append(meta);
 
+        if (foto.transcricao) {
+            const det = document.createElement('details');
+            det.className = 'rounded-lg border border-line-soft bg-surface-2 px-2 py-1 text-xs text-muted';
+            const sum = document.createElement('summary');
+            sum.className = 'cursor-pointer font-medium';
+            sum.textContent = 'Ver transcrição';
+            const p = document.createElement('p');
+            p.className = 'mt-1 whitespace-pre-wrap leading-relaxed';
+            p.textContent = foto.transcricao;
+            det.append(sum, p);
+            corpo.append(det);
+        }
+
         const accoes = document.createElement('div');
         accoes.className = 'pdf-card-actions';
 
@@ -335,7 +348,14 @@ window.Caderno = (() => {
         remover.setAttribute('aria-label', `Remover foto: ${foto.titulo}`);
         remover.append(icone('i-trash'));
 
-        accoes.append(ver, baixar, remover);
+        const transcrever = document.createElement('button');
+        transcrever.type = 'button';
+        transcrever.className = 'pdf-action pdf-action-secondary';
+        transcrever.dataset.cadernoTranscrever = foto.id;
+        transcrever.title = foto.transcricao ? 'Passar a texto outra vez' : 'Passar a foto a texto (LLM local)';
+        transcrever.append(icone('i-file-text'), textoBotao(foto.transcricao ? 'De novo' : 'Transcrever'));
+
+        accoes.append(ver, baixar, transcrever, remover);
         corpo.append(accoes);
         li.append(previa, corpo);
         return li;
@@ -482,6 +502,53 @@ window.Caderno = (() => {
         a.remove();
     }
 
+    /* Passa a foto a texto com o modelo de visão local (Ollama). O texto
+       fica guardado na foto (cache: nunca repete o vision para a mesma). */
+    async function transcrever(id, botao) {
+        const foto = porId(id);
+        if (!foto) return;
+        if (botao) {
+            botao.disabled = true;
+            botao.classList.add('opacity-50');
+        }
+        try {
+            const est = await fetch('/api/llm/estado', { cache: 'no-store' })
+                .then((r) => r.json().catch(() => null)).catch(() => null);
+            if (!est || !est.ok || !est.ollama) {
+                toast('LLM local indisponível. Liga o Ollama no portátil e usa o servidor local.', 'error');
+                return;
+            }
+            const modelos = Array.isArray(est.modelos) ? est.modelos : [];
+            const visao = modelos.find((m) => /vl|vision|llava|minicpm/i.test(m));
+            const resp = await fetch('/api/llm/transcrever', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, ...(visao ? { modelo: visao } : {}) }),
+            });
+            const r = await resp.json().catch(() => null);
+            if (!resp.ok || !r || !r.ok) {
+                if (r && r.reason === 'sem-modelo') {
+                    toast(`Falta o modelo de visão (${r.modelo}). ${r.dica || ''}`, 'error');
+                } else if (r && r.reason === 'ausente') {
+                    toast('Os bytes desta foto não estão neste servidor.', 'error');
+                } else {
+                    toast('Não foi possível transcrever agora.', 'error');
+                }
+                return;
+            }
+            foto.transcricao = String(r.texto || '').trim();
+            foto.transcritoEm = Date.now();
+            foto.transcritoPor = String(r.modelo || '');
+            guardar();
+            toast('Foto transcrita e guardada.', 'success');
+        } finally {
+            if (botao) {
+                botao.disabled = false;
+                botao.classList.remove('opacity-50');
+            }
+        }
+    }
+
     async function apagar(id) {
         const foto = porId(id);
         if (!foto) return;
@@ -589,8 +656,10 @@ window.Caderno = (() => {
             grelha.addEventListener('click', async (evento) => {
                 const abrirBotao = evento.target.closest('[data-caderno-open]');
                 const removerBotao = evento.target.closest('[data-caderno-remove]');
+                const transcreverBotao = evento.target.closest('[data-caderno-transcrever]');
                 if (abrirBotao) abrir(abrirBotao.dataset.cadernoOpen);
                 else if (removerBotao) apagar(removerBotao.dataset.cadernoRemove);
+                else if (transcreverBotao) transcrever(transcreverBotao.dataset.cadernoTranscrever, transcreverBotao);
             });
             grelha.addEventListener('click', (evento) => {
                 const link = evento.target.closest('[data-caderno-download]');

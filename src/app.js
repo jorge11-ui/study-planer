@@ -2120,6 +2120,7 @@ const VIEW_LABELS = {
     estudar: 'Estudar',
     pdfs: 'PDFs',
     caderno: 'Caderno',
+    assistente: 'Assistente',
     semanal: 'Semanal',
     exames: 'Exames Nacionais',
     definicoes: 'Definições',
@@ -2157,6 +2158,7 @@ function showView(view) {
     if (view === 'definicoes') renderSettings();
     if (view === 'pdfs') Pdfs.ligar();
     if (view === 'caderno' && window.Caderno) window.Caderno.ligar();
+    if (view === 'assistente' && window.Assistente) window.Assistente.ligar();
     if (view === 'semanal') Weekly.ligar();
     if (view === 'exames' && window.Exames) window.Exames.ligar();
 
@@ -2809,7 +2811,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync10';
+const APP_VERSION = '2026.10.14-sync11';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {

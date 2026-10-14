@@ -679,6 +679,195 @@ async function apiFicheiros(req, res, url) {
     json(res, 404, { ok: false, reason: 'rota' });
 }
 
+/* ── LLM local (Ollama) ──────────────────────────────
+   Proxy restrito: só estado, chat e transcrever. Nunca expõe o Ollama
+   todo (evita ler/apagar modelos pela rede). Sem Ollama a correr, 503
+   com motivo claro para a UI explicar. Por omissão exige sessão; em
+   modo SYNC_OPEN, só com OLLAMA_PUBLIC=1 (senão qualquer visitante
+   gastava a GPU do dono). */
+
+const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+const OLLAMA_PUBLICO = process.env.OLLAMA_PUBLIC === '1';
+const LLM_CHAT_PADRAO = process.env.LLM_CHAT || 'qwen3';
+const LLM_VISAO_PADRAO = process.env.LLM_VISAO || 'qwen2.5vl';
+const LLM_MAX_TEXTO = 8000;
+const LLM_MAX_MSGS = 50;
+const LLM_TIMEOUT_MS = 10 * 60 * 1000;
+const LLM_MAX_IMAGEM = 20 * 1024 * 1024;
+
+function llmAutorizado(req) {
+    const token = tokenDaSessao(req);
+    if (token && sessaoValida(token)) return true;
+    return SYNC_ABERTO && OLLAMA_PUBLICO;
+}
+
+async function ollamaModelos() {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    try {
+        const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: ctrl.signal });
+        if (!r.ok) return null;
+        const d = await r.json().catch(() => null);
+        const modelos = d && Array.isArray(d.models)
+            ? d.models.map((m) => m && m.name).filter((n) => typeof n === 'string' && n)
+            : [];
+        return modelos;
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+async function apiLlm(req, res, url) {
+    if (url.pathname === '/api/llm/estado' && req.method === 'GET') {
+        const modelos = await ollamaModelos();
+        json(res, 200, { ok: true, ollama: modelos !== null, modelos: modelos || [] });
+        return;
+    }
+
+    if (!llmAutorizado(req)) {
+        const token = tokenDaSessao(req);
+        return json(res, token ? 403 : 401, { ok: false, reason: 'sessao' });
+    }
+
+    if (url.pathname === '/api/llm/chat' && req.method === 'POST') {
+        const body = await lerJsonBody(req, res, 1024 * 1024);
+        if (!body) return;
+        const modelo = String(body.modelo || LLM_CHAT_PADRAO).slice(0, 100);
+        const sistema = String(body.sistema || '').slice(0, 2000);
+        const msgs = Array.isArray(body.mensagens) ? body.mensagens.slice(-LLM_MAX_MSGS) : [];
+        const messages = [];
+        if (sistema) messages.push({ role: 'system', content: sistema });
+        for (const m of msgs) {
+            if (!m || typeof m !== 'object') continue;
+            const role = m.papel === 'assistant' ? 'assistant' : 'user';
+            const content = String(m.texto ?? '').slice(0, LLM_MAX_TEXTO);
+            if (!content) continue;
+            messages.push({ role, content });
+        }
+        if (!messages.some((m) => m.role === 'user')) {
+            return json(res, 400, { ok: false, reason: 'conteudo' });
+        }
+
+        const ctrl = new AbortController();
+        const limite = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
+        // Só aborta quando a RESPOSTA fecha (cliente desistiu). O 'close'
+        // do pedido dispara cedo (corpo lido) e matava o Ollama a meio.
+        let feito = false;
+        const aoFechar = () => {
+            if (feito) return;
+            feito = true;
+            clearTimeout(limite);
+            ctrl.abort();
+        };
+        res.on('close', aoFechar);
+        try {
+            const up = await fetch(`${OLLAMA_URL}/api/chat`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ model: modelo, messages, stream: true }),
+                signal: ctrl.signal,
+            });
+            if (!up.ok || !up.body) {
+                const txt = await up.text().catch(() => '');
+                feito = true;
+                clearTimeout(limite);
+                if (up.status === 404 || /not found/i.test(txt)) {
+                    return json(res, 404, { ok: false, reason: 'sem-modelo', modelo });
+                }
+                return json(res, 502, { ok: false, reason: 'ollama-erro' });
+            }
+            res.writeHead(200, {
+                'content-type': 'application/x-ndjson; charset=utf-8',
+                'cache-control': 'no-store',
+            });
+            try {
+                for await (const chunk of up.body) {
+                    if (res.destroyed) break;
+                    if (!res.write(chunk)) await new Promise((r) => res.once('drain', r));
+                }
+            } catch { /* cliente desistiu a meio */ }
+            feito = true;
+            clearTimeout(limite);
+            res.end();
+        } catch (error) {
+            feito = true;
+            clearTimeout(limite);
+            if (!res.headersSent) {
+                const esgotou = error && error.name === 'AbortError';
+                json(res, esgotou ? 504 : 503, { ok: false, reason: esgotou ? 'tempo-esgotado' : 'sem-ollama' });
+            } else {
+                try { res.end(); } catch { /* segue */ }
+            }
+        } finally {
+            res.off('close', aoFechar);
+        }
+        return;
+    }
+
+    if (url.pathname === '/api/llm/transcrever' && req.method === 'POST') {
+        const body = await lerJsonBody(req, res, LLM_MAX_IMAGEM + 1024 * 1024);
+        if (!body) return;
+        const modelo = String(body.modelo || LLM_VISAO_PADRAO).slice(0, 100);
+        let b64 = String(body.dados || '');
+        if (!b64 && body.id && FICHEIRO_ID.test(String(body.id))) {
+            try {
+                b64 = fs.readFileSync(caminhoFicheiro(String(body.id))).toString('base64');
+            } catch {
+                return json(res, 404, { ok: false, reason: 'ausente' });
+            }
+        }
+        if (!b64) return json(res, 400, { ok: false, reason: 'conteudo' });
+        // Tira prefixo dataURL se vier colado.
+        const m = /^data:[^,]+,/.exec(b64);
+        if (m) b64 = b64.slice(m[0].length);
+        if (Buffer.byteLength(b64, 'base64') > LLM_MAX_IMAGEM) {
+            return json(res, 413, { ok: false, reason: 'demasiado-grande' });
+        }
+
+        const ctrl = new AbortController();
+        const limite = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
+        try {
+            const up = await fetch(`${OLLAMA_URL}/api/generate`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    model: modelo,
+                    prompt: 'Transcreve todo o texto manuscrito ou impresso desta imagem, linha a linha, sem comentários nem explicações. Se houver partes ilegíveis, marca com […].',
+                    images: [b64],
+                    stream: false,
+                    options: { temperature: 0 },
+                }),
+                signal: ctrl.signal,
+            });
+            const txt = await up.text().catch(() => '');
+            if (!up.ok) {
+                if (up.status === 404 || /not found/i.test(txt)) {
+                    return json(res, 404, {
+                        ok: false, reason: 'sem-modelo', modelo,
+                        dica: `Corre no portátil: ollama pull ${modelo}`,
+                    });
+                }
+                return json(res, 502, { ok: false, reason: 'ollama-erro' });
+            }
+            let texto = '';
+            try {
+                texto = String(JSON.parse(txt).response || '').trim();
+            } catch { /* resposta inválida */ }
+            if (!texto) return json(res, 502, { ok: false, reason: 'vazio' });
+            json(res, 200, { ok: true, texto, modelo });
+        } catch {
+            json(res, 503, { ok: false, reason: 'sem-ollama' });
+        } finally {
+            clearTimeout(limite);
+        }
+        return;
+    }
+
+    json(res, 404, { ok: false, reason: 'rota' });
+}
+
 function serveStatic(req, res, url) {
     const pathname = decodeURIComponent(url.pathname);
     const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
@@ -734,6 +923,15 @@ async function handle(req, res) {
         return;
     }
 
+    if (url.pathname === '/api/llm' || url.pathname.startsWith('/api/llm/')) {
+        try {
+            await apiLlm(req, res, url);
+        } catch {
+            json(res, 500, { ok: false, reason: 'erro' });
+        }
+        return;
+    }
+
     if (url.pathname === '/api/vault' || url.pathname.startsWith('/api/vault/')) {
         try {
             await api(req, res, url);
@@ -775,6 +973,7 @@ server.listen(PORT, HOST, () => {
     if (SYNC_ABERTO) {
         console.log('  Partilha: ABERTA (SYNC_OPEN=1) — quem tem o link sincroniza sem login.');
     }
+    console.log(`  LLM: ${OLLAMA_PUBLICO ? 'aberto' : 'só com sessão'} via ${OLLAMA_URL}`);
 
     if (HOST === '0.0.0.0') {
         for (const list of Object.values(os.networkInterfaces())) {
