@@ -2,7 +2,7 @@
    Estratégia: navegação = rede-primeiro (nunca guarda interstitials);
    estáticos = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v9';
+const CACHE = 'study-journal-v10';
 
 const NUCLEO = [
     '/',
@@ -20,6 +20,28 @@ const NUCLEO = [
     '/src/imagens.js',
     '/src/caderno.js',
     '/src/assistente.js',
+    '/vendor/katex/katex.min.js',
+    '/vendor/katex/katex.min.css',
+    '/vendor/katex/fonts/KaTeX_AMS-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2',
+    '/vendor/katex/fonts/KaTeX_Caligraphic-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Fraktur-Bold.woff2',
+    '/vendor/katex/fonts/KaTeX_Fraktur-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Main-Bold.woff2',
+    '/vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2',
+    '/vendor/katex/fonts/KaTeX_Main-Italic.woff2',
+    '/vendor/katex/fonts/KaTeX_Main-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2',
+    '/vendor/katex/fonts/KaTeX_Math-Italic.woff2',
+    '/vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2',
+    '/vendor/katex/fonts/KaTeX_SansSerif-Italic.woff2',
+    '/vendor/katex/fonts/KaTeX_SansSerif-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Script-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Size1-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Size2-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Size3-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Size4-Regular.woff2',
+    '/vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2',
 ];
 
 self.addEventListener('install', (event) => {

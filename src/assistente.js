@@ -5,7 +5,7 @@
 window.Assistente = (() => {
     const CHAVE_HIST = 'study-journal-assistente-hist';
     const MAX_HIST = 100;
-    const SISTEMA = 'És um assistente de estudo para um aluno do secundário em Portugal (Matemática A, FQA, Português, Biologia). Responde em português europeu, de forma clara e direta, com exemplos curtos quando ajudar. Usa Markdown simples quando fizer sentido.';
+    const SISTEMA = 'És um assistente de estudo para um aluno do secundário em Portugal (Matemática A, FQA, Português, Biologia). Responde em português europeu, de forma clara e direta, com exemplos curtos quando ajudar. Usa Markdown simples quando fizer sentido. Para matemática, escreve SEMPRE as fórmulas em LaTeX: \\(…\\) para inline e \\[…\\] para destaque. Nunca uses $ simples nem texto ASCII tipo x^2/3 para frações quando puderes usar LaTeX.';
 
     let modelo = '';
     let modelos = [];
@@ -71,10 +71,14 @@ window.Assistente = (() => {
         div.className = papel === 'user'
             ? 'ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-brand px-3 py-2 text-sm text-white'
             : 'mr-auto max-w-[95%] rounded-xl rounded-bl-sm border border-line-soft bg-surface px-3 py-2 text-sm text-fg';
-        const p = document.createElement('p');
-        p.className = 'whitespace-pre-wrap leading-relaxed';
-        p.textContent = texto;
-        div.append(p);
+        const corpo = document.createElement('div');
+        corpo.className = 'whitespace-pre-wrap leading-relaxed';
+        if (papel === 'assistant') {
+            partirMatematica(texto).forEach((p) => corpo.append(noMatematico(p)));
+        } else {
+            corpo.textContent = texto;
+        }
+        div.append(corpo);
         if (papel === 'assistant' && texto.trim()) {
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -131,7 +135,7 @@ window.Assistente = (() => {
         aGerar = true;
         const ctrl = new AbortController();
         abortarAtual = () => ctrl.abort();
-        const corpo = espera.querySelector('p');
+        const corpo = espera.querySelector('div');
         let resposta = '';
         try {
             const resp = await fetch('/api/llm/chat', {
@@ -223,5 +227,57 @@ window.Assistente = (() => {
         }
     }
 
-    return { ligar, enviar, verificar };
+    /* ── LaTeX (KaTeX local) ────────────────────────────
+       O modelo escreve \(…\) inline e \[…\] em destaque. Parte-se o texto
+       e renderiza-se com o KaTeX vendorizado; sem ele, mostra-se o fonte. */
+
+    function partirMatematica(texto) {
+        const partes = [];
+        const re = /\\\((.+?)\\\)|\\\[(.+?)\\\]/gs;
+        let ultimo = 0;
+        let m;
+        while ((m = re.exec(texto)) !== null) {
+            if (m.index > ultimo) partes.push({ tipo: 'texto', valor: texto.slice(ultimo, m.index) });
+            if (m[1] !== undefined) partes.push({ tipo: 'inline', valor: m[1] });
+            else partes.push({ tipo: 'bloco', valor: m[2] });
+            ultimo = m.index + m[0].length;
+        }
+        if (ultimo < texto.length) partes.push({ tipo: 'texto', valor: texto.slice(ultimo) });
+        return partes;
+    }
+
+    function noMatematico(parte, doc) {
+        const d = doc || document;
+        if (parte.tipo === 'texto') return d.createTextNode(parte.valor);
+        try {
+            if (typeof katex === 'undefined') throw new Error('sem-katex');
+            const inv = d.createElement(parte.tipo === 'bloco' ? 'div' : 'span');
+            inv.innerHTML = katex.renderToString(parte.valor, { throwOnError: false, displayMode: parte.tipo === 'bloco' });
+            return inv;
+        } catch {
+            return d.createTextNode(parte.tipo === 'bloco' ? `\\[${parte.valor}\\]` : `\\(${parte.valor}\\)`);
+        }
+    }
+
+    /* Aplica em HTML já existente (ex.: preview das notas): só mexe nos
+       nós de texto com delimitadores. */
+    function renderMatematica(el) {
+        if (!el || typeof katex === 'undefined') return;
+        const andar = (no) => {
+            if (no.nodeType === 3) {
+                if (!no.nodeValue.includes('\\(') && !no.nodeValue.includes('\\[')) return;
+                const frag = document.createDocumentFragment();
+                partirMatematica(no.nodeValue).forEach((p) => frag.append(noMatematico(p, document)));
+                no.replaceWith(frag);
+                return;
+            }
+            if (no.nodeType !== 1 || /^(SCRIPT|STYLE|TEXTAREA|INPUT)$/.test(no.tagName)) return;
+            [...no.childNodes].forEach(andar);
+        };
+        try {
+            andar(el);
+        } catch { /* segue sem math */ }
+    }
+
+    return { ligar, enviar, verificar, renderMatematica, partirMatematica };
 })();
