@@ -1000,7 +1000,10 @@ async function syncTasks() {
     } catch (e) {
         console.error('Erro ao sincronizar tarefas:', e);
     }
-    if (saved && !saved.ok) {
+    if (saved && !saved.ok && saved.reason !== 'desligado' && saved.reason !== 'incompativel') {
+        // Sem vault neste aparelho (ex.: telemóvel) é normal e não avisa:
+        // o sync por conta já leva as tarefas ao outro lado. Só avisa em
+        // erro real — aí sim, ficam só neste browser até o vault voltar.
         toast('Não foi possível gravar no vault — as tarefas ficaram só neste browser.', 'warn');
     }
     write(tasksKey(), tasks);
