@@ -810,8 +810,13 @@ function pushDebounced(ms = 5000) {
     }, ms);
 }
 
+function contaSyncPronta() {
+    return window.ContaSync && (window.ContaSync.configurado()
+        || (window.ContaSync.emAberto && window.ContaSync.emAberto()));
+}
+
 function sincronizarDispositivos() {
-    if (window.ContaSync && window.ContaSync.configurado()) {
+    if (contaSyncPronta()) {
         window.ContaSync.push().then(anotarResultadoPush).catch(() => marcarSyncPendente());
         return;
     }
@@ -820,13 +825,60 @@ function sincronizarDispositivos() {
     }
 }
 
+/* ── Indicador de sync no cabeçalho ──────────────────────
+   Verde: sincronizado há pouco. Âmbar: a sincronizar. Vermelho: a
+   última tentativa falhou (o plano free adormece — a app repete
+   sozinha). Passa o rato/clica para ver há quanto tempo. */
+
+const SyncSinal = { okEm: 0, erroEm: 0, aSyncar: false };
+
+function tempoRelativo(ts) {
+    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (s < 60) return 'agora mesmo';
+    const m = Math.floor(s / 60);
+    if (m < 60) return `há ${m} min`;
+    return `há ${Math.floor(m / 60)} h`;
+}
+
+function pintarSyncSinal() {
+    const el = document.getElementById('sync-dot');
+    if (!el) return;
+    let cor = 'bg-faint', dica = 'Sync: por verificar';
+    if (SyncSinal.aSyncar) {
+        cor = 'bg-subject-yellow';
+        dica = 'A sincronizar…';
+    } else if (SyncSinal.erroEm > SyncSinal.okEm) {
+        cor = 'bg-subject-rose';
+        dica = `Última tentativa falhou ${tempoRelativo(SyncSinal.erroEm)} — a repetir sozinho`;
+    } else if (SyncSinal.okEm) {
+        cor = 'bg-mint';
+        dica = `Sincronizado ${tempoRelativo(SyncSinal.okEm)}`;
+    }
+    el.className = `mx-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${cor}`;
+    el.title = dica;
+}
+
+function registarSyncEvento(tipo, ok = true) {
+    if (tipo === 'sync-start') SyncSinal.aSyncar = true;
+    else if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
+        SyncSinal.aSyncar = false;
+        if (ok) SyncSinal.okEm = Date.now();
+    } else if (tipo === 'sync-error') {
+        SyncSinal.aSyncar = false;
+        SyncSinal.erroEm = Date.now();
+    }
+    pintarSyncSinal();
+}
+
+setInterval(pintarSyncSinal, 30000);
+
 /* Tenta esvaziar a fila quando há rede (regresso do laptop). */
 let flushSyncTimer = null;
 
 async function descarregarSyncPendente() {
     if (!temSyncPendente()) return;
     try {
-        if (window.ContaSync && window.ContaSync.configurado()) {
+        if (contaSyncPronta()) {
             const r = await window.ContaSync.push();
             anotarResultadoPush(r);
             return;
@@ -2695,7 +2747,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync7';
+const APP_VERSION = '2026.10.14-sync8';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -3035,6 +3087,26 @@ function responderReviewFocus(grade) {
 
 /* ── Arranque ─────────────────────────────────────────── */
 
+// O plano free adormece: a primeira tentativa acorda o servidor e pode
+// falhar, por isso o pull inicial repete-se com pausas crescentes.
+function puxarComRepeticao(tentativas = [15000, 45000, 120000]) {
+    if (!window.ContaSync) return;
+    const reagendar = () => {
+        if (!tentativas.length) return;
+        const [espera, ...resto] = tentativas;
+        setTimeout(() => puxarComRepeticao(resto), espera);
+    };
+    window.ContaSync.pull().then((r) => {
+        if (r && r.ok) {
+            if (r.atualizou) toast('Sincronizado.', 'success');
+            if (typeof currentView !== 'undefined' && currentView === 'definicoes' && typeof renderSettings === 'function') renderSettings();
+            return;
+        }
+        if (r && (r.reason === 'sem-conta' || r.reason === 'a-syncar')) return;
+        reagendar();
+    }).catch(reagendar);
+}
+
 function seed() {
     // As tarefas/notas de demonstração já não são criadas. Esta purga
     // remove as que o seed antigo deixou (ids demo-* e a nota de exemplo
@@ -3279,6 +3351,7 @@ function bind() {
     // Listener de eventos de sync para atualizar UI
     if (window.GitHubSync && window.GitHubSync.onSync) {
         window.GitHubSync.onSync((tipo) => {
+            registarSyncEvento(tipo);
             if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
                 atualizarUIEstados();
                 if (currentView === 'definicoes') {
@@ -3491,6 +3564,7 @@ function bind() {
 
     if (window.ContaSync && window.ContaSync.onSync) {
         window.ContaSync.onSync((tipo, detalhes = {}) => {
+            registarSyncEvento(tipo);
             if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
                 atualizarUIConta();
                 if (contaStatus && currentView === 'definicoes') {
@@ -3587,7 +3661,7 @@ async function init() {
 
     // Pull inicial da conta (se houver login): atualiza deste lado
     if (window.ContaSync && window.ContaSync.configurado()) {
-        window.ContaSync.pull().catch(() => {});
+        puxarComRepeticao();
     }
 
     // Servidor em modo aberto (SYNC_OPEN=1): sincroniza sem conta.
@@ -3596,14 +3670,12 @@ async function init() {
         window.ContaSync.verificarAberto().then((ok) => {
             if (!ok) return;
             window.ContaSync.iniciarAuto();
-            window.ContaSync.pull().then((r) => {
-                if (r && r.ok && r.atualizou) toast('Sincronizado com o link oficial.', 'success');
-                if (currentView === 'definicoes') renderSettings();
-            }).catch(() => {});
+            puxarComRepeticao();
         }).catch(() => {});
     }
     // Envia o que ficou pendente sem rede
     descarregarSyncPendente().catch(() => {});
+    pintarSyncSinal();
 
     // PWA: regista o service worker (shell offline). Falha silenciosa
     // em contextos sem suporte — a app funciona na mesma.

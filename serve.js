@@ -435,13 +435,39 @@ function numMinSync(n) {
 }
 
 /* Fusão do documento de sync.
-   Regra geral: cada secção enviada substitui a guardada — EXCETO as
-   sessões do Estudar, que fundem de forma monotónica: a base por máximo
-   e os slots por máximo em cada compartimento de aparelho. Sem isto, um
-   push de um aparelho desatualizado (ex.: mesma rev após um wipe com
-   disco efémero) apagava os minutos já repostos por outro aparelho. */
+   Regra geral: cada secção enviada substitui a guardada — EXCETO:
+   - sessões do Estudar: base por máximo, slots por máximo em cada
+     compartimento de aparelho (monotónico; push desatualizado nunca
+     apaga minutos de outro aparelho);
+   - galeria de PDFs: união por id menos os apagados (tombstones), para
+     um wipe ou um cliente desatualizado nunca esvaziarem a galeria. */
+const PDF_APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
+
 function fundirSyncData(guardado, recebido) {
     const out = { ...guardado, ...recebido };
+
+    if (Array.isArray(recebido.pdfs) || Array.isArray(recebido.pdfsApagados)) {
+        const agora = Date.now();
+        const mapa = new Map();
+        if (Array.isArray(guardado.pdfs)) guardado.pdfs.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
+        if (Array.isArray(recebido.pdfs)) recebido.pdfs.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
+        const ap = new Map();
+        if (Array.isArray(guardado.pdfsApagados)) {
+            guardado.pdfsApagados.forEach((e) => { if (e && typeof e.id === 'string') ap.set(e.id, Number(e.ts) || 0); });
+        }
+        if (Array.isArray(recebido.pdfsApagados)) {
+            recebido.pdfsApagados.forEach((e) => {
+                if (e && typeof e.id === 'string') {
+                    const ts = Number(e.ts) || 0;
+                    if (!ap.has(e.id) || ts > ap.get(e.id)) ap.set(e.id, ts);
+                }
+            });
+        }
+        const vivos = [...ap.entries()].filter(([, ts]) => agora - ts < PDF_APAGADO_MS);
+        vivos.forEach(([id]) => mapa.delete(id));
+        out.pdfs = [...mapa.values()];
+        out.pdfsApagados = vivos.map(([id, ts]) => ({ id, ts })).slice(-200);
+    }
 
     if (recebido.sessoesBase && typeof recebido.sessoesBase === 'object'
         && guardado.sessoesBase && typeof guardado.sessoesBase === 'object') {
