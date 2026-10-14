@@ -794,7 +794,8 @@ let pushDebounceTimer = null;
 
 function pushDebounced(ms = 5000) {
     try {
-        const háSync = (window.ContaSync && window.ContaSync.configurado())
+        const háSync = (window.ContaSync && (window.ContaSync.configurado()
+            || (window.ContaSync.emAberto && window.ContaSync.emAberto())))
             || (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado());
         if (!háSync) return;
     } catch {
@@ -2694,7 +2695,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync6';
+const APP_VERSION = '2026.10.14-sync7';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -3319,7 +3320,13 @@ function bind() {
         if (window.ContaSync.ePartilha && window.ContaSync.ePartilha()) {
             return 'Ligado por link partilhado';
         }
-        return `Ligado como ${window.ContaSync.getUser()}`;
+        if (window.ContaSync.configurado()) {
+            return `Ligado como ${window.ContaSync.getUser()}`;
+        }
+        if (window.ContaSync.emAberto && window.ContaSync.emAberto()) {
+            return 'Ligado sem conta (link oficial)';
+        }
+        return 'Desligado';
     }
 
     function pintarHoraConta() {
@@ -3339,9 +3346,11 @@ function bind() {
     async function atualizarUIConta() {
         if (!window.ContaSync) return;
         const cfg = window.ContaSync.configurado();
-        if (contaLogin) contaLogin.hidden = cfg;
-        if (contaAtiva) contaAtiva.hidden = !cfg;
-        if (cfg) {
+        const anonimo = !cfg && window.ContaSync.emAberto && window.ContaSync.emAberto();
+        if (contaLogin) contaLogin.hidden = cfg || anonimo;
+        if (contaAtiva) contaAtiva.hidden = !(cfg || anonimo);
+        if (contaSair) contaSair.hidden = !cfg;
+        if (cfg || anonimo) {
             if (contaStatus) contaStatus.textContent = textoEstadoConta();
             pintarHoraConta();
             pintarPartilha();
@@ -3411,9 +3420,10 @@ function bind() {
 
     async function pintarPartilha() {
         const partilha = window.ContaSync.ePartilha && window.ContaSync.ePartilha();
-        if (partilhaCompleta) partilhaCompleta.hidden = !!partilha;
+        const anonimo = !window.ContaSync.configurado();
+        if (partilhaCompleta) partilhaCompleta.hidden = !!partilha || anonimo;
         if (partilhaAviso) partilhaAviso.hidden = !partilha;
-        if (partilha || currentView !== 'definicoes' || !partilhaLista) return;
+        if (partilha || anonimo || currentView !== 'definicoes' || !partilhaLista) return;
         partilhaLista.replaceChildren();
         const res = await window.ContaSync.listarPartilhas();
         if (!res.ok) return;
@@ -3578,6 +3588,19 @@ async function init() {
     // Pull inicial da conta (se houver login): atualiza deste lado
     if (window.ContaSync && window.ContaSync.configurado()) {
         window.ContaSync.pull().catch(() => {});
+    }
+
+    // Servidor em modo aberto (SYNC_OPEN=1): sincroniza sem conta.
+    // É isto que faz o link oficial funcionar sozinho em cada aparelho.
+    if (window.ContaSync && !window.ContaSync.configurado()) {
+        window.ContaSync.verificarAberto().then((ok) => {
+            if (!ok) return;
+            window.ContaSync.iniciarAuto();
+            window.ContaSync.pull().then((r) => {
+                if (r && r.ok && r.atualizou) toast('Sincronizado com o link oficial.', 'success');
+                if (currentView === 'definicoes') renderSettings();
+            }).catch(() => {});
+        }).catch(() => {});
     }
     // Envia o que ficou pendente sem rede
     descarregarSyncPendente().catch(() => {});

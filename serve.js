@@ -202,6 +202,11 @@ const SYNC_PASS_HASH = SYNC_USER && process.env.SYNC_PASS
     ? crypto.createHash('sha256').update(String(process.env.SYNC_PASS), 'utf8').digest()
     : null;
 const contaAtiva = Boolean(SYNC_USER && SYNC_PASS_HASH);
+// SYNC_OPEN=1: o /api/sync aceita toda a gente sem login — quem tem o link
+// fica logo sincronizado. O link passa a dar acesso TOTAL: só ligar para
+// partilhar com pessoas de confiança. A gestão (conta, links) continua
+// a exigir login.
+const SYNC_ABERTO = process.env.SYNC_OPEN === '1';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const SYNC_FILE = path.join(DATA_DIR, 'sync.json');
@@ -314,7 +319,7 @@ async function apiConta(req, res, url) {
     const route = url.pathname.slice('/api/conta'.length);
 
     if (route === '/estado' && req.method === 'GET') {
-        json(res, 200, { ok: true, contaAtiva });
+        json(res, 200, { ok: true, contaAtiva, aberto: SYNC_ABERTO });
         return;
     }
 
@@ -480,10 +485,13 @@ function fundirSyncData(guardado, recebido) {
 }
 
 async function apiSync(req, res) {
-    if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
+    if (!contaAtiva && !SYNC_ABERTO) return json(res, 503, { ok: false, reason: 'sem-conta' });
 
     const token = tokenDaSessao(req);
-    if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
+    // Em modo aberto, pedidos sem token entram na mesma (anónimos).
+    if (!SYNC_ABERTO || token) {
+        if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
+    }
 
     if (req.method === 'GET') {
         json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid, data: syncDoc.data });
@@ -723,6 +731,9 @@ server.listen(PORT, HOST, () => {
         console.log(`  Conta: ativa (utilizador "${SYNC_USER}") — entra nos aparelhos com estes dados.`);
     } else {
         console.log('  Conta: por configurar — define SYNC_USER e SYNC_PASS para sync entre aparelhos.');
+    }
+    if (SYNC_ABERTO) {
+        console.log('  Partilha: ABERTA (SYNC_OPEN=1) — quem tem o link sincroniza sem login.');
     }
 
     if (HOST === '0.0.0.0') {

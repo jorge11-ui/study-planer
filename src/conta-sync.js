@@ -21,6 +21,8 @@ window.ContaSync = (() => {
     let ultimoPullAuto = 0;
     let estadoCache = { t: 0, v: null };
     let listeners = [];
+    // Servidor em modo aberto (SYNC_OPEN=1): sync anónimo, sem login.
+    let aberto = false;
 
     try {
         token = localStorage.getItem(K_TOKEN) || '';
@@ -107,6 +109,25 @@ window.ContaSync = (() => {
 
     function ePartilha() {
         return !!token && !user;
+    }
+
+    function emAberto() {
+        return aberto;
+    }
+
+    /* Pergunta ao servidor se aceita sync anónimo (SYNC_OPEN=1). */
+    async function verificarAberto() {
+        try {
+            const est = await estado();
+            aberto = !!(est && est.aberto);
+        } catch { /* mantém o valor anterior */ }
+        return aberto;
+    }
+
+    /* Sem token, só segue se o servidor estiver aberto. */
+    async function precisoDeConta() {
+        if (token) return false;
+        return !(await verificarAberto());
     }
 
     async function estado() {
@@ -344,7 +365,7 @@ window.ContaSync = (() => {
     }
 
     async function sync(pullFirst = true) {
-        if (!token) return { ok: false, reason: 'sem-conta' };
+        if (await precisoDeConta()) return { ok: false, reason: 'sem-conta' };
         if (aSyncando) return { ok: false, reason: 'a-syncar' };
         aSyncando = true;
         notificar('sync-start');
@@ -370,7 +391,7 @@ window.ContaSync = (() => {
     }
 
     async function pullAuto() {
-        if (!token || aSyncando) return;
+        if ((!token && !aberto) || aSyncando) return;
         const agora = Date.now();
         if (agora - ultimoPullAuto < AUTO_MIN_GAP_MS) return;
         ultimoPullAuto = agora;
@@ -380,7 +401,7 @@ window.ContaSync = (() => {
     }
 
     async function pull() {
-        if (!token) return { ok: false, reason: 'sem-conta' };
+        if (await precisoDeConta()) return { ok: false, reason: 'sem-conta' };
         if (aSyncando) return { ok: false, reason: 'a-syncar' };
         aSyncando = true;
         notificar('sync-start');
@@ -401,7 +422,7 @@ window.ContaSync = (() => {
     }
 
     function iniciarAuto() {
-        if (timer || !token) return;
+        if (timer || (!token && !aberto)) return;
         timer = setInterval(() => pullAuto().catch(() => {}), POLL_MS);
     }
 
@@ -430,6 +451,8 @@ window.ContaSync = (() => {
         configurado,
         getUser,
         ePartilha,
+        emAberto,
+        verificarAberto,
         estado,
         login,
         logout,
