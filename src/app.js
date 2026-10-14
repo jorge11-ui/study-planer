@@ -965,6 +965,7 @@ function recarregarAposSync() {
     if (currentView === 'exames' && window.Exames) window.Exames.ligar();
     if (currentView === 'semanal' && window.Weekly) window.Weekly.ligar();
     if (currentView === 'pdfs' && window.Pdfs) window.Pdfs.carregar();
+    if (currentView === 'caderno' && window.Caderno) window.Caderno.carregar();
 
     return !notasFocadas;
 }
@@ -2118,6 +2119,7 @@ const VIEW_LABELS = {
     disciplinas: 'Disciplinas',
     estudar: 'Estudar',
     pdfs: 'PDFs',
+    caderno: 'Caderno',
     semanal: 'Semanal',
     exames: 'Exames Nacionais',
     definicoes: 'Definições',
@@ -2154,6 +2156,7 @@ function showView(view) {
     if (view === 'estudar') renderEstudarView();
     if (view === 'definicoes') renderSettings();
     if (view === 'pdfs') Pdfs.ligar();
+    if (view === 'caderno' && window.Caderno) window.Caderno.ligar();
     if (view === 'semanal') Weekly.ligar();
     if (view === 'exames' && window.Exames) window.Exames.ligar();
 
@@ -2806,7 +2809,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync9';
+const APP_VERSION = '2026.10.14-sync10';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -2910,6 +2913,15 @@ function exportData() {
     } catch {
         payload.pdfs = [];
     }
+    try {
+        const rawCad = localStorage.getItem('study-journal-caderno');
+        payload.caderno = rawCad ? JSON.parse(rawCad) : [];
+        const rawCadAp = localStorage.getItem('study-journal-caderno-apagados');
+        payload.cadernoApagados = rawCadAp ? JSON.parse(rawCadAp) : [];
+    } catch {
+        payload.caderno = [];
+        payload.cadernoApagados = [];
+    }
 
     if (!Object.keys(payload.days).length && !payload.semanal.fixos.length && !payload.semanal.dinamicos.length && !payload.exames && !payload.reviewsV2.length) {
         toast('Não há nada para exportar.', 'warn');
@@ -2979,6 +2991,13 @@ async function importData(file) {
 
         if (Array.isArray(payload.pdfs)) {
             localStorage.setItem('study-journal-pdfs', JSON.stringify(payload.pdfs));
+        }
+
+        if (Array.isArray(payload.caderno)) {
+            localStorage.setItem('study-journal-caderno', JSON.stringify(payload.caderno));
+        }
+        if (Array.isArray(payload.cadernoApagados)) {
+            localStorage.setItem('study-journal-caderno-apagados', JSON.stringify(payload.cadernoApagados));
         }
 
         if (!count && (!payload.semanal || (!payload.semanal.fixos.length && !payload.semanal.dinamicos.length)) && !payload.exames && !(payload.reviewsV2 && payload.reviewsV2.length)) {
@@ -3862,3 +3881,4 @@ window.ReviewSystem = ReviewSystem;
 
 init();
 Pdfs.carregar();
+if (window.Caderno) window.Caderno.carregar();

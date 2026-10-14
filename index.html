@@ -86,6 +86,10 @@
                 <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
                 <circle cx="12" cy="12" r="3"/>
             </symbol>
+            <symbol id="i-camera" viewBox="0 0 24 24">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+            </symbol>
             <symbol id="i-download" viewBox="0 0 24 24">
                 <path d="M12 3v12"/>
                 <path d="m7 11 5 5 5-5"/>
@@ -243,6 +247,10 @@
             <button type="button" data-view="pdfs" title="PDFs" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
                 <span>PDFs</span>
+            </button>
+            <button type="button" data-view="caderno" title="Caderno" class="nav-item-wide">
+                <svg class="icon h-5 w-5"><use href="#i-camera"/></svg>
+                <span>Caderno</span>
             </button>
             <button type="button" data-view="semanal" title="Semanal" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-week"/></svg>
@@ -661,6 +669,72 @@
 
             <ul id="pdf-grid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"></ul>
         </section>
+
+        <!-- ══ Vista: Caderno ══ -->
+        <section id="view-caderno" data-panel="caderno" hidden
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <header class="flex flex-wrap items-center gap-2.5">
+                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-camera"/></svg>
+                <h2 class="text-base font-semibold">Caderno</h2>
+                <span id="caderno-count" class="text-xs text-faint"></span>
+                <button id="caderno-add" type="button" class="btn-soft ml-auto inline-flex items-center gap-1.5">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                    <span>Fotografar</span>
+                </button>
+            </header>
+
+            <p class="text-xs leading-relaxed text-muted">
+                Fotos das páginas do teu caderno, ligadas ao dia e à disciplina.
+                Viajam entre aparelhos como os PDFs.
+            </p>
+
+            <div class="flex flex-col gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <label class="text-[11px] font-medium text-muted" for="caderno-disciplina">Disciplina</label>
+                    <select id="caderno-disciplina" class="field w-full sm:w-auto text-sm">
+                        <option>Geral</option>
+                        <option>Matemática A</option>
+                        <option>FQA</option>
+                        <option>Biologia</option>
+                        <option>Português</option>
+                        <option>Aplicações Informáticas (A.I.)</option>
+                        <option>Hobbies</option>
+                    </select>
+                    <label class="text-[11px] font-medium text-muted" for="caderno-dia">Dia</label>
+                    <input id="caderno-dia" type="date" class="field w-full sm:w-auto text-sm [color-scheme:dark]">
+                    <input id="caderno-ficheiro" type="file" accept="image/*" multiple class="hidden">
+                </div>
+                <div id="caderno-filters" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por disciplina"></div>
+                <div id="caderno-stats" class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-faint" aria-live="polite"></div>
+                <p id="caderno-status" class="text-[11px] text-faint" role="status" aria-live="polite"></p>
+            </div>
+
+            <p id="caderno-empty" hidden
+                class="rounded-xl border border-line-soft bg-surface-2 p-6 text-center text-xs leading-relaxed text-muted">
+                Ainda não há fotos. Usa <strong class="text-fg">Fotografar</strong> para tirar foto
+                a uma página do caderno (no telemóvel abre a câmara).
+            </p>
+
+            <ul id="caderno-grid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"></ul>
+        </section>
+
+        <!-- Dialogo do visualizador de fotos -->
+        <dialog id="caderno-viewer"
+            class="m-auto w-[min(48rem,94vw)] max-w-none glass-strong rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
+            <div class="flex items-center gap-3 border-b border-line px-4 py-3">
+                <h3 id="caderno-viewer-title" class="min-w-0 flex-1 truncate text-sm font-semibold"></h3>
+                <a id="caderno-viewer-download" class="btn-soft text-sm" download>
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-download"/></svg>
+                    <span>Descarregar</span>
+                </a>
+                <button id="caderno-viewer-close" type="button" class="icon-btn" aria-label="Fechar">
+                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <div class="max-h-[75vh] overflow-auto bg-black/40 p-2">
+                <img id="caderno-viewer-img" class="mx-auto max-h-[70vh] w-auto rounded-lg" alt="">
+            </div>
+        </dialog>
 
         <!-- ══ Vista: Semanal ══ -->
         <section id="view-semanal" data-panel="semanal" hidden
@@ -1161,6 +1235,10 @@
             <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
             <span>PDFs</span>
         </button>
+        <button type="button" data-view="caderno" class="nav-mobile">
+            <svg class="icon h-5 w-5"><use href="#i-camera"/></svg>
+            <span>Caderno</span>
+        </button>
         <button type="button" data-view="semanal" class="nav-mobile">
             <svg class="icon h-5 w-5"><use href="#i-week"/></svg>
             <span>Semanal</span>
@@ -1445,6 +1523,7 @@
     <script src="src/exames.js?v=2"></script>
     <script src="src/notas.js?v=2"></script>
     <script src="src/imagens.js?v=2"></script>
-    <script src="src/app.js?v=9"></script>
+    <script src="src/caderno.js?v=1"></script>
+    <script src="src/app.js?v=10"></script>
 </body>
 </html>

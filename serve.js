@@ -443,30 +443,44 @@ function numMinSync(n) {
      um wipe ou um cliente desatualizado nunca esvaziarem a galeria. */
 const PDF_APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
 
+function fundirColecaoSync(guardado, recebido, nomeLista, nomeApagados) {
+    const mapa = new Map();
+    if (Array.isArray(guardado[nomeLista])) guardado[nomeLista].forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
+    if (Array.isArray(recebido[nomeLista])) recebido[nomeLista].forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
+    const ap = new Map();
+    if (Array.isArray(guardado[nomeApagados])) {
+        guardado[nomeApagados].forEach((e) => { if (e && typeof e.id === 'string') ap.set(e.id, Number(e.ts) || 0); });
+    }
+    if (Array.isArray(recebido[nomeApagados])) {
+        recebido[nomeApagados].forEach((e) => {
+            if (e && typeof e.id === 'string') {
+                const ts = Number(e.ts) || 0;
+                if (!ap.has(e.id) || ts > ap.get(e.id)) ap.set(e.id, ts);
+            }
+        });
+    }
+    const agora = Date.now();
+    const vivos = [...ap.entries()].filter(([, ts]) => agora - ts < PDF_APAGADO_MS);
+    vivos.forEach(([id]) => mapa.delete(id));
+    return {
+        lista: [...mapa.values()],
+        apagados: vivos.map(([id, ts]) => ({ id, ts })).slice(-200),
+    };
+}
+
 function fundirSyncData(guardado, recebido) {
     const out = { ...guardado, ...recebido };
 
     if (Array.isArray(recebido.pdfs) || Array.isArray(recebido.pdfsApagados)) {
-        const agora = Date.now();
-        const mapa = new Map();
-        if (Array.isArray(guardado.pdfs)) guardado.pdfs.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
-        if (Array.isArray(recebido.pdfs)) recebido.pdfs.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
-        const ap = new Map();
-        if (Array.isArray(guardado.pdfsApagados)) {
-            guardado.pdfsApagados.forEach((e) => { if (e && typeof e.id === 'string') ap.set(e.id, Number(e.ts) || 0); });
-        }
-        if (Array.isArray(recebido.pdfsApagados)) {
-            recebido.pdfsApagados.forEach((e) => {
-                if (e && typeof e.id === 'string') {
-                    const ts = Number(e.ts) || 0;
-                    if (!ap.has(e.id) || ts > ap.get(e.id)) ap.set(e.id, ts);
-                }
-            });
-        }
-        const vivos = [...ap.entries()].filter(([, ts]) => agora - ts < PDF_APAGADO_MS);
-        vivos.forEach(([id]) => mapa.delete(id));
-        out.pdfs = [...mapa.values()];
-        out.pdfsApagados = vivos.map(([id, ts]) => ({ id, ts })).slice(-200);
+        const f = fundirColecaoSync(guardado, recebido, 'pdfs', 'pdfsApagados');
+        out.pdfs = f.lista;
+        out.pdfsApagados = f.apagados;
+    }
+
+    if (Array.isArray(recebido.caderno) || Array.isArray(recebido.cadernoApagados)) {
+        const f = fundirColecaoSync(guardado, recebido, 'caderno', 'cadernoApagados');
+        out.caderno = f.lista;
+        out.cadernoApagados = f.apagados;
     }
 
     if (recebido.sessoesBase && typeof recebido.sessoesBase === 'object'

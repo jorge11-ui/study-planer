@@ -2,7 +2,7 @@
    Estratégia: navegação = rede-primeiro (nunca guarda interstitials);
    estáticos = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v7';
+const CACHE = 'study-journal-v8';
 
 const NUCLEO = [
     '/',
@@ -18,6 +18,7 @@ const NUCLEO = [
     '/src/exames.js',
     '/src/notas.js',
     '/src/imagens.js',
+    '/src/caderno.js',
 ];
 
 self.addEventListener('install', (event) => {

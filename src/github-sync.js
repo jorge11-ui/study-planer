@@ -243,6 +243,9 @@ window.GitHubSync = (() => {
             // Apagados da galeria (tombstones): sem isto a união abaixo
             // ressuscitava PDFs removidos.
             pdfsApagados: lerJson('study-journal-pdfs-apagados', null),
+            // Caderno (fotos): metadados + apagados, mesma fusão que PDFs.
+            caderno: lerJson('study-journal-caderno', null),
+            cadernoApagados: lerJson('study-journal-caderno-apagados', null),
         };
     }
 
@@ -294,37 +297,41 @@ window.GitHubSync = (() => {
         if (Array.isArray(remoto.reviewsV2) && deveAplicar('study-journal-reviews-v2', remoto.reviewsV2)) {
             localStorage.setItem('study-journal-reviews-v2', JSON.stringify(remoto.reviewsV2));
         }
-        // Galeria de PDFs: união por id — um wipe no servidor (lista vazia)
-        // nunca apaga a galeria — menos os apagados (tombstones de 30 dias),
-        // para os removidos não ressuscitarem vindos do outro aparelho.
-        if (Array.isArray(remoto.pdfs) || Array.isArray(remoto.pdfsApagados)) {
-            const APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
-            const agora = Date.now();
-            const mapa = new Map();
-            try {
-                const atuais = JSON.parse(localStorage.getItem('study-journal-pdfs') || '[]');
-                if (Array.isArray(atuais)) atuais.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
-            } catch { /* segue */ }
-            if (Array.isArray(remoto.pdfs)) remoto.pdfs.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
-            const ap = new Map();
-            try {
-                const v = JSON.parse(localStorage.getItem('study-journal-pdfs-apagados') || '[]');
-                if (Array.isArray(v)) v.forEach((e) => { if (e && typeof e.id === 'string') ap.set(e.id, Number(e.ts) || 0); });
-            } catch { /* segue */ }
-            if (Array.isArray(remoto.pdfsApagados)) remoto.pdfsApagados.forEach((e) => {
-                if (e && typeof e.id === 'string') {
-                    const ts = Number(e.ts) || 0;
-                    if (!ap.has(e.id) || ts > ap.get(e.id)) ap.set(e.id, ts);
-                }
-            });
-            const vivos = [...ap.entries()].filter(([, ts]) => agora - ts < APAGADO_MS);
-            vivos.forEach(([id]) => mapa.delete(id));
-            try {
-                localStorage.setItem('study-journal-pdfs', JSON.stringify([...mapa.values()]));
-                localStorage.setItem('study-journal-pdfs-apagados', JSON.stringify(vivos.map(([id, ts]) => ({ id, ts })).slice(-200)));
-            } catch { /* segue sem persistir */ }
-        }
+        // Galerias (PDFs e Caderno): união por id — um wipe no servidor
+        // (lista vazia) nunca apaga a galeria — menos os apagados
+        // (tombstones de 30 dias), para os removidos não ressuscitarem.
+        fundirColecao('study-journal-pdfs', 'study-journal-pdfs-apagados', remoto.pdfs, remoto.pdfsApagados);
+        fundirColecao('study-journal-caderno', 'study-journal-caderno-apagados', remoto.caderno, remoto.cadernoApagados);
         fundirSessoes(remoto);
+    }
+
+    function fundirColecao(chaveLista, chaveApagados, listaRemota, apagadosRemotos) {
+        if (!Array.isArray(listaRemota) && !Array.isArray(apagadosRemotos)) return;
+        const APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
+        const agora = Date.now();
+        const mapa = new Map();
+        try {
+            const atuais = JSON.parse(localStorage.getItem(chaveLista) || '[]');
+            if (Array.isArray(atuais)) atuais.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
+        } catch { /* segue */ }
+        if (Array.isArray(listaRemota)) listaRemota.forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
+        const ap = new Map();
+        try {
+            const v = JSON.parse(localStorage.getItem(chaveApagados) || '[]');
+            if (Array.isArray(v)) v.forEach((e) => { if (e && typeof e.id === 'string') ap.set(e.id, Number(e.ts) || 0); });
+        } catch { /* segue */ }
+        if (Array.isArray(apagadosRemotos)) apagadosRemotos.forEach((e) => {
+            if (e && typeof e.id === 'string') {
+                const ts = Number(e.ts) || 0;
+                if (!ap.has(e.id) || ts > ap.get(e.id)) ap.set(e.id, ts);
+            }
+        });
+        const vivos = [...ap.entries()].filter(([, ts]) => agora - ts < APAGADO_MS);
+        vivos.forEach(([id]) => mapa.delete(id));
+        try {
+            localStorage.setItem(chaveLista, JSON.stringify([...mapa.values()]));
+            localStorage.setItem(chaveApagados, JSON.stringify(vivos.map(([id, ts]) => ({ id, ts })).slice(-200)));
+        } catch { /* segue sem persistir */ }
     }
 
     function numMin(n) {
