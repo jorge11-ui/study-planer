@@ -2694,7 +2694,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.13-sync4';
+const APP_VERSION = '2026.10.14-sync5';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {

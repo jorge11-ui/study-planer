@@ -468,6 +468,31 @@ function caminhoFicheiro(id) {
 }
 
 async function apiFicheiros(req, res, url) {
+    if (req.method === 'GET' && url.pathname === '/api/ficheiros') {
+        // Lista leve (sem bytes) para os aparelhos verificarem o que o
+        // servidor tem e reporem o que faltar após um wipe do disco efémero.
+        let lista = [];
+        try {
+            lista = fs.readdirSync(FICHEIROS_DIR)
+                .filter((f) => FICHEIRO_ID.test(f) && !f.endsWith('.meta.json'))
+                .map((id) => {
+                    let meta = { nome: 'ficheiro.pdf', tipo: 'application/pdf' };
+                    try {
+                        meta = { ...meta, ...JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8')) };
+                    } catch { /* segue com o genérico */ }
+                    let tamanho = Number(meta.tamanho) || 0;
+                    if (!tamanho) {
+                        try {
+                            tamanho = fs.statSync(caminhoFicheiro(id)).size;
+                        } catch { /* segue a 0 */ }
+                    }
+                    return { id, nome: String(meta.nome || 'ficheiro.pdf'), tipo: String(meta.tipo || 'application/pdf'), tamanho };
+                });
+        } catch { /* diretório em falta: lista vazia */ }
+        json(res, 200, { ok: true, ficheiros: lista });
+        return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/ficheiros') {
         const body = await lerJsonBody(req, res, FICHEIROS_MAX_BYTES + 1024 * 1024);
         if (!body) return;

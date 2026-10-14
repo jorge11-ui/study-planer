@@ -89,6 +89,32 @@ window.Pdfs = (() => {
         } catch { /* segue sem registar */ }
     };
 
+    /* Apagados (tombstones de 30 dias): sem isto, a união da galeria no
+       sync ressuscitava PDFs removidos vindos do outro aparelho. */
+    const CHAVE_APAGADOS = 'study-journal-pdfs-apagados';
+    const APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
+
+    function registarApagados(ids) {
+        let lista = [];
+        try {
+            const v = JSON.parse(localStorage.getItem(CHAVE_APAGADOS) || '[]');
+            if (Array.isArray(v)) lista = v.filter((e) => e && typeof e.id === 'string');
+        } catch { lista = []; }
+        const agora = Date.now();
+        const vistos = new Set(lista.map((e) => e.id));
+        ids.forEach((id) => {
+            if (!vistos.has(id)) {
+                lista.push({ id, ts: agora });
+                vistos.add(id);
+            }
+        });
+        lista = lista.filter((e) => agora - Number(e.ts || 0) < APAGADO_MS).slice(-200);
+        try {
+            localStorage.setItem(CHAVE_APAGADOS, JSON.stringify(lista));
+        } catch { /* segue */ }
+        if (typeof pushDebounced === 'function') pushDebounced();
+    }
+
     const blobParaBase64 = (blob) => new Promise((res, rej) => {
         const fr = new FileReader();
         fr.onload = () => res(String(fr.result || '').split(',')[1] || '');
@@ -689,6 +715,7 @@ window.Pdfs = (() => {
 
         const doomed = new Set([id, ...dependentes.map((d) => d.id)]);
 
+        registarApagados([...doomed]);
         for (const alvo of doomed) {
             const url = urls.get(alvo);
             if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
@@ -1066,6 +1093,8 @@ window.Pdfs = (() => {
         libertarUrls();
         ligarOuvintes();
         desenhar();
+        // O servidor pode ter feito wipe desde a última visita: repõe bytes.
+        backfillFicheiros().catch(() => {});
     }
 
     function carregar() {
@@ -1095,12 +1124,29 @@ window.Pdfs = (() => {
         backfillFicheiros();
     }
 
-    /* Envia uma vez os ficheiros antigos que ainda só vivem neste browser. */
+    /* Repõe no servidor os bytes que ele não tem (wipe do disco efémero
+       ou servidor que nunca os recebeu): compara a lista leve do servidor
+       com os blobs deste browser e sobe os que faltam. */
     async function backfillFicheiros() {
         const enviados = lerEnviados();
+        let presentes = null;
+        try {
+            const resp = await fetch('/api/ficheiros', { cache: 'no-store' });
+            const r = await resp.json().catch(() => null);
+            if (r && r.ok && Array.isArray(r.ficheiros)) {
+                presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));
+            }
+        } catch { /* sem lista: usa só o registo local */ }
         let mudou = false;
         for (const doc of docs) {
-            if (doc.tipo !== 'ficheiro' || enviados.has(doc.id)) continue;
+            if (doc.tipo !== 'ficheiro') continue;
+            if (presentes ? presentes.has(doc.id) : enviados.has(doc.id)) {
+                if (!enviados.has(doc.id)) {
+                    enviados.add(doc.id);
+                    mudou = true;
+                }
+                continue;
+            }
             let blob = null;
             try {
                 blob = await lerFicheiro(doc.id);
