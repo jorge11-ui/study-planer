@@ -238,21 +238,32 @@ window.Imagens = (() => {
         return { texto: out, mudou };
     }
 
-    /* Repõe no servidor as imagens que ainda vivem neste browser
-       (cura após wipe: o 404 anterior desmarcou-as). */
+    /* Repõe no servidor as imagens referidas nas notas que ele não tem
+       (cura após wipe ou servidor novo: consulta a lista leve em vez de
+       confiar só no registo local). */
     async function backfill() {
         try {
             const enviadas = lerEnviadas();
-            const ids = new Set();
+            let presentes = null;
+            try {
+                const resp = await fetch('/api/ficheiros', { cache: 'no-store' });
+                const r = await resp.json().catch(() => null);
+                if (r && r.ok && Array.isArray(r.ficheiros)) {
+                    presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));
+                }
+            } catch { /* sem lista: usa só o registo */ }
+            const referidas = new Set();
             for (let i = 0; i < localStorage.length; i += 1) {
                 const k = localStorage.key(i) || '';
                 if (!/^study-journal-notes-\d{4}-\d{2}-\d{2}$/.test(k)) continue;
                 const v = localStorage.getItem(k) || '';
-                for (const m of v.matchAll(/sjimg:([A-Za-z0-9_-]+)/g)) {
-                    if (!enviadas.has(m[1])) ids.add(m[1]);
-                }
+                for (const m of v.matchAll(/sjimg:([A-Za-z0-9_-]+)/g)) referidas.add(m[1]);
             }
-            for (const id of ids) {
+            for (const id of referidas) {
+                if (presentes ? presentes.has(id) : enviadas.has(id)) {
+                    if (!enviadas.has(id)) marcarEnviada(id);
+                    continue;
+                }
                 let blob = null;
                 try {
                     blob = await lerBlob(id);
@@ -336,6 +347,7 @@ window.Imagens = (() => {
         const area = document.getElementById('journal-text');
         if (!area || area.dataset.imagensBound) return;
         area.dataset.imagensBound = '1';
+        backfill().catch(() => {});
 
         area.addEventListener('paste', (e) => {
             const imgs = imagensDe(e.clipboardData);

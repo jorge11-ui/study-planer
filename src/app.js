@@ -872,6 +872,38 @@ function registarSyncEvento(tipo, ok = true) {
 
 setInterval(pintarSyncSinal, 30000);
 
+/* ── Aviso de versão desatualizada ───────────────────────
+   Compara o ?v= do script corrido com o do index fresco: se o servidor
+   já tem código novo (e este aparelho corre cache velha), pede reload.
+   Sem isto, um telemóvel em cache antiga nunca apanhava os fixes. */
+
+let versaoWebPropria = null;
+try {
+    const eu = [...document.querySelectorAll('script')]
+        .map((s) => s.src || '')
+        .find((u) => u.includes('src/app.js?v=')) || '';
+    const m = /app\.js\?v=(\d+)/.exec(eu);
+    versaoWebPropria = m ? Number(m[1]) : null;
+} catch { versaoWebPropria = null; }
+
+let avisoVersaoDado = false;
+
+async function verificarVersaoWeb() {
+    if (versaoWebPropria === null || avisoVersaoDado) return;
+    try {
+        const resp = await fetch(window.location.pathname, { cache: 'no-store' });
+        if (!resp.ok) return;
+        const html = await resp.text();
+        const m = /src\/app\.js\?v=(\d+)/.exec(html);
+        if (m && Number(m[1]) > versaoWebPropria) {
+            avisoVersaoDado = true;
+            toast('Há uma atualização do StudyJournal — recarrega a página para a apanhar.', 'warn', { timeout: 0 });
+        }
+    } catch { /* offline ou a acordar: ignora */ }
+}
+
+setInterval(verificarVersaoWeb, 5 * 60 * 1000);
+
 /* Tenta esvaziar a fila quando há rede (regresso do laptop). */
 let flushSyncTimer = null;
 
@@ -1215,8 +1247,32 @@ function commitNotes() {
     setSaveStatus(`guardado às ${time}`);
 
     sincronizarDispositivos();
+    espelharVaultDebounced();
     StudyStats.renderHeatmap();
     renderStreak();
+}
+
+let vaultMirrorTimer = null;
+
+/* Espelho automático das notas no vault (Obsidian): corre sozinho após
+   gravar, só onde há vault ligado (PC). Silencioso — em conflito não
+   força; o botão Guardar Notas resolve com diálogo. */
+function espelharVaultDebounced() {
+    clearTimeout(vaultMirrorTimer);
+    vaultMirrorTimer = setTimeout(espelharVault, 4000);
+}
+
+async function espelharVault() {
+    try {
+        if (!window.Vault || !window.Imagens) return;
+        if (lastVaultState !== 'ligado') return;
+        const dia = dayKey(selected);
+        const text = els.notes.value;
+        if (!text.trim() || dia !== dayKey(selected)) return;
+        const paraVault = await window.Imagens.expandirParaVault(text).catch(() => text);
+        if (dia !== dayKey(selected)) return;
+        await Vault.save(`${dia}.md`, paraVault);
+    } catch { /* best-effort: o botão manual cobre */ }
 }
 
 /* Anexa texto às notas de hoje (usado pelo visualizador de PDFs). */
@@ -2750,7 +2806,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync8';
+const APP_VERSION = '2026.10.14-sync9';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -3679,6 +3735,7 @@ async function init() {
     // Envia o que ficou pendente sem rede
     descarregarSyncPendente().catch(() => {});
     pintarSyncSinal();
+    setTimeout(verificarVersaoWeb, 30000);
 
     // PWA: regista o service worker (shell offline). Falha silenciosa
     // em contextos sem suporte — a app funciona na mesma.
