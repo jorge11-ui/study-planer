@@ -1065,6 +1065,22 @@
                                 <span>Sair</span>
                             </button>
                         </div>
+                        <div class="mt-1 flex flex-col gap-2 border-t border-line-soft pt-3">
+                            <p class="text-xs leading-relaxed text-muted">
+                                <strong class="text-fg">Partilhar por link:</strong> quem abrir o link entra
+                                logo sincronizado, sem palavra-passe. O link dá acesso total — só
+                                partilha com quem pode ver e mexer em tudo.
+                            </p>
+                            <div id="partilha-completa" class="flex flex-col gap-2">
+                                <div class="flex flex-wrap gap-2">
+                                    <input id="partilha-nome" type="text" placeholder="Nome do link (ex.: telemóvel)"
+                                        class="field min-w-[10rem] flex-1 text-sm" maxlength="60" autocomplete="off">
+                                    <button id="partilha-criar" type="button" class="btn-soft">Criar link</button>
+                                </div>
+                                <ul id="partilha-lista" class="flex flex-col gap-1.5"></ul>
+                            </div>
+                            <p id="partilha-aviso" class="text-xs leading-relaxed text-faint" hidden>Estás ligado por um link partilhado: este aparelho não pode criar mais links. Para sair, usa Sair em cima.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1424,10 +1440,10 @@
     <script src="src/pdfs.js?v=4"></script>
     <script src="src/weekly.js?v=3"></script>
     <script src="src/github-sync.js?v=4"></script>
-    <script src="src/conta-sync.js?v=2"></script>
+    <script src="src/conta-sync.js?v=3"></script>
     <script src="src/exames.js?v=2"></script>
     <script src="src/notas.js?v=2"></script>
     <script src="src/imagens.js?v=1"></script>
-    <script src="src/app.js?v=5"></script>
+    <script src="src/app.js?v=6"></script>
 </body>
 </html>

@@ -265,12 +265,22 @@ function tokenDaSessao(req) {
 function sessaoValida(token) {
     const s = sessoes[token];
     if (!s) return false;
+    // Links de partilha não expiram com a sessão (são revogados à mão).
+    if (s.partilha) return true;
     if (Date.now() - Number(s.criadoEm || 0) > SESSAO_MS) {
         delete sessoes[token];
         try { guardarSessoes(); } catch { /* segue */ }
         return false;
     }
     return true;
+}
+
+/* Só a sessão completa (login) gere partilhas; um link partilhado não
+   cria mais links. */
+function sessaoCompleta(token) {
+    const s = sessoes[token];
+    if (!s || s.partilha) return false;
+    return sessaoValida(token);
 }
 
 function podeTentarLogin(req) {
@@ -337,6 +347,69 @@ async function apiConta(req, res, url) {
         const token = tokenDaSessao(req);
         if (token && sessoes[token]) {
             delete sessoes[token];
+            try { guardarSessoes(); } catch { /* segue */ }
+        }
+        json(res, 200, { ok: true });
+        return;
+    }
+
+    /* ── Partilha por link ──────────────────────────────
+       Quem tem o link entra logo sincronizado, sem palavra-passe.
+       O link dá acesso TOTAL (ler e escrever tudo): só partilhar com
+       quem pode ver e mexer nos dados. Revoga-se apagando o link. */
+
+    if (route === '/partilha' && req.method === 'POST') {
+        if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
+        const token = tokenDaSessao(req);
+        if (!sessaoCompleta(token)) {
+            const soLeitura = sessaoValida(token);
+            return json(res, soLeitura ? 403 : 401,
+                { ok: false, reason: soLeitura ? 'sem-permissao' : 'sessao' });
+        }
+        const body = await lerJsonBody(req, res);
+        if (!body) return;
+        const nome = String(body.nome ?? '').slice(0, 60);
+        const novo = `sh_${crypto.randomBytes(32).toString('hex')}`;
+        sessoes[novo] = { criadoEm: Date.now(), partilha: true, nome };
+        try {
+            guardarSessoes();
+        } catch {
+            return json(res, 500, { ok: false, reason: 'erro' });
+        }
+        json(res, 200, { ok: true, token: novo, nome });
+        return;
+    }
+
+    if (route === '/partilhas' && req.method === 'GET') {
+        if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
+        const token = tokenDaSessao(req);
+        if (!sessaoCompleta(token)) {
+            const soLeitura = sessaoValida(token);
+            return json(res, soLeitura ? 403 : 401,
+                { ok: false, reason: soLeitura ? 'sem-permissao' : 'sessao' });
+        }
+        const lista = Object.entries(sessoes)
+            .filter(([, s]) => s && s.partilha)
+            .map(([t, s]) => ({ id: t.slice(0, 12), nome: s.nome || '', criadoEm: s.criadoEm || 0 }))
+            .sort((a, b) => b.criadoEm - a.criadoEm);
+        json(res, 200, { ok: true, partilhas: lista });
+        return;
+    }
+
+    if (route === '/partilha' && req.method === 'DELETE') {
+        if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
+        const token = tokenDaSessao(req);
+        if (!sessaoCompleta(token)) {
+            const soLeitura = sessaoValida(token);
+            return json(res, soLeitura ? 403 : 401,
+                { ok: false, reason: soLeitura ? 'sem-permissao' : 'sessao' });
+        }
+        const body = await lerJsonBody(req, res);
+        if (!body) return;
+        const id = String(body.id ?? '');
+        const chave = Object.keys(sessoes).find((t) => t.startsWith(id) && sessoes[t] && sessoes[t].partilha);
+        if (chave) {
+            delete sessoes[chave];
             try { guardarSessoes(); } catch { /* segue */ }
         }
         json(res, 200, { ok: true });
@@ -435,7 +508,7 @@ async function apiSync(req, res) {
         // Fusão por secção (ver fundirSyncData): um cliente antigo que não
         // conhece campos novos (ex.: sessoesBase) não os apaga ao fazer push,
         // e um push desatualizado nunca apaga minutos de outro aparelho.
-        syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), data: fundirSyncData(syncDoc.data, body.data) };
+        syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), gid: syncDoc.gid, data: fundirSyncData(syncDoc.data, body.data) };
         try {
             guardarSync();
         } catch {

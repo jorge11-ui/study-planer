@@ -2694,7 +2694,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync5';
+const APP_VERSION = '2026.10.14-sync6';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -3309,6 +3309,18 @@ function bind() {
     const contaLastSync = document.getElementById('conta-last-sync');
     const contaSyncNow = document.getElementById('conta-sync-now');
     const contaSair = document.getElementById('conta-sair');
+    const partilhaNome = document.getElementById('partilha-nome');
+    const partilhaCriar = document.getElementById('partilha-criar');
+    const partilhaLista = document.getElementById('partilha-lista');
+    const partilhaCompleta = document.getElementById('partilha-completa');
+    const partilhaAviso = document.getElementById('partilha-aviso');
+
+    function textoEstadoConta() {
+        if (window.ContaSync.ePartilha && window.ContaSync.ePartilha()) {
+            return 'Ligado por link partilhado';
+        }
+        return `Ligado como ${window.ContaSync.getUser()}`;
+    }
 
     function pintarHoraConta() {
         if (!contaLastSync) return;
@@ -3330,8 +3342,9 @@ function bind() {
         if (contaLogin) contaLogin.hidden = cfg;
         if (contaAtiva) contaAtiva.hidden = !cfg;
         if (cfg) {
-            if (contaStatus) contaStatus.textContent = `Ligado como ${window.ContaSync.getUser()}`;
+            if (contaStatus) contaStatus.textContent = textoEstadoConta();
             pintarHoraConta();
+            pintarPartilha();
         } else if (contaDica) {
             contaDica.textContent = 'A verificar o servidor…';
             try {
@@ -3394,6 +3407,78 @@ function bind() {
         });
     }
 
+    /* ── Partilha por link ─────────────────────────────── */
+
+    async function pintarPartilha() {
+        const partilha = window.ContaSync.ePartilha && window.ContaSync.ePartilha();
+        if (partilhaCompleta) partilhaCompleta.hidden = !!partilha;
+        if (partilhaAviso) partilhaAviso.hidden = !partilha;
+        if (partilha || currentView !== 'definicoes' || !partilhaLista) return;
+        partilhaLista.replaceChildren();
+        const res = await window.ContaSync.listarPartilhas();
+        if (!res.ok) return;
+        if (!res.partilhas.length) {
+            const li = document.createElement('li');
+            li.className = 'text-xs text-faint';
+            li.textContent = 'Ainda sem links. Cria o primeiro em cima.';
+            partilhaLista.append(li);
+            return;
+        }
+        res.partilhas.forEach((p) => {
+            const li = document.createElement('li');
+            li.className = 'flex items-center gap-2 rounded-lg border border-line-soft bg-surface px-2.5 py-1.5 text-xs';
+            const nome = document.createElement('span');
+            nome.className = 'min-w-0 flex-1 truncate font-medium text-fg';
+            nome.textContent = p.nome || 'Link sem nome';
+            nome.title = p.nome || p.id;
+            const quando = document.createElement('span');
+            quando.className = 'shrink-0 tabular-nums text-faint';
+            try {
+                quando.textContent = p.criadoEm ? new Date(p.criadoEm).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' }) : '';
+            } catch { /* segue sem data */ }
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-soft btn-soft-danger shrink-0 px-2 py-1 text-[11px]';
+            btn.textContent = 'Revogar';
+            btn.addEventListener('click', async () => {
+                const ok = await askConfirm({
+                    title: 'Revogar este link?',
+                    message: 'Os aparelhos que usam este link deixam de sincronizar.',
+                    confirmLabel: 'Revogar',
+                });
+                if (!ok) return;
+                await window.ContaSync.revogarPartilha(p.id);
+                pintarPartilha();
+                toast('Link revogado.', 'info');
+            });
+            li.append(nome, quando, btn);
+            partilhaLista.append(li);
+        });
+    }
+
+    async function copiarLink(link) {
+        try {
+            await navigator.clipboard.writeText(link);
+            toast('Link copiado. Partilha com quem quiseres.', 'success');
+        } catch {
+            prompt('Copia o link de partilha:', link);
+        }
+    }
+
+    if (partilhaCriar) {
+        partilhaCriar.addEventListener('click', async () => {
+            if (!window.ContaSync) return;
+            const res = await window.ContaSync.criarPartilha(partilhaNome?.value);
+            if (!res.ok) {
+                toast(`Erro: ${res.error || 'desconhecido'}`, 'error');
+                return;
+            }
+            if (partilhaNome) partilhaNome.value = '';
+            pintarPartilha();
+            copiarLink(res.link);
+        });
+    }
+
     if (window.ContaSync && window.ContaSync.onSync) {
         window.ContaSync.onSync((tipo, detalhes = {}) => {
             if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
@@ -3402,7 +3487,7 @@ function bind() {
                     if (tipo === 'pull-done' && detalhes.notasAdiadas) {
                         contaStatus.textContent = 'Sincronizado (notas atualizam ao sair da caixa)';
                     } else if (window.ContaSync.configurado()) {
-                        contaStatus.textContent = `Ligado como ${window.ContaSync.getUser()}`;
+                        contaStatus.textContent = textoEstadoConta();
                     }
                 }
                 if (tipo === 'pull-done' && detalhes.atualizou && !detalhes.notasAdiadas) {
@@ -3476,6 +3561,19 @@ async function init() {
     window.onWeeklySave = () => {
         sincronizarDispositivos();
     };
+
+    // Entrada por link de partilha (#p=...): sem palavra-passe.
+    try {
+        const m = /^#p=([A-Za-z0-9_%-]+)/.exec(window.location.hash || '');
+        if (m && window.ContaSync && !window.ContaSync.configurado()) {
+            const tk = decodeURIComponent(m[1]);
+            window.ContaSync.usarPartilha(tk).then((r) => {
+                if (r && r.ok) toast('Ligado por link partilhado e sincronizado.', 'success');
+                else toast(`Link inválido: ${(r && r.error) || 'não foi possível entrar.'}`, 'error');
+            }).catch(() => {});
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+    } catch { /* segue sem partilha */ }
 
     // Pull inicial da conta (se houver login): atualiza deste lado
     if (window.ContaSync && window.ContaSync.configurado()) {

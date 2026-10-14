@@ -105,6 +105,10 @@ window.ContaSync = (() => {
         return user;
     }
 
+    function ePartilha() {
+        return !!token && !user;
+    }
+
     async function estado() {
         const agora = Date.now();
         if (estadoCache.v && agora - estadoCache.t < ESTADO_TTL_MS) return estadoCache.v;
@@ -160,9 +164,13 @@ window.ContaSync = (() => {
     }
 
     async function logout() {
-        try {
-            await api('/api/conta/sair', { method: 'POST' });
-        } catch { /* best-effort */ }
+        // Por link partilhado não se toca no servidor: o token é o próprio
+        // link, e apagá-lo lá cortava o acesso a todos os aparelhos.
+        if (!ePartilha()) {
+            try {
+                await api('/api/conta/sair', { method: 'POST' });
+            } catch { /* best-effort */ }
+        }
         try {
             localStorage.removeItem(K_REV);
             localStorage.removeItem(K_GID);
@@ -170,6 +178,75 @@ window.ContaSync = (() => {
         } catch { /* segue */ }
         limparSessao();
         return { ok: true };
+    }
+
+    /* Entrar com um link de partilha (#p=...): sem palavra-passe, acesso
+       total partilhado. O token guarda-se como os outros. */
+    async function usarPartilha(linkToken) {
+        const t = String(linkToken || '').trim();
+        if (!t) return { ok: false, error: 'Link inválido.' };
+        notificar('sync-start');
+        token = t;
+        user = '';
+        try {
+            const { status } = await api('/api/sync');
+            if (status === 401 || status === 403) {
+                token = '';
+                persistirCredenciais();
+                notificar('sync-error', {});
+                return { ok: false, error: 'Link inválido ou revogado.' };
+            }
+            persistirCredenciais();
+            const r = await sync(true);
+            if (r.ok) iniciarAuto();
+            return r.ok ? { ok: true } : r;
+        } catch {
+            token = '';
+            persistirCredenciais();
+            notificar('sync-error', {});
+            return { ok: false, error: 'Sem ligação ao servidor.' };
+        }
+    }
+
+    async function criarPartilha(nome) {
+        if (!token || ePartilha()) return { ok: false, error: 'Entra com a conta primeiro.' };
+        try {
+            const { status, data } = await api('/api/conta/partilha', {
+                method: 'POST',
+                body: { nome: String(nome || '').slice(0, 60) },
+            });
+            if (!data || !data.ok || !data.token) {
+                if (status === 403) return { ok: false, error: 'Links partilhados não criam mais links.' };
+                return { ok: false, error: 'Não foi possível criar o link.' };
+            }
+            const base = (typeof location !== 'undefined')
+                ? `${location.origin}${location.pathname}`
+                : '';
+            return { ok: true, token: data.token, link: `${base}#p=${data.token}` };
+        } catch {
+            return { ok: false, error: 'Sem ligação ao servidor.' };
+        }
+    }
+
+    async function listarPartilhas() {
+        if (!token || ePartilha()) return { ok: false, error: 'Entra com a conta primeiro.' };
+        try {
+            const { data } = await api('/api/conta/partilhas');
+            if (!data || !data.ok) return { ok: false, error: 'Não foi possível listar.' };
+            return { ok: true, partilhas: data.partilhas || [] };
+        } catch {
+            return { ok: false, error: 'Sem ligação ao servidor.' };
+        }
+    }
+
+    async function revogarPartilha(id) {
+        if (!token || ePartilha()) return { ok: false, error: 'Entra com a conta primeiro.' };
+        try {
+            await api('/api/conta/partilha', { method: 'DELETE', body: { id: String(id || '') } });
+            return { ok: true };
+        } catch {
+            return { ok: false, error: 'Sem ligação ao servidor.' };
+        }
     }
 
     async function fazerPull() {
@@ -352,9 +429,14 @@ window.ContaSync = (() => {
     return {
         configurado,
         getUser,
+        ePartilha,
         estado,
         login,
         logout,
+        usarPartilha,
+        criarPartilha,
+        listarPartilhas,
+        revogarPartilha,
         sync,
         push,
         pull,
