@@ -320,7 +320,18 @@ window.Caderno = (() => {
             const p = document.createElement('p');
             p.className = 'mt-1 whitespace-pre-wrap leading-relaxed';
             p.textContent = foto.transcricao;
-            det.append(sum, p);
+            const gbtn = document.createElement('button');
+            gbtn.type = 'button';
+            gbtn.className = 'btn-soft mt-2 px-2 py-1 text-[11px]';
+            gbtn.textContent = 'Guardar nas notas';
+            gbtn.addEventListener('click', () => {
+                const md = `### 📷 Caderno · ${foto.titulo}\n\n_${dataLegivel(foto.dia)} · ${foto.disciplina}_\n\n${foto.transcricao.trim()}`;
+                const ok = window.StudyJournal && typeof window.StudyJournal.adicionarANotas === 'function'
+                    ? window.StudyJournal.adicionarANotas(md)
+                    : false;
+                toast(ok ? 'Transcrição guardada nas notas.' : 'Não foi possível guardar.', ok ? 'success' : 'error');
+            });
+            det.append(sum, p, gbtn);
             corpo.append(det);
         }
 

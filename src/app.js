@@ -1244,6 +1244,11 @@ function commitNotes() {
 
     const text = els.notes.value;
     if (!write(notesKey(), text)) return;
+    // Carimbo da última escrita: o sync usa-o para decidir quem ganha
+    // quando dois aparelhos mexem nas mesmas notas (LWW por dia).
+    try {
+        localStorage.setItem(`${notesKey()}-ts`, String(Date.now()));
+    } catch { /* segue sem carimbo */ }
 
     const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     setSaveStatus(`guardado às ${time}`);
@@ -1284,12 +1289,12 @@ function adicionarANotas(texto) {
     try {
         if (dayKey(selected) === dayKey(today)) {
             const base = els.notes.value.replace(/\s+$/, '');
-            els.notes.value = base ? `${base}\n${bloco}\n` : `${bloco}\n`;
+            els.notes.value = base ? `${base}\n\n${bloco}\n` : `${bloco}\n`;
             onNotesInput();
         } else {
             const chaveHoje = `study-journal-notes-${dayKey(today)}`;
             const base = read(chaveHoje, '').replace(/\s+$/, '');
-            write(chaveHoje, base ? `${base}\n${bloco}\n` : `${bloco}\n`);
+            write(chaveHoje, base ? `${base}\n\n${bloco}\n` : `${bloco}\n`);
             toast('Guardado nas notas de hoje.', 'success');
         }
         renderStreak();
@@ -2813,7 +2818,7 @@ function renderSubjects() {
 
 // Mudar quando a lógica de sync/storage mudar: visível em Definições para
 // confirmar que os dois aparelhos correm o mesmo código.
-const APP_VERSION = '2026.10.14-sync12';
+const APP_VERSION = '2026.10.14-sync14';
 
 function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
     return new Promise((resolve) => {
@@ -2890,6 +2895,8 @@ function exportData() {
             notes: read(`study-journal-notes-${key}`, ''),
             tasks: read(`study-journal-tasks-${key}`, []),
         };
+        const ts = Number(localStorage.getItem(`study-journal-notes-${key}-ts`)) || 0;
+        if (ts > 0) payload.days[key].updatedAt = ts;
     });
 
     payload.semanal = {
@@ -2954,6 +2961,11 @@ async function importData(file) {
             if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
             if (typeof value.notes === 'string') write(`study-journal-notes-${key}`, value.notes);
             if (Array.isArray(value.tasks)) write(`study-journal-tasks-${key}`, value.tasks);
+            const ts = Number(value.updatedAt) || 0;
+            try {
+                if (ts > 0) localStorage.setItem(`study-journal-notes-${key}-ts`, String(ts));
+                else localStorage.setItem(`study-journal-notes-${key}-ts`, String(Date.now()));
+            } catch { /* segue sem carimbo */ }
             count += 1;
         });
 
@@ -3071,10 +3083,30 @@ async function loadDay() {
         }
     }
 
-    // 2. Carregar Notas (Tenta o Vault primeiro, senão local)
+    // 2. Carregar Notas (Tenta o Vault primeiro, senão local).
+    // O vault só ganha se mudou fora do site desde a última gravação
+    // (mudou=true): se está igual ao conhecido, o editor é mais recente
+    // e empurra-se para lá — era isto que ressuscitava texto apagado ao
+    // recarregar (o espelho de 4s ainda não tinha corrido).
     const noteResult = await Vault.load(`${dayKey(selected)}.md`);
     if (noteResult.ok && noteResult.existe) {
-        els.notes.value = noteResult.content;
+        const local = read(notesKey(), '');
+        if (!noteResult.mudou) {
+            const ts = Number(localStorage.getItem(`${notesKey()}-ts`)) || 0;
+            if (noteResult.content !== local && (local.trim() || ts > 0)) {
+                try {
+                    await Vault.save(`${dayKey(selected)}.md`, local);
+                } catch { /* o botão manual cobre */ }
+                els.notes.value = local;
+            } else {
+                els.notes.value = noteResult.content;
+            }
+        } else if (!noteResult.conhecido && local.trim()) {
+            // Ficheiro que nunca vimos e editor com conteúdo: não arrisca.
+            els.notes.value = local;
+        } else {
+            els.notes.value = noteResult.content;
+        }
     } else {
         els.notes.value = read(notesKey(), '');
     }

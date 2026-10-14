@@ -194,6 +194,8 @@ window.GitHubSync = (() => {
                     const k = notesMatch[1];
                     days[k] = days[k] || {};
                     days[k].notes = localStorage.getItem(key);
+                    const ts = Number(localStorage.getItem(`study-journal-notes-${k}-ts`)) || 0;
+                    if (ts > 0) days[k].updatedAt = ts;
                 } else if (tasksMatch) {
                     const k = tasksMatch[1];
                     days[k] = days[k] || {};
@@ -271,7 +273,20 @@ window.GitHubSync = (() => {
 
         if (remoto.days) {
             Object.entries(remoto.days).forEach(([key, value]) => {
-                if (value.notes !== undefined) localStorage.setItem(`study-journal-notes-${key}`, value.notes);
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+                if (value.notes !== undefined) {
+                    const rTs = Number(value.updatedAt) || 0;
+                    const lTs = Number(localStorage.getItem(`study-journal-notes-${key}-ts`)) || 0;
+                    // Último a escrever ganha. Sem relógios (clientes antigos),
+                    // aplica como antes. Sem isto, um editor parado noutro
+                    // aparelho republicava texto já apagado aqui.
+                    if (rTs >= lTs) {
+                        localStorage.setItem(`study-journal-notes-${key}`, value.notes);
+                        try {
+                            localStorage.setItem(`study-journal-notes-${key}-ts`, String(rTs || Date.now()));
+                        } catch { /* segue */ }
+                    }
+                }
                 if (value.tasks !== undefined) localStorage.setItem(`study-journal-tasks-${key}`, JSON.stringify(value.tasks));
             });
         }

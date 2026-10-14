@@ -5,7 +5,7 @@
 window.Assistente = (() => {
     const CHAVE_HIST = 'study-journal-assistente-hist';
     const MAX_HIST = 100;
-    const SISTEMA = 'És um assistente de estudo para um aluno do secundário em Portugal (Matemática A, FQA, Português, Biologia). Responde em português europeu, de forma clara e direta, com exemplos curtos quando ajudar. Usa Markdown simples quando fizer sentido. Para matemática, escreve SEMPRE as fórmulas em LaTeX: \\(…\\) para inline e \\[…\\] para destaque. Nunca uses $ simples nem texto ASCII tipo x^2/3 para frações quando puderes usar LaTeX.';
+    const SISTEMA = 'És um assistente de estudo para um aluno do secundário em Portugal (Matemática A, FQA, Português, Biologia). Responde em português europeu, de forma clara e direta, com exemplos curtos quando ajudar. Usa Markdown simples: títulos com #, listas com -, **negrito** e `código` inline. Evita blocos de código com ``` (não renderizam aqui). Para matemática, escreve SEMPRE as fórmulas em LaTeX: \\(…\\) para inline e \\[…\\] para destaque. Nunca uses $ simples nem texto ASCII tipo x^2/3 para frações quando puderes usar LaTeX.';
 
     let modelo = '';
     let modelos = [];
@@ -66,7 +66,28 @@ window.Assistente = (() => {
         return disponivel;
     }
 
-    function bolha(papel, texto) {
+    /* Bloco organizado para as notas: título + pergunta + resposta com a
+       estrutura Markdown intacta (títulos, listas, LaTeX). Puro (testável). */
+    function formatarColagem(pergunta, resposta, modeloUsado, dataStr) {
+        const q = String(pergunta || '').trim().replace(/\s+/g, ' ');
+        const r = String(resposta || '').trim().replace(/\n{3,}/g, '\n\n');
+        const mod = modeloUsado ? ` · ${String(modeloUsado).trim()}` : '';
+        const cabeca = `### 🧠 Assistente · ${dataStr || ''}${mod}`.trim();
+        const partes = [cabeca];
+        if (q) partes.push(`**Pergunta:** ${q}`);
+        if (r) partes.push(r);
+        return partes.join('\n\n');
+    }
+
+    function dataCurta() {
+        try {
+            return new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
+        } catch {
+            return '';
+        }
+    }
+
+    function bolha(papel, texto, extra) {
         const div = document.createElement('div');
         div.className = papel === 'user'
             ? 'ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-brand px-3 py-2 text-sm text-white'
@@ -85,8 +106,12 @@ window.Assistente = (() => {
             btn.className = 'btn-soft mt-2 px-2 py-1 text-[11px]';
             btn.textContent = 'Colar nas notas';
             btn.addEventListener('click', () => {
-                const data = new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
-                const md = `**Assistente (${data}):** ${texto.replace(/\s+/g, ' ')}`;
+                const md = formatarColagem(
+                    extra && extra.pergunta,
+                    texto,
+                    (extra && extra.modelo) || modelo,
+                    dataCurta(),
+                );
                 const ok = window.StudyJournal && typeof window.StudyJournal.adicionarANotas === 'function'
                     ? window.StudyJournal.adicionarANotas(md)
                     : false;
@@ -109,7 +134,12 @@ window.Assistente = (() => {
             caixa.append(vazio);
             return;
         }
-        hist.forEach((m) => caixa.append(bolha(m.papel, m.texto)));
+        hist.forEach((m, i) => {
+            const extra = m.papel === 'assistant'
+                ? { pergunta: i > 0 && hist[i - 1].papel === 'user' ? hist[i - 1].texto : '', modelo: m.modelo || modelo }
+                : null;
+            caixa.append(bolha(m.papel, m.texto, extra));
+        });
         caixa.scrollTop = caixa.scrollHeight;
     }
 
@@ -178,13 +208,13 @@ window.Assistente = (() => {
                 if (caixa) caixa.scrollTop = caixa.scrollHeight;
             }
             if (!resposta.trim()) throw new Error('O modelo não respondeu.');
-            hist.push({ papel: 'assistant', texto: resposta.trim() });
+            hist.push({ papel: 'assistant', texto: resposta.trim(), modelo });
             guardarHist(hist);
             desenhar();
         } catch (error) {
             if (error && error.name === 'AbortError') {
                 if (resposta.trim()) {
-                    hist.push({ papel: 'assistant', texto: `${resposta.trim()}\n\n(interrompido)` });
+                    hist.push({ papel: 'assistant', texto: `${resposta.trim()}\n\n(interrompido)`, modelo });
                     guardarHist(hist);
                 }
             } else {
@@ -279,5 +309,5 @@ window.Assistente = (() => {
         } catch { /* segue sem math */ }
     }
 
-    return { ligar, enviar, verificar, renderMatematica, partirMatematica };
+    return { ligar, enviar, verificar, renderMatematica, partirMatematica, formatarColagem };
 })();
