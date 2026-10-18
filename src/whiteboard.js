@@ -176,6 +176,7 @@ function redo() {
 function setupTools() {
     const pencilBtn = document.getElementById('wb-tool-pencil');
     const textBtn = document.getElementById('wb-tool-text');
+    const textLongBtn = document.getElementById('wb-tool-text-long');
     const rectBtn = document.getElementById('wb-tool-rect');
     const circleBtn = document.getElementById('wb-tool-circle');
     const eraseBtn = document.getElementById('wb-tool-erase');
@@ -185,13 +186,13 @@ function setupTools() {
     const setTool = (tool) => {
         currentTool = tool;
         canvas.isDrawingMode = (tool === 'pencil');
-        
-        [pencilBtn, textBtn, rectBtn, circleBtn, eraseBtn].forEach(btn => {
+
+        [pencilBtn, textBtn, textLongBtn, rectBtn, circleBtn, eraseBtn].forEach(btn => {
             if(!btn) return;
             btn.classList.remove('bg-surface-3', 'text-fg', 'ring-2', 'ring-brand');
         });
 
-        const activeBtn = tool === 'pencil' ? pencilBtn : tool === 'text' ? textBtn : tool === 'rect' ? rectBtn : tool === 'circle' ? circleBtn : eraseBtn;
+        const activeBtn = tool === 'pencil' ? pencilBtn : tool === 'text' ? textBtn : tool === 'text-long' ? textLongBtn : tool === 'rect' ? rectBtn : tool === 'circle' ? circleBtn : eraseBtn;
         if (activeBtn) activeBtn.classList.add('bg-surface-3', 'text-fg', 'ring-2', 'ring-brand');
 
         if (tool === 'pencil') {
@@ -203,6 +204,7 @@ function setupTools() {
 
     if(pencilBtn) pencilBtn.onclick = () => setTool('pencil');
     if(textBtn) textBtn.onclick = () => setTool('text');
+    if(textLongBtn) textLongBtn.onclick = () => setTool('text-long');
     if(rectBtn) rectBtn.onclick = () => setTool('rect');
     if(circleBtn) circleBtn.onclick = () => setTool('circle');
     if(eraseBtn) eraseBtn.onclick = () => setTool('select');
@@ -249,6 +251,20 @@ function setupTools() {
                 fontFamily: 'sans-serif',
                 fill: color,
                 textAlign: 'left'
+            });
+            canvas.add(text);
+            canvas.setActiveObject(text);
+            setTool('select');
+        } else if (currentTool === 'text-long') {
+            const text = new fabric.Textbox('Escreva o seu texto longo aqui...', {
+                left: pointer.x,
+                top: pointer.y,
+                width: 250,
+                fontSize: size,
+                fontFamily: 'sans-serif',
+                fill: color,
+                textAlign: 'left',
+                breakWords: true
             });
             canvas.add(text);
             canvas.setActiveObject(text);
