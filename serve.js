@@ -21,7 +21,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const FOLDER = 'Diario';
 const DAY_NAME = /^\d{4}-\d{2}-\d{2}\.md$/;
-const CONFIG_NAME = /^(tasks|pdfs)\.json$/;
+const CONFIG_NAME = /^(tasks|pdfs|whiteboard)\.json$/;
 const MAX_BODY = 2 * 1024 * 1024;
 const SYNC_MAX_BODY = 8 * 1024 * 1024;
 

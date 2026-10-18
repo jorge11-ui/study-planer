@@ -14,6 +14,8 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%234f46e5'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="app.css?v=5">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
+    <!-- Rough.js for hand-drawn aesthetic -->
+    <script src="https://cdn.jsdelivr.net/npm/roughjs@4.5.2/bundled/rough.js"></script>
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
 
@@ -183,6 +185,12 @@
                 <path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5"/>
                 <path d="M22 9v5"/>
             </symbol>
+            <symbol id="i-whiteboard" viewBox="0 0 24 24">
+                <rect width="18" height="14" x="3" y="5" rx="2"/>
+                <path d="M3 10h18M12 5v14"/>
+                <circle cx="7" cy="8" r=".5" fill="currentColor"/>
+                <circle cx="17" cy="16" r=".5" fill="currentColor"/>
+            </symbol>
         </defs>
     </svg>
 
@@ -263,6 +271,10 @@
             <button type="button" data-view="exames" title="Exames Nacionais" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-grad"/></svg>
                 <span>Exames</span>
+            </button>
+            <button type="button" data-view="whiteboard" title="Quadro Branco" class="nav-item-wide">
+                <svg class="icon h-5 w-5"><use href="#i-whiteboard"/></svg>
+                <span>Whiteboard</span>
             </button>
             <button type="button" data-view="assistente" title="Assistente" class="nav-item-wide">
                 <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
@@ -645,10 +657,12 @@
         <!-- ══ Vista: PDFs ══ -->
         <section id="view-pdfs" data-panel="pdfs" hidden
             class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center gap-2.5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-file-text"/></svg>
-                <h2 class="text-base font-semibold">PDFs</h2>
-                <span id="pdf-count" class="text-xs text-faint"></span>
+            <header class="flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-file-text"/></svg>
+                    <h2 class="text-base font-semibold">PDFs</h2>
+                    <span id="pdf-count" class="text-xs text-faint"></span>
+                </div>
                 <button id="pdf-add" type="button" class="btn-soft ml-auto inline-flex items-center gap-1.5">
                     <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
                     <span>Adicionar</span>
@@ -681,10 +695,12 @@
         <!-- ══ Vista: Caderno ══ -->
         <section id="view-caderno" data-panel="caderno" hidden
             class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center gap-2.5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-camera"/></svg>
-                <h2 class="text-base font-semibold">Caderno</h2>
-                <span id="caderno-count" class="text-xs text-faint"></span>
+            <header class="flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-camera"/></svg>
+                    <h2 class="text-base font-semibold">Caderno</h2>
+                    <span id="caderno-count" class="text-xs text-faint"></span>
+                </div>
                 <button id="caderno-add" type="button" class="btn-soft ml-auto inline-flex items-center gap-1.5">
                     <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
                     <span>Fotografar</span>
@@ -726,6 +742,84 @@
             <ul id="caderno-grid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"></ul>
         </section>
 
+        <!-- ══ Vista: Whiteboard ══ -->
+        <section id="view-whiteboard" data-panel="whiteboard" hidden
+            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
+            <header class="flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-whiteboard"/></svg>
+                    <h2 class="text-base font-semibold">Quadro Branco</h2>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <!-- Histórico -->
+                    <div class="flex items-center gap-1 rounded-xl border border-line bg-surface-2 p-1">
+                        <button id="wb-undo" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Desfazer (Ctrl+Z)">
+                            <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a4 4 0 0 1 0 8h-10"/></svg>
+                        </button>
+                        <button id="wb-redo" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Refazer (Ctrl+Y)">
+                            <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14L20 9l-5-5"/><path d="M20 9H10a4 4 0 0 0 0 8h10"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Ferramentas de Desenho -->
+                    <div class="flex items-center gap-1 rounded-xl border border-line bg-surface-2 p-1">
+                        <button id="wb-tool-pencil" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Lápis">
+                            <svg class="icon h-4 w-4"><use href="#i-pencil"/></svg>
+                        </button>
+                        <button id="wb-tool-text" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Texto">
+                            <svg class="icon h-4 w-4"><use href="#i-file-text"/></svg>
+                        </button>
+                        <button id="wb-tool-rect" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Retângulo">
+                            <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                        </button>
+                        <button id="wb-tool-circle" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Círculo">
+                            <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                        </button>
+                        <button id="wb-tool-erase" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Selecionar/Apagar">
+                            <svg class="icon h-4 w-4"><use href="#i-trash"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Cores e Estilo -->
+                    <div class="flex items-center gap-2 rounded-xl border border-line bg-surface-2 p-1">
+                        <input type="color" id="wb-color" value="#4f46e5" class="h-6 w-6 cursor-pointer rounded bg-transparent border-0 p-0">
+                        <div class="flex items-center gap-1 px-1 border-l border-line">
+                            <span class="text-[10px] text-faint uppercase font-bold">Tamanho:</span>
+                            <select id="wb-font-size" class="bg-transparent text-xs text-fg outline-none cursor-pointer hover:text-brand transition">
+                                <option value="14">14</option>
+                                <option value="18">18</option>
+                                <option value="24" selected>24</option>
+                                <option value="32">32</option>
+                                <option value="48">48</option>
+                                <option value="64">64</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Ações Finais -->
+                    <div class="flex items-center gap-1">
+                        <button id="wb-export" type="button" class="btn-soft inline-flex items-center gap-1.5">
+                            <svg class="icon h-4 w-4"><use href="#i-download"/></svg>
+                            <span class="hidden sm:inline">PNG</span>
+                        </button>
+                        <button id="wb-save" type="button" class="btn-mint inline-flex items-center gap-1.5">
+                            <svg class="icon h-4 w-4"><use href="#i-check"/></svg>
+                            <span class="hidden sm:inline">Guardar</span>
+                        </button>
+                        <button id="wb-clear" type="button" class="btn-soft inline-flex items-center gap-1.5">
+                            <svg class="icon h-4 w-4"><use href="#i-reset"/></svg>
+                            <span class="hidden sm:inline">Limpar</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="relative flex-1 overflow-hidden rounded-xl border border-line bg-white shadow-inner" style="min-height: 70vh; cursor: crosshair;">
+                <canvas id="wb-canvas"></canvas>
+            </div>
+            <p class="text-[11px] text-faint text-center">Dica: Podes colar imagens diretamente do clipboard (Ctrl+V). Usa o mouse para desenhar e arrastar objetos.</p>
+        </section>
+
         <!-- Dialogo do visualizador de fotos -->
         <dialog id="caderno-viewer"
             class="m-auto w-[min(48rem,94vw)] max-w-none glass-strong rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
@@ -747,31 +841,35 @@
         <!-- ══ Vista: Semanal ══ -->
         <section id="view-semanal" data-panel="semanal" hidden
             class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center gap-2.5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-week"/></svg>
-                <h2 class="text-base font-semibold">Semanal</h2>
-                <span id="week-number" class="ml-auto mr-2 px-2 py-0.5 rounded-full bg-surface-2 text-[10px] font-medium text-muted"></span>
-                <span id="week-label" class="text-xs text-faint"></span>
-                <div class="ml-auto flex items-center gap-1.5">
-                    <div class="flex items-center gap-1" role="group" aria-label="Resolução da grelha">
-                        <button type="button" data-week-passo="0.25" class="pdf-filter" title="Grelha de 15 em 15 minutos">15m</button>
-                        <button type="button" data-week-passo="0.5" class="pdf-filter" title="Grelha de 30 em 30 minutos">30m</button>
-                        <button type="button" data-week-passo="1" class="pdf-filter" title="Grelha de hora a hora">60m</button>
+            <header class="flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-week"/></svg>
+                    <h2 class="text-base font-semibold">Semanal</h2>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span id="week-number" class="mr-2 px-2 py-0.5 rounded-full bg-surface-2 text-[10px] font-medium text-muted"></span>
+                    <span id="week-label" class="text-xs text-faint"></span>
+                    <div class="ml-auto flex items-center gap-1.5">
+                        <div class="flex items-center gap-1" role="group" aria-label="Resolução da grelha">
+                            <button type="button" data-week-passo="0.25" class="pdf-filter" title="Grelha de 15 em 15 minutos">15m</button>
+                            <button type="button" data-week-passo="0.5" class="pdf-filter" title="Grelha de 30 em 30 minutos">30m</button>
+                            <button type="button" data-week-passo="1" class="pdf-filter" title="Grelha de hora a hora">60m</button>
+                        </div>
+                        <button id="week-prev" type="button" aria-label="Semana anterior" class="icon-btn" title="Semana anterior">
+                            <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
+                        </button>
+                        <button id="week-today" type="button" aria-label="Esta semana" class="btn-ghost hidden" title="Esta semana">
+                            <svg class="icon h-3.5 w-3.5"><use href="#i-calendar"/></svg>
+                            <span class="hidden sm:inline">Hoje</span>
+                        </button>
+                        <button id="week-next" type="button" aria-label="Semana seguinte" class="icon-btn" title="Semana seguinte">
+                            <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
+                        </button>
+                        <button id="week-add" type="button" class="btn-primary ml-2 inline-flex items-center gap-1.5">
+                            <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                            <span>Adicionar</span>
+                        </button>
                     </div>
-                    <button id="week-prev" type="button" aria-label="Semana anterior" class="icon-btn" title="Semana anterior">
-                        <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
-                    </button>
-                    <button id="week-today" type="button" aria-label="Esta semana" class="btn-ghost hidden" title="Esta semana">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-calendar"/></svg>
-                        <span class="hidden sm:inline">Hoje</span>
-                    </button>
-                    <button id="week-next" type="button" aria-label="Semana seguinte" class="icon-btn" title="Semana seguinte">
-                        <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
-                    </button>
-                    <button id="week-add" type="button" class="btn-primary ml-2 inline-flex items-center gap-1.5">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                        <span>Adicionar</span>
-                    </button>
                 </div>
             </header>
 
@@ -786,7 +884,7 @@
                     <span class="font-medium text-fg">Dinâmico</span>
                     <span class="text-muted">(semanal)</span>
                 </span>
-                <span class="flex items-center gap-1.5 ml-auto px-2 py-1 rounded-full bg-surface-2">
+                <span class="ml-auto flex items-center gap-1.5 px-2 py-1 rounded-full bg-surface-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-brand/5"></span>
                     <span class="text-muted">Hoje</span>
                 </span>
@@ -833,11 +931,13 @@
         <!-- ══ Vista: Exames Nacionais ══ -->
         <section id="view-exames" data-panel="exames" hidden
             class="flex flex-col gap-6">
-            <header class="flex flex-wrap items-center gap-2.5 glass rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-grad"/></svg>
-                <div class="min-w-0 flex-1">
-                    <h2 class="text-base font-semibold">Preparação para Exames Nacionais</h2>
-                    <p class="text-xs text-muted">Português · Matemática A · Física e Química A</p>
+            <header class="flex flex-wrap items-center justify-between gap-2.5 glass rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5">
+                <div class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-grad"/></svg>
+                    <div class="min-w-0 flex-1">
+                        <h2 class="text-base font-semibold">Preparação para Exames Nacionais</h2>
+                        <p class="text-xs text-muted">Português · Matemática A · Física e Química A</p>
+                    </div>
                 </div>
                 <div class="flex items-center gap-2 rounded-xl border border-line-soft bg-surface-2 px-3 py-1.5">
                     <svg class="icon h-4 w-4 text-brand-light"><use href="#i-calendar"/></svg>
@@ -1072,11 +1172,13 @@
         <!-- ══ Vista: Assistente ══ -->
         <section id="view-assistente" data-panel="assistente" hidden
             class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center gap-2.5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-chat"/></svg>
-                <h2 class="text-base font-semibold">Assistente</h2>
-                <span id="assistente-modelo" class="text-xs text-faint"></span>
-                <button id="assistente-limpar" type="button" class="btn-soft ml-auto inline-flex items-center gap-1.5">
+            <header class="flex flex-wrap items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-chat"/></svg>
+                    <h2 class="text-base font-semibold">Assistente</h2>
+                    <span id="assistente-modelo" class="text-xs text-faint"></span>
+                </div>
+                <button id="assistente-limpar" type="button" class="btn-soft inline-flex items-center gap-1.5">
                     <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
                     <span>Limpar</span>
                 </button>
@@ -1199,375 +1301,49 @@
 
                 <!-- Sincronização GitHub -->
                 <div class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
-                    <h3 class="text-sm font-semibold">Sincronização GitHub (Gist)</h3>
+                    <h3 class="text-sm font-semibold">Sincronização GitHub</h3>
                     <p class="text-xs leading-relaxed text-muted">
-                        Sincroniza tarefas, semanais e notas entre dispositivos via <a href="https://gist.github.com" target="_blank" rel="noopener" class="text-brand-light underline">GitHub Gist</a>.
-                        Requer <a href="https://github.com/settings/tokens/new?scopes=gist&description=StudyJournal%20Sync" target="_blank" rel="noopener" class="text-brand-light underline">Personal Access Token</a> com escopo <code>gist</code>.
+                        Faz backup automático de todos os teus dados num repositório privado no GitHub.
+                        Tudo é encriptado antes de ser enviado.
                     </p>
-
-                    <div id="github-not-configured" class="flex flex-col gap-3">
-                        <div class="grid gap-2 sm:grid-cols-2">
-                            <div class="flex flex-col gap-1.5">
-                                <label class="week-label" for="github-token">Token (PAT)</label>
-                                <input id="github-token" type="password" placeholder="ghp_..." class="field w-full text-sm" autocomplete="off">
-                            </div>
-                            <div class="flex flex-col gap-1.5">
-                                <label class="week-label" for="github-gist">Gist ID (opcional)</label>
-                                <input id="github-gist" type="text" placeholder="Deixe vazio para criar novo" class="field w-full text-sm" autocomplete="off">
-                            </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button id="github-save" type="button" class="btn-primary">
-                                <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>
-                                <span>Guardar e sincronizar</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="github-configured" hidden class="flex flex-col gap-3">
-                        <div class="flex items-center gap-2 text-xs text-muted">
-                            <span class="w-1.5 h-1.5 rounded-full bg-mint"></span>
-                            <span id="github-status">Sincronizado</span>
-                            <span id="github-last-sync" class="ml-auto"></span>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button id="github-sync-now" type="button" class="btn-soft">
-                                <svg class="icon h-3.5 w-3.5"><use href="#i-refresh"/></svg>
-                                <span>Sincronizar agora</span>
-                            </button>
-                            <button id="github-disconnect" type="button" class="btn-soft btn-soft-danger">
-                                <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
-                                <span>Desligar</span>
-                            </button>
-                        </div>
+                    <div class="mt-auto flex flex-wrap gap-2">
+                        <button id="github-sync-action" type="button" class="btn-soft">Ligar GitHub</button>
+                        <button id="github-sync-disconnect" type="button" class="btn-soft btn-soft-danger" hidden>Desligar</button>
                     </div>
                 </div>
             </div>
-
-            <p id="settings-origin" class="text-[11px] text-faint"></p>
         </section>
-
-        </main>
     </div>
 
-    <!-- Navegação em ecrãs pequenos -->
-    <nav aria-label="Navegação principal" id="nav-mobile"
-        class="fixed inset-x-0 bottom-0 z-30 flex justify-start gap-1 overflow-x-auto border-t border-line bg-surface/95 px-2 py-1.5 backdrop-blur lg:hidden">
-        <button type="button" data-view="painel" class="nav-mobile nav-mobile-active">
-            <svg class="icon h-5 w-5"><use href="#i-panel"/></svg>
-            <span>Painel</span>
-        </button>
-        <button type="button" data-view="calendario" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-calendar"/></svg>
-            <span>Calendário</span>
-        </button>
-        <button type="button" data-view="disciplinas" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-subjects"/></svg>
-            <span>Disciplinas</span>
-        </button>
-        <button type="button" data-view="estudar" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-tomato"/></svg>
-            <span>Estudar</span>
-        </button>
-        <button type="button" data-view="pdfs" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
-            <span>PDFs</span>
-        </button>
-        <button type="button" data-view="caderno" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-camera"/></svg>
-            <span>Caderno</span>
-        </button>
-        <button type="button" data-view="semanal" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-week"/></svg>
-            <span>Semanal</span>
-        </button>
-        <button type="button" data-view="exames" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-grad"/></svg>
-            <span>Exames</span>
-        </button>
-        <button type="button" data-view="assistente" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
-            <span>Assistente</span>
-        </button>
-        <button type="button" data-view="definicoes" class="nav-mobile">
-            <svg class="icon h-5 w-5"><use href="#i-settings"/></svg>
-            <span>Definições</span>
-        </button>
-    </nav>
-
-    <!-- Evento Semanal -->
-    <dialog id="week-form"
-        class="m-auto w-[min(28rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
-        <form class="flex flex-col" novalidate>
-            <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
-                <h3 id="week-form-title" class="flex-1 text-sm font-semibold">Novo compromisso</h3>
-                <button type="button" class="icon-btn" data-week-cancelar title="Fechar" aria-label="Fechar">
-                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
-                </button>
-            </div>
-
-            <div class="flex flex-col gap-3.5 p-4">
-                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Camada">
-                    <button type="button" data-week-layer="fixo" aria-pressed="true"
-                        class="week-kind">
-                        <svg class="icon h-4 w-4"><use href="#i-panel"/></svg>
-                        <span>Fixo (recorrente)</span>
-                    </button>
-                    <button type="button" data-week-layer="dinamico" aria-pressed="false"
-                        class="week-kind">
-                        <svg class="icon h-4 w-4"><use href="#i-week"/></svg>
-                        <span>Dinâmico (semanal)</span>
-                    </button>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="week-label" for="week-titulo">Título</label>
-                    <input id="week-titulo" type="text" placeholder="Ex.: Aula de Matemática A" class="field w-full" autocomplete="off">
-                </div>
-
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-dia">Dia</label>
-                        <select id="week-dia" class="field w-full">
-                            <option value="1">Segunda-feira</option>
-                            <option value="2">Terça-feira</option>
-                            <option value="3">Quarta-feira</option>
-                            <option value="4">Quinta-feira</option>
-                            <option value="5">Sexta-feira</option>
-                        </select>
-                    </div>
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-hora">Hora</label>
-                        <select id="week-hora" class="field w-full"></select>
-                    </div>
-                </div>
-
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-duracao">Duração</label>
-                        <select id="week-duracao" class="field w-full">
-                            <option value="0.25">15 minutos</option>
-                            <option value="0.5">30 minutos</option>
-                            <option value="0.75">45 minutos</option>
-                            <option value="1">1 hora</option>
-                            <option value="1.25">1 hora e 15</option>
-                            <option value="1.5">1 hora e 30</option>
-                            <option value="1.75">1 hora e 45</option>
-                            <option value="2">2 horas</option>
-                            <option value="2.5">2 horas e 30</option>
-                            <option value="3">3 horas</option>
-                            <option value="3.5">3 horas e 30</option>
-                            <option value="4">4 horas</option>
-                        </select>
-                    </div>
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-cor">Cor</label>
-                        <select id="week-cor" class="field w-full">
-                            <option value="brand">Brand</option>
-                            <option value="blue">Azul</option>
-                            <option value="green">Verde</option>
-                            <option value="yellow">Amarelo</option>
-                            <option value="cyan">Ciano</option>
-                            <option value="rose">Rosa</option>
-                            <option value="purple">Roxo</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="week-label" for="week-notas">Notas</label>
-                    <textarea id="week-notas" rows="2" placeholder="Opcional..." class="field w-full text-sm" autocomplete="off"></textarea>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-4 py-3">
-                <button type="button" class="btn-soft" data-week-cancelar>Cancelar</button>
-                <button id="week-apagar" type="button" class="btn-soft btn-soft-danger" hidden>
-                    <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
-                    <span>Apagar</span>
-                </button>
-                <button id="week-duplicar" type="button" class="btn-soft" hidden title="Duplicar: clica no horário onde queres a cópia">
-                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                    <span>Duplicar</span>
-                </button>
-                <button id="week-salvar" type="button" class="btn-primary">
-                    <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>
-                    <span>Salvar</span>
-                </button>
-            </div>
-        </form>
-    </dialog>
-
-    <!-- Toasts -->
-    <div id="toasts" role="status" aria-live="polite"
-        class="pointer-events-none fixed bottom-5 right-5 z-50 flex w-[min(22rem,calc(100vw-2.5rem))] flex-col gap-2"></div>
-
-    <!-- Adicionar PDF ou link -->
-    <dialog id="pdf-form"
-        class="m-auto w-[min(34rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
-        <form class="flex flex-col" novalidate>
-            <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
-                <h3 class="flex-1 text-sm font-semibold">Adicionar à galeria</h3>
-                <button type="button" class="icon-btn" data-pdf-cancelar title="Fechar" aria-label="Fechar">
-                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
-                </button>
-            </div>
-
-            <div class="flex flex-col gap-3.5 p-4">
-                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Tipo de documento">
-                    <button type="button" data-pdf-tipo="ficheiro" aria-pressed="true"
-                        class="pdf-kind">
-                        <svg class="icon h-4 w-4"><use href="#i-file-text"/></svg>
-                        <span>Ficheiro PDF</span>
-                    </button>
-                    <button type="button" data-pdf-tipo="link" aria-pressed="false"
-                        class="pdf-kind">
-                        <svg class="icon h-4 w-4"><use href="#i-external"/></svg>
-                        <span>Link</span>
-                    </button>
-                </div>
-
-                <div id="pdf-campo-ficheiro" class="flex flex-col gap-1.5">
-                    <label class="pdf-label" for="pdf-ficheiro">Ficheiro</label>
-                    <input id="pdf-ficheiro" type="file" accept="application/pdf,.pdf" multiple
-                        class="field w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-2.5 file:py-1 file:text-[11px] file:font-medium file:text-fg">
-                    <p class="text-[11px] text-faint">Fica guardado no browser. Aceita vários de uma vez.</p>
-                </div>
-
-                <div id="pdf-campo-remoto" hidden class="flex flex-col gap-1.5">
-                    <label class="pdf-label" for="pdf-url">Endereço do PDF</label>
-                    <input id="pdf-url" type="url" inputmode="url" placeholder="https://exemplo.com/aula.pdf"
-                        class="field w-full" autocomplete="off">
-                </div>
-
-                <div id="pdf-campo-interno" hidden class="flex flex-col gap-1.5 rounded-xl border border-line-soft bg-surface-2 p-2.5">
-                    <label class="flex items-center gap-2 text-xs font-medium text-fg">
-                        <input id="pdf-interno" type="checkbox"
-                            class="h-3.5 w-3.5 rounded border-line text-brand accent-[var(--brand)]">
-                        <span>Apontar para um PDF já adicionado</span>
-                    </label>
-                    <label class="pdf-label" for="pdf-target">Documento</label>
-                    <select id="pdf-target" class="field w-full"></select>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="pdf-label" for="pdf-titulo">Título</label>
-                    <input id="pdf-titulo" type="text" placeholder="Ex.: Lecture 4 — Escalas" class="field w-full" autocomplete="off">
-                </div>
-
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="flex flex-col gap-1.5">
-                        <label class="pdf-label" for="pdf-categoria">Categoria</label>
-                        <input id="pdf-categoria" type="text" placeholder="Ex.: 16.355J" class="field w-full" list="pdf-categorias" autocomplete="off">
-                        <datalist id="pdf-categorias"></datalist>
-                    </div>
-                    <div class="flex flex-col gap-1.5">
-                        <label class="pdf-label" for="pdf-data">Data</label>
-                        <input id="pdf-data" type="date" class="field w-full">
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-4 py-3">
-                <button type="button" class="btn-soft" data-pdf-cancelar>Cancelar</button>
-                <button id="pdf-adicionar" type="button" class="btn-primary">
-                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                    <span>Adicionar</span>
-                </button>
-            </div>
-        </form>
-    </dialog>
-
-    <!-- Visualizador de PDF -->
-    <dialog id="pdf-viewer"
-        class="m-auto w-[min(64rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
-        <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
-            <h3 id="pdf-viewer-title" class="min-w-0 flex-1 truncate text-sm font-semibold">PDF</h3>
-            <span class="hidden shrink-0 text-[10px] text-faint sm:inline">F ecrã inteiro · Esc fecha</span>
-            <a id="pdf-viewer-link" href="#" target="_blank" rel="noopener"
-                class="btn-soft hidden items-center gap-1.5 sm:inline-flex">
-                <svg class="icon h-3.5 w-3.5"><use href="#i-external"/></svg>
-                <span>Abrir noutro separador</span>
-            </a>
-            <button id="pdf-viewer-full" type="button" class="icon-btn" title="Ecrã inteiro (F)"
-                aria-label="Ecrã inteiro" aria-pressed="false">
-                <svg class="icon h-4 w-4"><use href="#i-expand"/></svg>
+    <!-- Footer / Tab Bar Mobile -->
+    <footer class="fixed bottom-0 inset-x-0 z-30 bg-surface border-t border-line px-4 py-2 sm:hidden">
+        <div class="flex justify-around items-center">
+            <button type="button" data-view="painel" class="nav-mobile nav-mobile-active" title="Painel">
+                <svg class="icon"><use href="#i-panel"/></svg>
             </button>
-            <button id="pdf-viewer-close" type="button" class="icon-btn" title="Fechar" aria-label="Fechar">
-                <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+            <button type="button" data-view="calendario" class="nav-mobile" title="Calendário">
+                <svg class="icon"><use href="#i-calendar"/></svg>
+            </button>
+            <button type="button" data-view="disciplinas" class="nav-mobile" title="Disciplinas">
+                <svg class="icon"><use href="#i-subjects"/></svg>
+            </button>
+            <button type="button" data-view="estudar" class="nav-mobile" title="Estudar">
+                <svg class="icon"><use href="#i-tomato"/></svg>
+            </button>
+            <button type="button" data-view="pdfs" class="nav-mobile" title="PDFs">
+                <svg class="icon"><use href="#i-file-text"/></svg>
+            </button>
+            <button type="button" data-view="whiteboard" class="nav-mobile" title="Whiteboard">
+                <svg class="icon"><use href="#i-whiteboard"/></svg>
+            </button>
+            <button type="button" data-view="definicoes" class="nav-mobile" title="Definições">
+                <svg class="icon"><use href="#i-settings"/></svg>
             </button>
         </div>
-        <iframe id="pdf-viewer-frame" title="Visualizar PDF" class="block h-[min(62vh,44rem)] w-full border-0 bg-surface-2"></iframe>
-        <div class="border-t border-line bg-surface-2 px-4 py-3">
-            <details id="pdf-cite-details">
-                <summary class="cursor-pointer text-xs font-semibold text-muted transition hover:text-fg">Guardar citação nas Notas do Dia</summary>
-                <div class="mt-2 flex flex-col gap-2">
-                    <textarea id="pdf-cite-text" rows="2" placeholder="Cola aqui a citação ou escreve o resumo…"
-                        class="field w-full text-xs"></textarea>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <label class="flex items-center gap-1.5 text-[11px] text-muted">p.
-                            <input id="pdf-cite-page" type="number" min="1" placeholder="—"
-                                class="field w-20 px-2 py-1.5 text-xs">
-                        </label>
-                        <div class="ml-auto flex gap-1.5">
-                            <button id="pdf-cite-quote" type="button" class="btn-soft text-xs">Guardar citação</button>
-                            <button id="pdf-cite-summary" type="button" class="btn-soft text-xs">Guardar resumo</button>
-                        </div>
-                    </div>
-                </div>
-            </details>
-        </div>
-    </dialog>
+    </footer>
 
-    <!-- Pesquisa global -->
-    <dialog id="search-palette"
-        class="m-auto w-[min(36rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
-        <div class="flex items-center gap-2 border-b border-line px-4 py-3">
-            <svg class="icon h-4 w-4 shrink-0 text-faint"><use href="#i-search"/></svg>
-            <input id="global-search" type="search" placeholder="Pesquisar notas, tarefas, dúvidas…  (Enter abre o 1º)"
-                class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-faint" autocomplete="off">
-            <button id="search-palette-close" type="button" class="icon-btn" aria-label="Fechar">
-                <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
-            </button>
-        </div>
-        <div id="search-tags" class="flex flex-wrap gap-1.5 border-b border-line px-4 py-2"></div>
-        <div id="search-results" class="max-h-[60vh] overflow-auto py-1"></div>
-        <p class="border-t border-line bg-surface-2 px-4 py-2 text-[10px] text-faint">Pesquisa sem acentos · #tag filtra por etiqueta · Enter abre o primeiro resultado</p>
-    </dialog>
-
-    <!-- Foco de revisão (flashcards) -->
-    <dialog id="review-focus"
-        class="m-auto w-[min(30rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
-        <div class="flex items-center gap-3 border-b border-line px-4 py-3">
-            <h3 class="flex-1 text-sm font-semibold">Revisão</h3>
-            <span id="review-focus-count" class="text-[11px] tabular-nums text-faint"></span>
-            <button type="button" class="icon-btn" data-review-close aria-label="Fechar">
-                <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
-            </button>
-        </div>
-        <div class="flex flex-col gap-3 p-4">
-            <p id="review-focus-title" class="text-sm font-semibold"></p>
-            <div id="review-focus-body" class="rounded-xl border border-line-soft bg-surface-2 p-3 text-sm leading-relaxed text-muted"></div>
-            <div class="flex justify-end gap-2">
-                <button type="button" class="btn-soft" data-review-close>Depois</button>
-                <button type="button" class="btn-soft" data-review-grade="0">Falhei</button>
-                <button type="button" class="btn-soft" data-review-grade="1">Quase</button>
-                <button type="button" class="btn-primary" data-review-grade="2">Lembrei</button>
-            </div>
-        </div>
-    </dialog>
-
-    <script src="src/vault.js?v=3"></script>
-    <script src="src/pdfs.js?v=4"></script>
-    <script src="src/weekly.js?v=3"></script>
-    <script src="src/github-sync.js?v=4"></script>
-    <script src="src/conta-sync.js?v=4"></script>
-    <script src="src/exames.js?v=2"></script>
-    <script src="src/notas.js?v=2"></script>
-    <script src="src/imagens.js?v=2"></script>
-    <script src="src/caderno.js?v=3"></script>
-    <script src="vendor/katex/katex.min.js"></script>
-    <script src="src/assistente.js?v=3"></script>
-    <script src="src/app.js?v=14"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
+    <script src="src/whiteboard.js"></script>
+    <script src="src/main.js"></script>
 </body>
 </html>

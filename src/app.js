@@ -793,16 +793,13 @@ function anotarResultadoPush(r) {
 let pushDebounceTimer = null;
 
 function pushDebounced(ms = 5000) {
-    try {
-        const háSync = (window.ContaSync && (window.ContaSync.configurado()
-            || (window.ContaSync.emAberto && window.ContaSync.emAberto())))
-            || (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado());
-        if (!háSync) return;
-    } catch {
-        return;
-    }
-    // Marca já como pendente: se a página fechar antes do temporizador,
-    // o próximo arranque envia o que ficou por enviar.
+    // Marca sempre como pendente, mesmo com o sync ainda não pronto:
+    // ao abrir um link de partilha, verificarAberto()/usarPartilha() ainda
+    // estão a resolver e sem isto uma nota escrita nos primeiros segundos
+    // nunca chegava a ser marcada para envio. Quando o sync ficar pronto,
+    // o flush (arranque, iniciarAuto ou o temporizador de 60s) manda o que
+    // ficou por enviar. sincronizarDispositivos() ignora sozinho se não
+    // houver sync configurado.
     marcarSyncPendente();
     clearTimeout(pushDebounceTimer);
     pushDebounceTimer = setTimeout(() => {
@@ -2153,6 +2150,10 @@ function showView(view) {
         if (active) button.setAttribute('aria-current', 'page');
         else button.removeAttribute('aria-current');
     });
+
+    if (view === 'whiteboard' && window.initWhiteboard) {
+        window.initWhiteboard();
+    }
 
     if (view === 'painel') {
         StudyStats.renderHeatmap();
@@ -3766,8 +3767,16 @@ async function init() {
         if (m && window.ContaSync && !window.ContaSync.configurado()) {
             const tk = decodeURIComponent(m[1]);
             window.ContaSync.usarPartilha(tk).then((r) => {
-                if (r && r.ok) toast('Ligado por link partilhado e sincronizado.', 'success');
-                else toast(`Link inválido: ${(r && r.error) || 'não foi possível entrar.'}`, 'error');
+                if (r && r.ok) {
+                    toast('Ligado por link partilhado e sincronizado.', 'success');
+                    // Envia já o que foi escrito antes de o link ficar pronto
+                    // (edits feitos offline ou nos primeiros segundos): sem
+                    // isto só iam com o flush de 60s — ou nunca se a página
+                    // fechasse entretanto.
+                    descarregarSyncPendente().catch(() => {});
+                } else {
+                    toast(`Link inválido: ${(r && r.error) || 'não foi possível entrar.'}`, 'error');
+                }
             }).catch(() => {});
             history.replaceState(null, '', window.location.pathname + window.location.search);
         }
@@ -3787,7 +3796,10 @@ async function init() {
             puxarComRepeticao();
         }).catch(() => {});
     }
-    // Envia o que ficou pendente sem rede
+    // Envia o que ficou pendente sem rede — já depois de o link de partilha
+    // ter sido processado (usarPartilha valida o token e faz o primeiro
+    // pull): sem reordenar isto, as edições feitas offline antes de abrir
+    // o link só iam com o flush de 60s (ou nunca, se a página fechasse).
     descarregarSyncPendente().catch(() => {});
     pintarSyncSinal();
     setTimeout(verificarVersaoWeb, 30000);
