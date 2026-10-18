@@ -107,7 +107,8 @@ function initWhiteboard() {
         height: height,
         backgroundColor: '#ffffff',
         isDrawingMode: false,
-        preserveObjectStacking: true
+        preserveObjectStacking: true,
+        stopContextMenu: true
     });
 
     createGrid();
@@ -241,8 +242,6 @@ function setupTools() {
         const size = Number(fontSizePicker?.value || 24);
 
         if (currentTool === 'text') {
-            // Switching back to IText for "Scale-to-Resize" behavior
-            // This allows the user to change the font size by dragging the corners
             const text = new fabric.IText('Clique para escrever...', {
                 left: pointer.x,
                 top: pointer.y,
@@ -269,6 +268,7 @@ function setupTools() {
             canvas.setActiveObject(circle);
             setTool('select');
         }
+        canvas.renderAll();
         saveHistory();
     });
 
