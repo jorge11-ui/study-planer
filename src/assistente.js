@@ -1,7 +1,3 @@
-/* Assistente de estudo (LLM local via proxy do servidor).
-   O chat corre no Ollama do portátil — nada vai para a cloud. Sem Ollama
-   (ex.: link oficial sem túnel), a vista explica em vez de falhar. */
-
 window.Assistente = (() => {
     const CHAVE_HIST = 'study-journal-assistente-hist';
     const MAX_HIST = 100;

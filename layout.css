@@ -1,0 +1,441 @@
+/* Layout editorial: caderno de estudo com navegação lateral. */
+:root {
+    color-scheme: light;
+    --color-canvas: #eeeae1;
+    --color-surface: #faf8f2;
+    --color-surface-2: #f0ede5;
+    --color-surface-3: #e7e2d8;
+    --color-line: #d9d3c7;
+    --color-line-soft: #c9c1b3;
+    --color-fg: #292a25;
+    --color-muted: #6d6d62;
+    --color-faint: #929084;
+    --color-brand: #a24f36;
+    --color-brand-dark: #843d2b;
+    --color-brand-light: #bd7654;
+    --color-mint: #5e8067;
+    --color-mint-dark: #48684f;
+    --color-heatmap-0: #e7e1d6;
+    --color-heatmap-1: #d2e0d0;
+    --color-heatmap-2: #aac6a7;
+    --color-heatmap-3: #7ea47e;
+    --color-heatmap-4: #557d5a;
+    --shadow-card: 0 2px 8px rgba(48, 43, 35, .035);
+    --shadow-pop: 0 16px 40px rgba(48, 43, 35, .16);
+}
+
+html { font-family: Inter, "Segoe UI", Arial, sans-serif; font-size: 16px; }
+body {
+    min-height: 100vh;
+    overflow-x: hidden;
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+}
+.aurora { display: none !important; }
+
+/* Cabeçalho com a data e ferramentas no topo; marca alinhada com a barra lateral. */
+body > header.journal-header {
+    position: sticky;
+    z-index: 40;
+    top: 0;
+    height: 72px;
+    border-bottom: 1px solid var(--color-line);
+    background: rgba(250, 248, 242, .97);
+    box-shadow: none;
+}
+#app-header-inner {
+    width: 100%;
+    height: 72px;
+    padding: 0 36px 0 270px;
+}
+#app-header-inner > div:first-child { display: none; }
+#app-header-inner > div:last-child { gap: 10px; }
+#current-date, #current-date-short {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    font-weight: 500;
+}
+.journal-header .bg-surface-2 {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+#global-search-btn, .journal-header button[aria-label="Perfil"] {
+    border: 1px solid var(--color-line);
+    border-radius: 50%;
+    background: transparent;
+}
+.journal-header button:hover { color: var(--color-brand); }
+
+/* A navegação passa da faixa superior para um índice vertical persistente. */
+#nav-rail.journal-nav {
+    position: fixed;
+    z-index: 50;
+    inset: 0 auto 0 0;
+    display: flex;
+    width: 238px;
+    min-height: 100vh;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    margin: 0;
+    padding: 27px 17px 24px;
+    border: 0;
+    border-right: 1px solid var(--color-line);
+    border-radius: 0;
+    background: #f7f4ed;
+    box-shadow: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-soft) transparent;
+}
+#nav-rail.journal-nav::before {
+    content: "STUDYJOURNAL";
+    display: block;
+    margin: 1px 10px 27px;
+    padding: 0 0 20px;
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-brand);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 17px;
+    letter-spacing: -.035em;
+}
+#nav-rail.journal-nav::after {
+    content: "CADERNO DE ESTUDO";
+    order: 20;
+    margin: auto 10px 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--color-line);
+    color: var(--color-faint);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: .14em;
+}
+#nav-rail .nav-item-wide {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    height: 43px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 12px;
+    padding: 0 11px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--color-muted);
+    font-size: 13px;
+    font-weight: 450;
+    text-align: left;
+    white-space: nowrap;
+}
+#nav-rail .nav-item-wide .icon { width: 17px; height: 17px; opacity: .82; }
+#nav-rail .nav-item-wide:hover { background: #eee9df; color: var(--color-fg); }
+#nav-rail .nav-item-active {
+    border-color: #e1d3c6;
+    background: #eee5da;
+    color: var(--color-brand-dark);
+    box-shadow: none;
+    font-weight: 650;
+}
+#nav-rail .nav-item-active .icon { opacity: 1; }
+
+/* A página abre espaço à esquerda e deixa as vistas respirar. */
+.app-shell {
+    width: min(calc(100% - max(238px, calc((100vw - 1440px) / 2 + 238px))), 1440px);
+    min-height: calc(100vh - 72px);
+    margin: 0 auto 0 max(238px, calc((100vw - 1440px) / 2 + 238px));
+    padding: 40px clamp(24px, 4vw, 64px) 72px;
+}
+.app-shell > main { width: 100%; gap: 26px; }
+#view-painel:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(265px, .78fr);
+    align-items: start;
+    gap: 27px;
+}
+#view-painel > section:first-child {
+    min-width: 0;
+    padding: 27px 30px 24px;
+    border: 1px solid var(--color-line);
+    border-top: 3px solid var(--color-brand);
+    background: #fbf9f4;
+    box-shadow: var(--shadow-card);
+}
+#view-painel > section:last-child { width: auto; min-width: 0; gap: 14px; }
+#view-painel > section:last-child > div { padding: 19px 20px; }
+#view-painel h2, [data-panel] > header h2, #notes-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: -.025em;
+}
+#view-painel #card-sessao { background: #e9eee4; border-color: #d1ddca; }
+#view-painel #session-time, #view-painel #streak-num {
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+}
+#view-painel #journal-text, #view-painel #notes-preview {
+    border-color: #e5ded2;
+    border-radius: 2px;
+    background-color: #fffefa;
+    background-image: linear-gradient(to bottom, transparent 31px, #eee9df 32px);
+    background-size: 100% 32px;
+    color: #39372f;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 15px;
+    line-height: 2;
+}
+#view-painel [role="toolbar"] { border-color: var(--color-line); border-radius: 4px; background: #f3efe7; }
+#view-painel .progress-label, #view-painel #progress-label { color: var(--color-muted); }
+
+/* Componentes partilhados por todas as secções. */
+.glass, .glass-strong, .glass-subtle, .glass-subtle-strong {
+    border-color: var(--color-line) !important;
+    border-radius: 6px !important;
+    background: var(--color-surface) !important;
+    box-shadow: var(--shadow-card) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+.shadow-card { box-shadow: var(--shadow-card) !important; }
+.shadow-pop { box-shadow: 0 16px 40px rgba(48, 43, 35, .16) !important; }
+.field {
+    border-color: var(--color-line-soft) !important;
+    border-radius: 4px !important;
+    background: #fffdf8 !important;
+    color: var(--color-fg) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+}
+.btn-primary, .btn-mint { border-radius: 4px; background: var(--color-brand); color: #fffaf4; box-shadow: none; }
+.btn-primary:hover, .btn-mint:hover { background: var(--color-brand-dark); box-shadow: none; }
+.btn-secondary, .btn-soft, .btn-ghost, .icon-btn { border-radius: 4px; box-shadow: none; }
+.rounded-2xl, .rounded-xl { border-radius: 6px !important; }
+.rounded-full { border-radius: 999px; }
+.legacy-mobile-nav { display: none !important; }
+
+@media (max-width: 900px) {
+    #nav-rail.journal-nav { width: 204px; padding-inline: 12px; }
+    #app-header-inner { padding-left: 228px; }
+    .app-shell { width: calc(100% - 204px); margin-left: 204px; padding-inline: 22px; }
+    #view-painel:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+    #view-painel > section:last-child { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #view-painel > section:last-child > div { min-width: 0; }
+}
+@media (max-width: 639px) {
+    body > header.journal-header { height: 62px; }
+    #app-header-inner { height: 62px; padding: 0 12px 0 14px; }
+    #app-header-inner > div:last-child { width: 100%; justify-content: space-between; }
+    #nav-rail.journal-nav { display: none; }
+    .legacy-mobile-nav {
+        display: block !important;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        border-color: #292929;
+        background: rgba(16, 16, 16, .97);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, .22);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+    }
+    .mobile-tab-scroll {
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .mobile-tab-scroll::-webkit-scrollbar { display: none; }
+    .mobile-tab-scroll .nav-mobile {
+        min-width: 54px;
+        min-height: 52px;
+        flex: 1 0 54px;
+        justify-content: center;
+        gap: 3px;
+        padding: 5px 3px 4px;
+        border-radius: 11px;
+        font-size: 9px;
+    }
+    .mobile-tab-scroll .nav-mobile .icon { width: 18px; height: 18px; }
+    .mobile-tab-scroll .nav-mobile > span { line-height: 1.1; }
+    .mobile-tab-scroll .nav-mobile-active {
+        background: #242424;
+        color: #f0f0f0;
+        box-shadow: inset 0 -2px 0 #d0d0d0;
+    }
+    .app-shell { width: 100%; min-height: calc(100vh - 62px); margin: 0; padding: 16px 13px calc(82px + env(safe-area-inset-bottom)); }
+    #view-painel:not([hidden]) { gap: 13px; }
+    #view-painel > section:first-child { padding: 18px 15px; }
+    #view-painel > section:last-child { grid-template-columns: minmax(0, 1fr); gap: 11px; }
+    #view-painel > section:last-child > div { padding: 16px; }
+    #view-painel #journal-text, #view-painel #notes-preview { min-height: 280px; }
+    #view-painel > section:first-child,
+    #view-painel > section:last-child > div,
+    #view-semanal, #view-calendario, #view-disciplinas,
+    #view-estudar, #view-pdfs, #view-exames, #view-whiteboard,
+    #view-caderno, #view-assistente, #view-definicoes {
+        border-radius: 16px !important;
+    }
+    #view-painel > section:last-child > div { overflow-wrap: anywhere; }
+    #view-exames [data-exame-panel] { padding: 14px !important; }
+    #heatmap { gap: 3px; }
+    #heatmap .heatmap-day { min-height: 32px; border-radius: 9px; }
+}
+@media (max-width: 420px) {
+    #current-date { display: none; }
+    #global-search-btn { width: 32px; height: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Modo escuro e cantos mais suaves. */
+:root {
+    color-scheme: dark;
+    --color-canvas: #070707;
+    --color-surface: #101010;
+    --color-surface-2: #181818;
+    --color-surface-3: #222222;
+    --color-line: #2d2d2d;
+    --color-line-soft: #3a3a3a;
+    --color-fg: #f0f0f0;
+    --color-muted: #aaaaaa;
+    --color-faint: #777777;
+    --color-brand: #c9c9c9;
+    --color-brand-dark: #a8a8a8;
+    --color-brand-light: #ededed;
+    --color-mint: #bdbdbd;
+    --color-mint-dark: #999999;
+    --color-heatmap-0: #080808;
+    --color-heatmap-1: #0e4429;
+    --color-heatmap-2: #006d32;
+    --color-heatmap-3: #26a641;
+    --color-heatmap-4: #39d353;
+    --shadow-card: 0 3px 14px rgba(0, 0, 0, .24);
+    --shadow-pop: 0 16px 40px rgba(0, 0, 0, .5);
+}
+body > header.journal-header { background: rgba(16, 16, 16, .98); }
+#nav-rail.journal-nav { background: #0c0c0c; }
+#nav-rail .nav-item-wide:hover { background: #181818; }
+#nav-rail .nav-item-active { border-color: #454545; background: #252525; color: #f0f0f0; }
+#view-painel > section:first-child { background: #101010; }
+#view-painel #card-sessao { background: #191919 !important; border-color: #383838; }
+#view-painel #journal-text, #view-painel #notes-preview {
+    border-color: #353535;
+    background-color: #141414;
+    background-image: linear-gradient(to bottom, transparent 31px, #252525 32px);
+    color: #e3e0d5;
+}
+#view-painel [role="toolbar"] { background: #181818; }
+.field { background: #181818 !important; }
+.btn-primary, .btn-mint { border-radius: 10px; background: var(--color-brand-dark); color: #fff8f0; }
+.btn-secondary, .btn-soft, .btn-ghost, .icon-btn { border-radius: 9px; }
+.glass, .glass-strong, .glass-subtle, .glass-subtle-strong,
+.rounded-2xl, .rounded-xl { border-radius: 14px !important; }
+#nav-rail .nav-item-wide { border-radius: 10px; }
+#view-painel > section:first-child { border-radius: 16px; }
+.field { border-radius: 9px !important; }
+
+/* Exames: grelhas que encolhem, formulários empilhados e tabela em cartões no telemóvel. */
+#view-exames, #view-exames > *, #view-exames [role="tabpanel"],
+#view-exames form, #view-exames article { min-width: 0; max-width: 100%; }
+#view-exames { width: 100%; overflow: hidden; }
+#view-exames > header { align-items: flex-start; }
+#view-exames > header > div:first-child { min-width: 0; }
+#view-exames > header > div:last-child { flex-wrap: wrap; max-width: 100%; }
+#view-exames > nav[role="tablist"] { width: fit-content; max-width: 100%; border-radius: 13px !important; }
+#view-exames .exame-tab { min-width: 0; padding-inline: 12px; }
+#view-exames [data-exame-panel] { padding: clamp(14px, 2.5vw, 24px); }
+#view-exames #exames-foco-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+#view-exames form { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)) !important; }
+#view-exames form > * { min-width: 0; }
+#view-exames input, #view-exames select, #view-exames textarea { min-width: 0; max-width: 100%; }
+#view-exames #exames-track-filters { margin-left: 0; }
+#view-exames [data-exame-panel="recursos"] > div:last-child,
+#view-exames [data-exame-panel="duvidas"] > div:last-child { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+#view-exames .overflow-x-auto { max-width: 100%; }
+#view-exames table { min-width: 700px; }
+
+/* Quadro: ferramentas flutuantes no próprio quadro, com controlos roláveis. */
+#view-whiteboard { position: relative; width: 100%; min-width: 0; overflow: hidden; }
+#view-whiteboard #wb-ui-layer { position: absolute; inset: 0; }
+#view-whiteboard .wb-toolbar,
+#view-whiteboard .wb-zoom-controls,
+#view-whiteboard .wb-properties-panel {
+    position: absolute;
+    z-index: 2;
+    max-width: calc(100% - 24px);
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    background: rgba(16, 16, 16, .98);
+    box-shadow: var(--shadow-card);
+    pointer-events: auto;
+}
+#view-whiteboard .wb-toolbar { top: 12px; left: 12px; overflow-x: auto; }
+#view-whiteboard .wb-toolbar > div { width: max-content; padding: 5px; }
+#view-whiteboard .wb-toolbar button,
+#view-whiteboard .wb-zoom-controls button { flex: 0 0 auto; }
+#view-whiteboard .wb-zoom-controls { bottom: 14px; left: 14px; display: flex; align-items: center; gap: 2px; padding: 4px; }
+#view-whiteboard .wb-properties-panel { top: 62px !important; right: 12px !important; width: min(260px, calc(100% - 24px)); max-height: calc(100% - 76px); overflow-y: auto; padding: 14px; }
+#view-whiteboard > .relative.flex-1 { min-width: 0; min-height: clamp(360px, 70vh, 760px) !important; border-radius: 15px !important; }
+#view-whiteboard #wb-canvas { display: block; max-width: 100%; }
+#view-whiteboard > .flex.justify-between { align-items: center; gap: 12px; min-width: 0; }
+#view-whiteboard > .flex.justify-between > p { min-width: 0; }
+#view-whiteboard > .flex.justify-between > div { flex: 0 0 auto; }
+@media (max-width: 639px) {
+    #view-exames { gap: 14px; }
+    #view-exames > header { padding: 14px !important; }
+    #view-exames > header h2 { font-size: 17px; }
+    #view-exames > nav[role="tablist"] { width: 100%; overflow-x: auto; }
+    #view-exames .exame-tab { flex: 0 0 auto; padding-inline: 10px; }
+    #view-exames #exames-track-filters { width: 100%; }
+    #view-exames #exames-track-filters button { flex: 1 1 auto; }
+    #view-exames table { min-width: 0; }
+    #view-exames table thead { display: none; }
+    #view-exames table, #view-exames table tbody { display: block; width: 100%; }
+    #view-exames table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 12px; border-bottom: 1px solid var(--color-line); }
+    #view-exames table tbody td { min-width: 0; overflow-wrap: anywhere; padding: 3px !important; text-align: left !important; }
+    #view-exames table tbody td::before { content: attr(data-label); display: block; margin-bottom: 2px; color: var(--color-faint); font-size: 9px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    #view-exames table tbody td:nth-child(2) { grid-column: 1 / -1; font-weight: 600; color: var(--color-fg); }
+    #view-exames table tbody td:nth-child(3) { grid-column: 1 / -1; }
+    #view-exames table tbody td:last-child { text-align: right !important; }
+    #exames-track-empty { padding: 16px; }
+    #view-whiteboard { padding: 12px !important; }
+    #view-whiteboard > .relative.flex-1 { min-height: 58vh !important; }
+    #view-whiteboard .wb-toolbar { top: 8px; left: 8px; max-width: calc(100% - 16px); }
+    #view-whiteboard .wb-toolbar button { width: 34px; height: 34px; }
+    #view-whiteboard .wb-zoom-controls { bottom: 8px; left: 8px; }
+    #view-whiteboard > .flex.justify-between { align-items: stretch; flex-direction: column; }
+    #view-whiteboard > .flex.justify-between > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #view-whiteboard > .flex.justify-between button { justify-content: center; }
+}
+
+/* Painel compacto no telemóvel: notas e cartões abaixo, com o heatmap mais baixo. */
+@media (max-width: 639px) {
+    .app-shell > main { gap: 14px; }
+    #view-painel:not([hidden]) { gap: 10px; }
+    #view-painel > section:first-child { padding: 14px 12px; }
+    #view-painel > section:first-child > header { margin-bottom: 10px; }
+    #view-painel #journal-text,
+    #view-painel #notes-preview {
+        height: 190px;
+        min-height: 160px !important;
+    }
+    #view-painel > section:last-child {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    #view-painel > section:last-child > div { padding: 12px; }
+    #view-painel #card-heatmap { padding: 12px; }
+    #heatmap .heatmap-day {
+        width: 100%;
+        height: 30px;
+        min-height: 0;
+        aspect-ratio: auto;
+        border-radius: 8px;
+    }
+    #heatmap-summary { margin-bottom: 8px; }
+    #card-heatmap > p:last-child { font-size: 9px; }
+}

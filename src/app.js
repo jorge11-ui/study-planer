@@ -40,6 +40,7 @@ const els = {
     vaultStatus: document.getElementById('settings-vault-status'),
     vaultAction: document.getElementById('settings-vault-action'),
     vaultDisconnect: document.getElementById('settings-vault-disconnect'),
+    saveAllComputer: document.getElementById('settings-save-all'),
     stats: document.getElementById('settings-stats'),
     origin: document.getElementById('settings-origin'),
     exportData: document.getElementById('export-data'),
@@ -452,7 +453,7 @@ const StudySessions = {
     }
 };
 
-const HEATMAP_NIVEIS = [150, 90, 40];
+const HEATMAP_NIVEIS = { medio: 40, alto: 90, maximo: 150 };
 
 /* O heatmap mede tempo de estudo (sessões do timer). Tarefas concluídas
    aparecem no tooltip mas não pintam o dia — sem "minutos fantasma".
@@ -460,10 +461,21 @@ const HEATMAP_NIVEIS = [150, 90, 40];
 function lerEsforcoDoDia(date) {
     const key = dayKey(date);
     const tasks = read(`study-journal-tasks-${key}`, []);
-    const concluidas = tasks.filter((t) => t.done).length;
+    const concluidas = Array.isArray(tasks) ? tasks.filter((t) => t && t.done).length : 0;
     const sessoes = StudySessions.obterDoDia(date);
-    const sessaoTotal = Object.values(sessoes).reduce((a, b) => a + b, 0);
+    const sessaoTotal = Object.values(sessoes).reduce((total, valor) => {
+        const minutos = Math.floor(Number(valor));
+        return total + (Number.isFinite(minutos) && minutos > 0 ? minutos : 0);
+    }, 0);
     return { foco: 0, concluidas, sessoes: sessaoTotal, total: sessaoTotal };
+}
+
+function nivelHeatmap(minutos) {
+    if (!Number.isFinite(minutos) || minutos <= 0) return 0;
+    if (minutos >= HEATMAP_NIVEIS.maximo) return 4;
+    if (minutos >= HEATMAP_NIVEIS.alto) return 3;
+    if (minutos >= HEATMAP_NIVEIS.medio) return 2;
+    return 1;
 }
 
 /* ── Sequência de estudos (streak) ──────────────────────── */
@@ -482,7 +494,8 @@ function diaComAtividade(date) {
 /* Dias consecutivos com estudo até hoje (se hoje ainda não tem
    atividade, começa ontem) + recorde na janela visível. */
 function calcularSequencia() {
-    const cursor = new Date(today);
+    const hoje = startOfDay(new Date());
+    const cursor = new Date(hoje);
     if (!diaComAtividade(cursor)) cursor.setDate(cursor.getDate() - 1);
 
     let dias = 0;
@@ -495,7 +508,7 @@ function calcularSequencia() {
 
     let recorde = dias, seq = 0;
     for (let i = 0; i < STREAK_MAX_DIAS; i += 1) {
-        const d = new Date(today);
+        const d = new Date(hoje);
         d.setDate(d.getDate() - i);
         if (diaComAtividade(d)) {
             seq += 1;
@@ -531,7 +544,8 @@ const StudyStats = {
         if (!grid) return;
 
         // Não deixa avançar além do mês atual
-        const mesAtual = new Date(today.getFullYear(), today.getMonth(), 1);
+        const hoje = startOfDay(new Date());
+        const mesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
         if (heatmapCursor > mesAtual) heatmapCursor = new Date(mesAtual);
 
         const monthEl = document.getElementById('heatmap-month');
@@ -557,21 +571,20 @@ const StudyStats = {
         // Semana começa à segunda
         const offset = (new Date(ano, mes, 1).getDay() + 6) % 7;
         const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+        let diasComEstudo = 0;
+        let minutosNoMes = 0;
 
         for (let i = 0; i < offset; i += 1) grid.append(document.createElement('div'));
 
         for (let dia = 1; dia <= diasNoMes; dia += 1) {
             const data = new Date(ano, mes, dia);
-            const futuro = startOfDay(data) > today;
+            const futuro = startOfDay(data) > hoje;
             const esforco = futuro ? { foco: 0, concluidas: 0, sessoes: 0, total: 0 } : lerEsforcoDoDia(data);
-            const score = esforco.total;
-
-            let nivel = 0;
-            if (!futuro) {
-                if (score >= HEATMAP_NIVEIS[0]) nivel = 4;
-                else if (score >= HEATMAP_NIVEIS[1]) nivel = 3;
-                else if (score >= HEATMAP_NIVEIS[2]) nivel = 2;
-                else if (score > 0) nivel = 1;
+            const score = Math.max(0, esforco.total);
+            const nivel = futuro ? 0 : nivelHeatmap(score);
+            if (!futuro && score > 0) {
+                diasComEstudo += 1;
+                minutosNoMes += score;
             }
 
             const cell = document.createElement('button');
@@ -579,13 +592,12 @@ const StudyStats = {
             cell.className = 'heatmap-day';
             cell.dataset.n = String(nivel);
             cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
-            // "foco" (pomodoro legado) + "sessão" (timer atual) são ambos tempo
-            // de estudo — mostrar somados para não parecer 0 com sessão feita.
-            const estudoMin = (esforco.foco || 0) + (esforco.sessoes || 0);
+            const estudoMin = score;
             const partes = [`${estudoMin} min de estudo`];
             if (esforco.concluidas) partes.push(`${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}`);
             cell.title = `${data.toLocaleDateString('pt-PT')}: ${partes.join(' · ')}`;
-            if (startOfDay(data).getTime() === today.getTime()) cell.dataset.hoje = 'true';
+            if (startOfDay(data).getTime() === hoje.getTime()) cell.dataset.hoje = 'true';
+            cell.setAttribute('aria-label', `Abrir dia ${data.toLocaleDateString('pt-PT')}: ${estudoMin} minutos de estudo${esforco.concluidas ? `, ${esforco.concluidas} tarefas concluídas` : ''}`);
 
             const num = document.createElement('span');
             num.textContent = String(dia);
@@ -594,11 +606,17 @@ const StudyStats = {
             if (futuro) {
                 cell.disabled = true;
             } else {
-                cell.setAttribute('aria-label', `Abrir dia ${data.toLocaleDateString('pt-PT')}`);
                 cell.addEventListener('click', () => openDay(data));
             }
 
             grid.append(cell);
+        }
+
+        const resumo = document.getElementById('heatmap-summary');
+        if (resumo) {
+            resumo.textContent = minutosNoMes > 0
+                ? `${diasComEstudo} ${diasComEstudo === 1 ? 'dia' : 'dias'} com estudo · ${StudySessions.formatar(minutosNoMes)} no mês`
+                : 'Sem tempo de estudo registado neste mês';
         }
     },
 
@@ -688,6 +706,11 @@ function startOfDay(date) {
 function dayKey(date) {
     const pad = (n) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function selectDate(date) {
+    selected = startOfDay(date);
+    localStorage.setItem('study-journal-selected-date', dayKey(selected));
 }
 
 const today = startOfDay(new Date());
@@ -1035,7 +1058,7 @@ async function syncTasks() {
         // Sem vault neste aparelho (ex.: telemóvel) é normal e não avisa:
         // o sync por conta já leva as tarefas ao outro lado. Só avisa em
         // erro real — aí sim, ficam só neste browser até o vault voltar.
-        toast('Não foi possível gravar no vault — as tarefas ficaram só neste browser.', 'warn');
+        toast('Não foi possível gravar na pasta local — as tarefas ficaram só neste browser.', 'warn');
     }
     write(tasksKey(), tasks);
 }
@@ -1901,10 +1924,10 @@ function renderEstudarView() {
 /* ── Vault (Obsidian) ─────────────────────────────────── */
 
 const VAULT_LABELS = {
-    incompativel: 'Vault: precisa de localhost',
-    desligado: 'Ligar vault ao Obsidian',
-    permissao: 'Reconectar vault',
-    ligado: 'Vault ligado',
+    incompativel: 'Precisa de localhost ou HTTPS',
+    desligado: 'Pasta local por ligar',
+    permissao: 'Permissão da pasta necessária',
+    ligado: 'Pasta local ligada',
 };
 
 const VAULT_DOTS = {
@@ -1948,7 +1971,7 @@ async function ensureVault() {
             return true;
         }
         if (result.reason === 'cancelado') return false;
-        toast('Não foi possível aceder ao vault.', 'error');
+        toast('Não foi possível aceder à pasta local.', 'error');
         return false;
     }
 
@@ -1965,11 +1988,11 @@ function showConflict({ name, path, current }, retry) {
 
     const title = document.createElement('h3');
     title.className = 'text-base font-semibold';
-    title.textContent = 'O Obsidian alterou este ficheiro';
+    title.textContent = 'O ficheiro local foi alterado';
 
     const message = document.createElement('p');
     message.className = 'text-sm text-muted';
-    message.textContent = `O conteúdo de ${path} mudou desde o último guardado aqui. Podes trazer a versão do Obsidian para o editor, ou guardar a daqui por cima dela.`;
+    message.textContent = `O conteúdo de ${path} mudou desde o último guardado aqui. Podes trazer a versão da pasta local para o editor, ou guardar a daqui por cima dela.`;
 
     const preview = document.createElement('pre');
     preview.className = 'scroll-area max-h-56 overflow-auto rounded-xl border border-line bg-surface-2 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted';
@@ -2043,7 +2066,7 @@ async function persistToVault(force = false) {
         return;
     }
 
-    toast('Erro ao escrever no vault.', 'error');
+    toast('Erro ao escrever na pasta local.', 'error');
 }
 
 /* ── Importação do Obsidian ───────────────────────────── */
@@ -2085,7 +2108,7 @@ async function syncDayFromVault() {
         commitNotes();
         await Vault.mark(`${key}.md`, result.content);
 
-        toast('Notas actualizadas a partir do Obsidian.', 'info');
+        toast('Notas actualizadas a partir da pasta local.', 'info');
     } catch (e) {
         console.error('Erro na sync automática:', e);
     }
@@ -2112,7 +2135,7 @@ async function adoptVaultVersion(name, content) {
     commitNotes();
     await Vault.mark(name, content);
 
-    toast('A usar a versão do Obsidian.', 'success');
+    toast('A usar a versão da pasta local.', 'success');
 }
 
 /* ── Navegação de vistas ──────────────────────────────── */
@@ -2128,6 +2151,7 @@ const VIEW_LABELS = {
     semanal: 'Semanal',
     exames: 'Exames Nacionais',
     definicoes: 'Definições',
+    whiteboard: 'Quadro Branco',
 };
 
 const WEEKDAYS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
@@ -2317,7 +2341,7 @@ function renderCalendar() {
         // No telemóvel abre logo o diálogo (ver + adicionar tarefas).
         cell.addEventListener('click', (e) => {
             if (e.target.closest('.calendar-task') || e.target.closest('.cal-classic-add')) return;
-            selected = startOfDay(date);
+            selectDate(date);
             renderCalendar();
             try {
                 if (window.matchMedia?.('(max-width: 639px)').matches) openDay(date);
@@ -2873,7 +2897,7 @@ function askConfirm({ title, message, confirmLabel = 'Confirmar' }) {
 function renderSettings() {
     const state = lastVaultState;
     els.vaultStatus.textContent = `Estado: ${VAULT_LABELS[state]}`;
-    els.vaultAction.textContent = state === 'ligado' ? 'Reconfirmar acesso' : 'Ligar vault';
+    els.vaultAction.textContent = state === 'ligado' ? 'Reconfirmar acesso' : 'Escolher pasta';
     els.vaultDisconnect.hidden = state !== 'ligado';
 
     const stats = allTimeStats();
@@ -2886,6 +2910,60 @@ function renderSettings() {
     els.stats.textContent = `${notes} ${notes === 1 ? 'dia' : 'dias'} com notas · ${stats.tasks} tarefas guardadas neste browser${estudoTxt}.`;
 
     els.origin.textContent = `Origem: ${window.location.origin} — os dados vivem no localStorage desta origem. · v${APP_VERSION}`;
+}
+
+async function guardarDadosNoComputador() {
+    const notas = [];
+    const tarefas = {};
+    try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i) || '';
+            const nota = /^study-journal-notes-(\d{4}-\d{2}-\d{2})$/.exec(key);
+            if (nota) notas.push([nota[1], read(key, '')]);
+            const task = /^study-journal-tasks-(\d{4}-\d{2}-\d{2})$/.exec(key);
+            if (task) tarefas[task[1]] = read(key, []);
+        }
+    } catch { /* guarda o que o browser permitir */ }
+
+    let notasGuardadas = 0;
+    let conflitos = 0;
+    for (const [dia, texto] of notas) {
+        if (!String(texto || '').trim()) continue;
+        const content = window.Imagens
+            ? await Imagens.expandirParaVault(texto).catch(() => texto)
+            : texto;
+        const resultado = await Vault.save(`${dia}.md`, content);
+        if (resultado.ok) notasGuardadas += 1;
+        else if (resultado.reason === 'conflito') conflitos += 1;
+    }
+
+    if (Object.keys(tarefas).length) {
+        let atuais = {};
+        const lidas = await Vault.load('tasks.json');
+        if (lidas.ok && lidas.existe) {
+            try {
+                const parsed = JSON.parse(lidas.content);
+                if (parsed && !Array.isArray(parsed) && typeof parsed === 'object') atuais = parsed;
+            } catch { /* cria mapa novo */ }
+        }
+        const resultado = await Vault.save('tasks.json', JSON.stringify({ ...atuais, ...tarefas }, null, 2));
+        if (!resultado.ok && resultado.reason === 'conflito') conflitos += 1;
+    }
+
+    const pdfs = window.Pdfs?.docs?.() || [];
+    if (pdfs.length) {
+        let atuais = [];
+        const lidas = await Vault.load('pdfs.json');
+        if (lidas.ok && lidas.existe) {
+            try { atuais = JSON.parse(lidas.content) || []; } catch { atuais = []; }
+        }
+        const unicos = new Map([...(Array.isArray(atuais) ? atuais : []), ...pdfs].map((pdf) => [pdf.id, pdf]));
+        const resultado = await Vault.save('pdfs.json', JSON.stringify([...unicos.values()], null, 2));
+        if (!resultado.ok && resultado.reason === 'conflito') conflitos += 1;
+    }
+
+    const ficheiros = await window.Pdfs?.guardarNoComputador?.() || { guardados: 0, total: 0, indisponiveis: 0 };
+    return { notasGuardadas, conflitos, ficheiros };
 }
 
 function exportData() {
@@ -3033,7 +3111,7 @@ async function importData(file) {
 async function clearSelectedDay() {
     const ok = await askConfirm({
         title: 'Limpar o dia selecionado?',
-        message: `As notas e tarefas de ${selected.toLocaleDateString('pt-PT')} são apagadas deste browser. Não toca no vault.`,
+        message: `As notas e tarefas de ${selected.toLocaleDateString('pt-PT')} são apagadas deste browser. A cópia na pasta local não é alterada.`,
         confirmLabel: 'Limpar',
     });
 
@@ -3144,7 +3222,7 @@ async function shiftDay(delta) {
     next.setDate(next.getDate() + delta);
 
     commitNotes();
-    selected = next;
+    selectDate(next);
     await loadDay();
 }
 
@@ -3154,7 +3232,7 @@ async function abrirDiaChave(chave) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(chave || '');
     if (!m) return;
     commitNotes();
-    selected = startOfDay(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    selectDate(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
     showView('painel');
     await loadDay();
     if (window.NotasPro) window.NotasPro.renderTagsNota();
@@ -3353,7 +3431,7 @@ function bind() {
         if (state === 'ligado') {
             toast('Sincronizando...', 'info');
             await syncDayFromVault();
-            toast(`Atualizado do vault!`, 'success');
+            toast('Atualizado da pasta local!', 'success');
             return;
         }
         await ensureVault();
@@ -3371,7 +3449,7 @@ function bind() {
 
     els.vaultDisconnect.addEventListener('click', async () => {
         const ok = await askConfirm({
-            title: 'Desligar o vault?',
+            title: 'Desligar a pasta local?',
             message: 'O browser deixa de guardar o acesso à pasta. Os ficheiros já escritos não são tocados.',
             confirmLabel: 'Desligar',
         });
@@ -3380,7 +3458,32 @@ function bind() {
 
         await Vault.disconnect();
         renderVault('desligado');
-        toast('Acesso ao vault removido.', 'info');
+        toast('Pasta local desligada.', 'info');
+    });
+
+    els.saveAllComputer.addEventListener('click', async () => {
+        if (!(await Vault.hasLocalFolder())) {
+            const result = await Vault.connect();
+            if (!result.ok) {
+                toast(result.reason === 'cancelado' ? 'Escolha de pasta cancelada.' : 'Escolhe uma pasta local para guardar os PDFs.', 'warn');
+                return;
+            }
+        } else {
+            const permission = await Vault.requestPermission();
+            if (!permission.ok) {
+                toast('Concede permissão à pasta local e tenta novamente.', 'warn');
+                return;
+            }
+        }
+        if (!(await Vault.hasLocalFolder())) {
+            toast('A escolha de pasta local precisa de localhost ou HTTPS num browser compatível.', 'warn');
+            return;
+        }
+        renderVault(await Vault.status());
+        const resultado = await guardarDadosNoComputador();
+        const partes = [`${resultado.notasGuardadas} notas guardadas`, `${resultado.ficheiros.guardados}/${resultado.ficheiros.total} PDFs copiados`];
+        if (resultado.conflitos) partes.push(`${resultado.conflitos} conflitos por resolver`);
+        toast(partes.join(' · '), resultado.conflitos || resultado.ficheiros.indisponiveis ? 'warn' : 'success');
     });
 
     els.exportData.addEventListener('click', exportData);
@@ -3512,7 +3615,7 @@ function bind() {
             return `Ligado como ${window.ContaSync.getUser()}`;
         }
         if (window.ContaSync.emAberto && window.ContaSync.emAberto()) {
-            return 'Ligado sem conta (link oficial)';
+            return 'Espaço comum do site (todos os visitantes)';
         }
         return 'Desligado';
     }
@@ -3736,10 +3839,24 @@ async function init() {
     seed();
     bind();
     restoreSessionState();
-    await refreshVault();
-    await loadDay();
+    const dataGuardada = localStorage.getItem('study-journal-selected-date');
+    if (dataGuardada) {
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dataGuardada);
+        if (match) {
+            const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+            if (dayKey(date) === dataGuardada) selected = startOfDay(date);
+        } else {
+            // Compatibilidade com versões que guardavam a data em ISO.
+            const date = new Date(dataGuardada);
+            if (Number.isFinite(date.getTime())) selected = startOfDay(date);
+        }
+    }
     const vistaGuardada = read('study-journal-view', 'painel');
     showView(VIEW_LABELS[vistaGuardada] ? vistaGuardada : 'painel');
+
+    await refreshVault();
+    await loadDay();
+
     startVaultSync();
     syncDayFromVault();
 

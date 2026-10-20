@@ -5,18 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>StudyJournal</title>
-    <meta name="theme-color" content="#06060c">
+    <meta name="theme-color" content="#070707">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%234f46e5'/%3E%3C/svg%3E">
-    <!-- Google Fonts for Hand-drawn feel -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Comic+Mono:wght@400;700&family=Permanent+Marker&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%23a24f36'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="app.css?v=5">
+    <link rel="stylesheet" href="layout.css?v=7">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
     <!-- Rough.js for hand-drawn aesthetic -->
     <script src="https://cdn.jsdelivr.net/npm/roughjs@4.5.2/bundled/rough.js"></script>
@@ -199,13 +196,16 @@
     </svg>
 
     <!-- ══ Cabeçalho ══ -->
-    <header class="sticky top-0 z-30 bg-surface shadow-sm">
-        <div class="mx-auto flex h-16 max-w-[1760px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10">
+    <header class="sticky top-0 z-30 bg-surface shadow-sm journal-header">
+        <div id="app-header-inner" class="mx-auto flex h-16 max-w-[1760px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10">
 
             <!-- Esquerda: logo -->
             <div class="flex min-w-0 items-center gap-2.5">
                 <svg class="icon h-6 w-6 shrink-0 text-brand"><use href="#i-book"/></svg>
-                <span class="truncate text-lg font-semibold tracking-tight text-fg">StudyJournal</span>
+                <span class="journal-brand-copy">
+                    <span class="truncate text-lg font-semibold tracking-tight text-fg">StudyJournal</span>
+                    <small>Caderno de estudo</small>
+                </span>
             </div>
 
             <!-- Direita: data + navegação + avatar -->
@@ -238,57 +238,56 @@
         </div>
     </header>
 
-    <!-- ══ Layout ══ -->
-    <div class="flex max-w-full flex-col gap-6 px-0 py-6 pb-24 sm:px-0 sm:py-8 lg:flex-row lg:px-0 lg:pb-6">
+    <!-- Navegação principal: faixa horizontal em vez de barra lateral -->
+    <nav aria-label="Navegação principal" id="nav-rail" class="journal-nav">
+        <button type="button" data-view="painel" title="Painel" class="nav-item-wide nav-item-active">
+            <svg class="icon h-5 w-5"><use href="#i-panel"/></svg>
+            <span>Painel</span>
+        </button>
+        <button type="button" data-view="calendario" title="Calendário" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-calendar"/></svg>
+            <span>Calendário</span>
+        </button>
+        <button type="button" data-view="disciplinas" title="Disciplinas" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-subjects"/></svg>
+            <span>Disciplinas</span>
+        </button>
+        <button type="button" data-view="estudar" title="Estudar" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-tomato"/></svg>
+            <span>Estudar</span>
+        </button>
+        <button type="button" data-view="pdfs" title="PDFs" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
+            <span>PDFs</span>
+        </button>
+        <button type="button" data-view="caderno" title="Caderno" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-camera"/></svg>
+            <span>Caderno</span>
+        </button>
+        <button type="button" data-view="semanal" title="Semanal" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-week"/></svg>
+            <span>Semanal</span>
+        </button>
+        <button type="button" data-view="exames" title="Exames Nacionais" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-grad"/></svg>
+            <span>Exames</span>
+        </button>
+        <button type="button" data-view="whiteboard" title="Quadro Branco" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-whiteboard"/></svg>
+            <span>Quadro</span>
+        </button>
+        <button type="button" data-view="assistente" title="Assistente" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
+            <span>Assistente</span>
+        </button>
+        <button type="button" data-view="definicoes" title="Definições" class="nav-item-wide">
+            <svg class="icon h-5 w-5"><use href="#i-settings"/></svg>
+            <span>Definições</span>
+        </button>
+    </nav>
 
-        <!-- Sidebar de navegação -->
-        <nav aria-label="Navegação principal" id="nav-rail"
-            class="hidden shrink-0 flex-col gap-2 self-start glass rounded-2xl border border-line bg-surface p-3 shadow-card lg:flex lg:w-64">
-            <button type="button" data-view="painel" title="Painel" class="nav-item-wide nav-item-active">
-                <svg class="icon h-5 w-5"><use href="#i-panel"/></svg>
-                <span>Painel</span>
-            </button>
-            <button type="button" data-view="calendario" title="Calendário" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-calendar"/></svg>
-                <span>Calendário</span>
-            </button>
-            <button type="button" data-view="disciplinas" title="Disciplinas" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-subjects"/></svg>
-                <span>Disciplinas</span>
-            </button>
-            <button type="button" data-view="estudar" title="Estudar" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-tomato"/></svg>
-                <span>Estudar</span>
-            </button>
-            <button type="button" data-view="pdfs" title="PDFs" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-file-text"/></svg>
-                <span>PDFs</span>
-            </button>
-            <button type="button" data-view="caderno" title="Caderno" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-camera"/></svg>
-                <span>Caderno</span>
-            </button>
-            <button type="button" data-view="semanal" title="Semanal" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-week"/></svg>
-                <span>Semanal</span>
-            </button>
-            <button type="button" data-view="exames" title="Exames Nacionais" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-grad"/></svg>
-                <span>Exames</span>
-            </button>
-            <button type="button" data-view="whiteboard" title="Quadro Branco" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-whiteboard"/></svg>
-                <span>Whiteboard</span>
-            </button>
-            <button type="button" data-view="assistente" title="Assistente" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
-                <span>Assistente</span>
-            </button>
-            <button type="button" data-view="definicoes" title="Definições" class="nav-item-wide">
-                <svg class="icon h-5 w-5"><use href="#i-settings"/></svg>
-                <span>Definições</span>
-            </button>
-        </nav>
+    <!-- ══ Layout ══ -->
+    <div class="app-shell">
 
         <main class="flex min-w-0 flex-1 flex-col gap-6">
 
@@ -374,7 +373,7 @@
                 </header>
                 <p class="mt-2 flex items-baseline gap-2">
                     <span id="streak-num" class="text-3xl font-bold tabular-nums text-fg">0</span>
-                    <span class="text-sm text-muted">dias de sequência 🔥</span>
+                    <span class="text-sm text-muted">dias seguidos</span>
                 </p>
             </div>
 
@@ -497,6 +496,7 @@
                         </button>
                     </div>
                 </header>
+                <p id="heatmap-summary" class="mb-3 text-xs text-muted" aria-live="polite"></p>
                 <div id="heatmap-weekdays" class="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-faint"></div>
                 <div id="heatmap" class="grid grid-cols-7 gap-1"></div>
                 <div class="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-faint">
@@ -505,7 +505,7 @@
                     <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-1)]"></div>
                     <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-2)]"></div>
                     <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-3)]"></div>
-                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-4)]"></div>
+                    <div class="w-2 h-2 rounded-[2px] bg-[#39d353]"></div>
                     <span>Mais</span>
                 </div>
                 <p class="mt-1 text-right text-[10px] text-faint">40+ min nível 2 · 90+ min nível 3 · 150+ min (2h30) máximo</p>
@@ -851,7 +851,6 @@
             </div>
 
             <div class="flex justify-between items-center mt-2">
-                <p class="text-[11px] text-faint text-left">Dica: Espaço + Arrastar para navegar. Wheel para Zoom. Ctrl+V para imagens.</p>
                 <div class="flex gap-2">
                     <button id="wb-export" type="button" class="btn-soft text-xs py-1 px-3 inline-flex items-center gap-1.5">
                         <svg class="icon h-3.5 w-3.5"><use href="#i-download"/></svg>
@@ -863,7 +862,7 @@
                     </button>
                     <button id="wb-clear" type="button" class="btn-soft text-xs py-1 px-3 inline-flex items-center gap-1.5">
                         <svg class="icon h-3.5 w-3.5"><use href="#i-reset"/></svg>
-                        Limpar
+                        Novo quadro
                     </button>
                 </div>
             </div>
@@ -1261,15 +1260,16 @@
             <div class="grid gap-4 lg:grid-cols-2">
                 <!-- Vault -->
                 <div class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
-                    <h3 class="text-sm font-semibold">Vault do Obsidian</h3>
+                    <h3 class="text-sm font-semibold">Guardar no computador</h3>
                     <p class="text-xs leading-relaxed text-muted">
-                        As notas são gravadas pelo browser em <code class="text-brand-light">Diario/AAAA-MM-DD.md</code>
-                        dentro do vault. O acesso é dado uma vez e o browser lembra-se dele.
+                        Escolhe uma pasta neste computador. As notas ficam em <code class="text-brand-light">Diario</code>;
+                        podes guardar cópias dos PDFs em <code class="text-brand-light">PDFs</code>.
                     </p>
                     <p id="settings-vault-status" class="text-xs font-medium text-muted"></p>
                     <div class="mt-auto flex flex-wrap gap-2">
-                        <button id="settings-vault-action" type="button" class="btn-soft">Ligar vault</button>
-                        <button id="settings-vault-disconnect" type="button" class="btn-soft btn-soft-danger" hidden>Desligar</button>
+                        <button id="settings-vault-action" type="button" class="btn-soft">Escolher pasta</button>
+                        <button id="settings-vault-disconnect" type="button" class="btn-soft btn-soft-danger" hidden>Desligar pasta</button>
+                        <button id="settings-save-all" type="button" class="btn-soft">Guardar notas e PDFs agora</button>
                     </div>
                 </div>
 
@@ -1376,36 +1376,67 @@
     </div>
 
     <!-- Footer / Tab Bar Mobile -->
-    <footer class="fixed bottom-0 inset-x-0 z-30 bg-surface border-t border-line px-4 py-2 sm:hidden">
-        <div class="flex justify-around items-center">
+    <footer class="fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-line px-2 py-2 sm:hidden legacy-mobile-nav">
+        <nav aria-label="Navegação móvel" class="mobile-tab-scroll flex items-center gap-1">
             <button type="button" data-view="painel" class="nav-mobile nav-mobile-active" title="Painel">
                 <svg class="icon"><use href="#i-panel"/></svg>
+                <span>Painel</span>
             </button>
             <button type="button" data-view="calendario" class="nav-mobile" title="Calendário">
                 <svg class="icon"><use href="#i-calendar"/></svg>
+                <span>Agenda</span>
             </button>
             <button type="button" data-view="disciplinas" class="nav-mobile" title="Disciplinas">
                 <svg class="icon"><use href="#i-subjects"/></svg>
+                <span>Matérias</span>
             </button>
             <button type="button" data-view="estudar" class="nav-mobile" title="Estudar">
                 <svg class="icon"><use href="#i-tomato"/></svg>
+                <span>Estudar</span>
             </button>
             <button type="button" data-view="pdfs" class="nav-mobile" title="PDFs">
                 <svg class="icon"><use href="#i-file-text"/></svg>
+                <span>PDFs</span>
+            </button>
+            <button type="button" data-view="caderno" class="nav-mobile" title="Caderno">
+                <svg class="icon"><use href="#i-camera"/></svg>
+                <span>Caderno</span>
+            </button>
+            <button type="button" data-view="semanal" class="nav-mobile" title="Semanal">
+                <svg class="icon"><use href="#i-week"/></svg>
+                <span>Semana</span>
+            </button>
+            <button type="button" data-view="exames" class="nav-mobile" title="Exames">
+                <svg class="icon"><use href="#i-grad"/></svg>
+                <span>Exames</span>
             </button>
             <button type="button" data-view="whiteboard" class="nav-mobile" title="Whiteboard">
                 <svg class="icon"><use href="#i-whiteboard"/></svg>
+                <span>Quadro</span>
+            </button>
+            <button type="button" data-view="assistente" class="nav-mobile" title="Assistente">
+                <svg class="icon"><use href="#i-chat"/></svg>
+                <span>Ajuda</span>
             </button>
             <button type="button" data-view="definicoes" class="nav-mobile" title="Definições">
                 <svg class="icon"><use href="#i-settings"/></svg>
+                <span>Definições</span>
             </button>
-        </div>
+        </nav>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
     <script src="src/whiteboard.js"></script>
     <script src="src/weekly.js"></script>
     <script src="src/github-sync.js"></script>
+    <script src="src/conta-sync.js"></script>
+    <script src="src/vault.js"></script>
+    <script src="src/imagens.js"></script>
+    <script src="src/pdfs.js"></script>
+    <script src="src/notas.js"></script>
+    <script src="src/assistente.js"></script>
+    <script src="src/caderno.js"></script>
+    <script src="src/exames.js"></script>
     <script src="src/app.js"></script>
 </body>
 </html>

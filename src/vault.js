@@ -18,6 +18,11 @@ window.Vault = (() => {
     const PENDING_KEY = 'study-journal-vault-pending';
     const PROBE_TTL = 15000;
 
+    const authHeaders = (headers = {}) => ({
+        ...headers,
+        ...(window.ContaSync?.requestHeaders?.() || {}),
+    });
+
     let dbPromise = null;
     let probe = null;   // 'ok' | 'sem-vault' | 'offline'
     let probeAt = 0;
@@ -113,7 +118,7 @@ window.Vault = (() => {
                 try {
                     const response = await fetch(`${API}/file?name=${encodeURIComponent(item.name)}`, {
                         method: 'PUT',
-                        headers: { 'content-type': 'application/json' },
+                        headers: authHeaders({ 'content-type': 'application/json' }),
                         body: JSON.stringify({ name: item.name, content: item.content }),
                     });
 
@@ -146,7 +151,7 @@ window.Vault = (() => {
         let response;
 
         try {
-            response = await fetch(API, { cache: 'no-store' });
+            response = await fetch(API, { cache: 'no-store', headers: authHeaders() });
         } catch {
             return 'offline';
         }
@@ -167,7 +172,7 @@ window.Vault = (() => {
     }
 
     async function remoteRead(name) {
-        const response = await fetch(`${API}/file?name=${encodeURIComponent(name)}`, { cache: 'no-store' });
+        const response = await fetch(`${API}/file?name=${encodeURIComponent(name)}`, { cache: 'no-store', headers: authHeaders() });
         if (!response.ok) return null;
 
         const data = await response.json();
@@ -181,6 +186,28 @@ window.Vault = (() => {
         if (!supported()) return null;
         const handle = await getHandle();
         return handle ?? null;
+    }
+
+    async function hasLocalFolder() {
+        return Boolean(await localHandle());
+    }
+
+    async function saveBlob(name, blob, subfolder = 'PDFs') {
+        const handle = await localHandle();
+        if (!handle) return { ok: false, reason: 'sem-pasta' };
+        try {
+            let permission = await handle.queryPermission(MODE);
+            if (permission !== 'granted') permission = await handle.requestPermission(MODE);
+            if (permission !== 'granted') return { ok: false, reason: 'permissao' };
+            const folder = await handle.getDirectoryHandle(subfolder, { create: true });
+            const file = await folder.getFileHandle(name, { create: true });
+            const writable = await file.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return { ok: true, path: `${subfolder}/${name}` };
+        } catch (error) {
+            return { ok: false, reason: 'erro', error };
+        }
     }
 
     /* ── Estado ─────────────────────────────────────────── */
@@ -316,7 +343,7 @@ window.Vault = (() => {
         try {
             response = await fetch(`${API}/file?name=${encodeURIComponent(name)}`, {
                 method: 'PUT',
-                headers: { 'content-type': 'application/json' },
+                headers: authHeaders({ 'content-type': 'application/json' }),
                 body: JSON.stringify({ name, content }),
             });
         } catch (error) {
@@ -415,6 +442,8 @@ window.Vault = (() => {
         supported,
         status,
         connect,
+        hasLocalFolder,
+        saveBlob,
         requestPermission,
         disconnect,
         save,

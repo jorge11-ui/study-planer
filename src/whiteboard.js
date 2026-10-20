@@ -41,7 +41,7 @@ fabric.RoughCircle = fabric.util.createClass(fabric.Circle, {
             fillWeight: 1
         };
 
-        rc.circle(
+        rc.ellipse(
             this.left + this.radius * this.scaleX,
             this.top + this.radius * this.scaleY,
             this.radius * 2 * this.scaleX,
@@ -61,10 +61,8 @@ fabric.RoughArrow = fabric.util.createClass(fabric.Line, {
             roughness: 1.5
         };
 
-        // Draw the main line
         rc.line(this.x1, this.y1, this.x2, this.y2, options);
 
-        // Calculate arrowhead
         const angle = Math.atan2(this.y2 - this.y1, this.x2 - this.x1);
         const arrowSize = 15;
         const head1x = this.x2 - arrowSize * Math.cos(angle - Math.PI / 6);
@@ -95,7 +93,6 @@ fabric.RoughDiamond = fabric.util.createClass(fabric.Rect, {
         const cx = this.left + w / 2;
         const cy = this.top + h / 2;
 
-        // Draw a diamond by drawing 4 lines
         rc.line(cx, this.top, this.left + w, cy, options);
         rc.line(this.left + w, cy, cx, this.top + h, options);
         rc.line(cx, this.top + h, this.left, cy, options);
@@ -119,10 +116,6 @@ fabric.RoughPath = fabric.util.createClass(fabric.Path, {
         ctx.save();
         ctx.translate(this.left, this.top);
         ctx.scale(this.scaleX, this.scaleY);
-
-        // Rough.js doesn't handle SVG paths perfectly, so we iterate through points
-        // for a sketchy line effect. Note: Fabric paths are often complex,
-        // for now we use the base render but could be improved.
         fabric.Path.prototype._render.call(this, ctx);
         ctx.restore();
     }
@@ -132,8 +125,11 @@ let canvas = null;
 let currentTool = 'select';
 let history = [];
 let historyStep = -1;
+const WHITEBOARD_DRAFT_KEY = 'study-journal-whiteboard-draft';
+let loadingBoard = false;
+let draftSaveTimer = null;
+let userChangedBoard = false;
 
-// Viewport state for infinite canvas
 let viewport = {
     zoom: 1,
     pan: { x: 0, y: 0 },
@@ -145,7 +141,10 @@ function initWhiteboard() {
     const canvasEl = document.getElementById('wb-canvas');
     if (!canvasEl) return;
 
-    if (canvas) canvas.dispose();
+    if (canvas) {
+        resizeCanvas();
+        return;
+    }
 
     const container = canvasEl.parentElement;
     const width = container.clientWidth || 800;
@@ -162,42 +161,24 @@ function initWhiteboard() {
 
     setupInfiniteCanvas();
     setupTools();
+    setupPropertiesPanel();
     setupEvents();
     loadWhiteboard();
 
     setTimeout(resizeCanvas, 100);
-    saveHistory();
+    saveHistory(false);
 }
 
 function setupInfiniteCanvas() {
-    // Zoom to cursor using mouse wheel
     canvas.on('mouse:wheel', function(opt) {
         const delta = opt.e.deltaY;
-        let zoom = viewport.zoom;
-        let nextZoom = zoom + (delta > 0 ? -0.001 : 0.001) * zoom;
-
-        // Clamp zoom
-        nextZoom = Math.min(Math.max(0.1, nextZoom), 5);
-
-        // Zoom to cursor logic
-        const pointer = canvas.getPointer(opt.e);
-        const worldX = (pointer.x - viewport.pan.x * zoom) / zoom;
-        const worldY = (pointer.y - viewport.pan.y * zoom) / zoom;
-
-        viewport.zoom = nextZoom;
-        viewport.pan.x = pointer.x / zoom - worldX / nextZoom; // Simplified for logic
-        // Better logic: keep world point stationary
-        // viewport.pan.x = (pointer.x - worldX * nextZoom) / nextZoom;
-
-        // Correct Transform: [scaleX, skewY, skewX, scaleY, translateX, translateY]
-        // We use the standard Fabric viewport transform
-        updateViewportTransform();
-
+        const bounds = canvas.upperCanvasEl.getBoundingClientRect();
+        const point = new fabric.Point(opt.e.clientX - bounds.left, opt.e.clientY - bounds.top);
+        setZoom(canvas.getZoom() * Math.pow(0.999, delta), point);
         opt.e.preventDefault();
         opt.e.stopPropagation();
     });
 
-    // Right-click or Space+Drag for panning
     canvas.on('mouse:down', function(opt) {
         if (opt.e.button === 2 || (window.isSpacePressed)) {
             viewport.isPanning = true;
@@ -210,10 +191,7 @@ function setupInfiniteCanvas() {
         if (viewport.isPanning) {
             const dx = opt.e.clientX - viewport.lastMousePos.x;
             const dy = opt.e.clientY - viewport.lastMousePos.y;
-
-            // Pan in world coordinates
             canvas.relativePan(dx, dy);
-
             viewport.lastMousePos = { x: opt.e.clientX, y: opt.e.clientY };
         }
     });
@@ -224,18 +202,19 @@ function setupInfiniteCanvas() {
     });
 }
 
-function updateViewportTransform() {
-    // Fabric's setViewportTransform handles the matrix
-    // For a simple zoom/pan, we can use setZoom and relativePan
-    // But for a full "Excalidraw" feel, we track state
-    canvas.setZoom(viewport.zoom);
+function setZoom(value, point = null) {
+    if (!canvas) return;
+    const zoom = Math.min(Math.max(value, 0.1), 5);
+    const bounds = canvas.upperCanvasEl.getBoundingClientRect();
+    canvas.zoomToPoint(point || new fabric.Point(bounds.width / 2, bounds.height / 2), zoom);
+    viewport.zoom = zoom;
     updateZoomUI();
 }
 
 function updateZoomUI() {
     const zoomEl = document.getElementById('wb-zoom-level');
     if (zoomEl) {
-        zoomEl.innerText = `${Math.round(viewport.zoom * 100)}%`;
+        zoomEl.innerText = `${Math.round(canvas.getZoom() * 100)}%`;
     }
 }
 
@@ -249,24 +228,52 @@ function resizeCanvas() {
     canvas.renderAll();
 }
 
-function saveHistory() {
+function saveHistory(persistDraft = true) {
     if (!canvas) return;
     const state = JSON.stringify(canvas.toJSON());
-
     if (historyStep < history.length - 1) {
         history = history.slice(0, historyStep + 1);
     }
-
     history.push(state);
     if (history.length > 50) history.shift();
     historyStep = history.length - 1;
+    if (persistDraft) saveWhiteboardDraft();
+}
+
+function saveWhiteboardDraft() {
+    if (!canvas) return;
+    if (loadingBoard) return;
+    userChangedBoard = true;
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => {
+        try {
+            localStorage.setItem(WHITEBOARD_DRAFT_KEY, JSON.stringify(canvas.toJSON()));
+        } catch (err) {
+            console.warn('Não foi possível guardar o rascunho do quadro neste browser.', err);
+        }
+    }, 180);
+}
+
+function loadWhiteboardData(data) {
+    if (!canvas || !data) return;
+    loadingBoard = true;
+    canvas.loadFromJSON(data, () => {
+        canvas.renderAll();
+        history = [];
+        historyStep = -1;
+        saveHistory(false);
+        loadingBoard = false;
+    });
 }
 
 function undo() {
     if (historyStep > 0) {
         historyStep--;
+        loadingBoard = true;
         canvas.loadFromJSON(history[historyStep], () => {
             canvas.renderAll();
+            loadingBoard = false;
+            saveWhiteboardDraft();
         });
     }
 }
@@ -274,8 +281,11 @@ function undo() {
 function redo() {
     if (historyStep < history.length - 1) {
         historyStep++;
+        loadingBoard = true;
         canvas.loadFromJSON(history[historyStep], () => {
             canvas.renderAll();
+            loadingBoard = false;
+            saveWhiteboardDraft();
         });
     }
 }
@@ -292,9 +302,7 @@ function setupTools() {
         'diamond': document.getElementById('wb-tool-diamond'),
         'erase': document.getElementById('wb-tool-erase'),
     };
-
-    const colorPicker = document.getElementById('wb-color') || document.getElementById('wb-prop-stroke');
-    const fontSizePicker = document.getElementById('wb-font-size');
+    const colorPicker = document.getElementById('wb-prop-stroke');
 
     const setTool = (tool) => {
         currentTool = tool;
@@ -315,28 +323,10 @@ function setupTools() {
         }
     };
 
-    // Tool clicks
     Object.entries(tools).forEach(([tool, btn]) => {
         if(btn) btn.onclick = () => setTool(tool);
     });
 
-    // Color and size handling (migrated to Properties Panel logic in next phase)
-    if(colorPicker) {
-        colorPicker.onchange = () => {
-            const color = colorPicker.value;
-            if (canvas.isDrawingMode) {
-                canvas.freeDrawingBrush.color = color;
-            }
-            const activeObject = canvas.getActiveObject();
-            if (activeObject) {
-                activeObject.set('fill', color);
-                activeObject.set('stroke', color);
-                canvas.renderAll();
-            }
-        };
-    }
-
-    // --- Drag-to-Create Flow ---
     let isCreating = false;
     let startPointer = { x: 0, y: 0 };
     let activeShape = null;
@@ -428,7 +418,6 @@ function setupTools() {
         if (e.key === 'Delete' || e.key === 'Backspace') {
             const activeObject = canvas.getActiveObject();
             if (activeObject && (activeObject.type === 'textbox' || activeObject.type === 'i-text') && activeObject.isEditing) return;
-
             const activeObjects = canvas.getActiveObjects();
             if (activeObjects.length) {
                 canvas.remove(...activeObjects);
@@ -436,18 +425,10 @@ function setupTools() {
                 saveHistory();
             }
         }
-        // Shortcuts
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
         const shortcuts = {
-            'v': 'select',
-            'p': 'pencil',
-            'r': 'rect',
-            'c': 'circle',
-            'a': 'arrow',
-            'd': 'diamond',
-            't': 'text',
-            'l': 'text-long'
+            'v': 'select', 'p': 'pencil', 'r': 'rect', 'c': 'circle',
+            'a': 'arrow', 'd': 'diamond', 't': 'text', 'l': 'text-long'
         };
         const tool = shortcuts[e.key.toLowerCase()];
         if (tool) {
@@ -455,6 +436,125 @@ function setupTools() {
             setTool(tool);
         }
     });
+}
+
+function setupPropertiesPanel() {
+    const panel = document.getElementById('wb-prop-panel');
+    const strokeInput = document.getElementById('wb-prop-stroke');
+    const strokeHex = document.getElementById('wb-prop-stroke-hex');
+    const fillInput = document.getElementById('wb-prop-fill');
+    const widthInput = document.getElementById('wb-prop-width');
+    const widthVal = document.getElementById('wb-prop-width-val');
+    const opacityInput = document.getElementById('wb-prop-opacity');
+    const opacityVal = document.getElementById('wb-prop-opacity-val');
+    const deleteBtn = document.getElementById('wb-prop-delete');
+    const noFillBtn = document.getElementById('wb-prop-no-fill');
+
+    canvas.on('selection:created', updatePanel);
+    canvas.on('selection:updated', updatePanel);
+    canvas.on('selection:cleared', () => {
+        if (panel) panel.classList.add('hidden');
+    });
+
+    function updatePanel() {
+        const obj = canvas.getActiveObject();
+        if (!obj) return;
+
+        if (panel) panel.classList.remove('hidden');
+
+        // Update UI to match object
+        if (strokeInput) strokeInput.value = obj.stroke || obj.fill || '#000000';
+        if (strokeHex) strokeHex.value = obj.stroke || obj.fill || '#000000';
+        if (fillInput) fillInput.value = obj.fill || '#ffffff';
+        if (widthInput) widthInput.value = obj.strokeWidth || 2;
+        if (widthVal) widthVal.innerText = obj.strokeWidth || 2;
+        if (opacityInput) opacityInput.value = Math.round((obj.opacity ?? 1) * 100);
+        if (opacityVal) opacityVal.innerText = Math.round((obj.opacity ?? 1) * 100);
+    }
+
+    if (strokeInput) {
+        strokeInput.oninput = () => {
+            const val = strokeInput.value;
+            if (strokeHex) strokeHex.value = val;
+            const obj = canvas.getActiveObject();
+            if (obj) {
+                obj.set({ stroke: val, fill: obj.fill === undefined ? val : obj.fill });
+                canvas.renderAll();
+                saveHistory();
+            }
+        };
+    }
+
+    if (strokeHex) {
+        strokeHex.oninput = () => {
+            const val = strokeHex.value;
+            if (strokeInput) strokeInput.value = val;
+            const obj = canvas.getActiveObject();
+            if (obj) {
+                obj.set({ stroke: val });
+                canvas.renderAll();
+                saveHistory();
+            }
+        };
+    }
+
+    if (fillInput) {
+        fillInput.oninput = () => {
+            const val = fillInput.value;
+            const obj = canvas.getActiveObject();
+            if (obj) {
+                obj.set({ fill: val });
+                canvas.renderAll();
+                saveHistory();
+            }
+        };
+    }
+
+    if (noFillBtn) {
+        noFillBtn.onclick = () => {
+            const obj = canvas.getActiveObject();
+            if (obj) {
+                obj.set({ fill: null });
+                canvas.renderAll();
+                saveHistory();
+            }
+        };
+    }
+
+    if (widthInput) {
+        widthInput.oninput = () => {
+            const val = parseInt(widthInput.value);
+            if (widthVal) widthVal.innerText = val;
+            const obj = canvas.getActiveObject();
+            if (obj) {
+                obj.set({ strokeWidth: val });
+                canvas.renderAll();
+                saveHistory();
+            }
+        };
+    }
+
+    if (opacityInput) {
+        opacityInput.oninput = () => {
+            const val = parseInt(opacityInput.value) / 100;
+            if (opacityVal) opacityVal.innerText = Math.round(val * 100);
+            const obj = canvas.getActiveObject();
+            if (obj) {
+                obj.set({ opacity: val });
+                canvas.renderAll();
+                saveHistory();
+            }
+        };
+    }
+
+    if (deleteBtn) {
+        deleteBtn.onclick = () => {
+            const activeObjects = canvas.getActiveObjects();
+            canvas.remove(...activeObjects);
+            canvas.discardActiveObject();
+            saveHistory();
+        };
+    }
 }
 
 function setupEvents() {
@@ -478,7 +578,6 @@ function setupEvents() {
         }
     });
 
-    // Space key for panning
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space') {
             window.isSpacePressed = true;
@@ -496,6 +595,16 @@ function setupEvents() {
     if(undoBtn) undoBtn.onclick = undo;
     const redoBtn = document.getElementById('wb-redo');
     if(redoBtn) redoBtn.onclick = redo;
+    const zoomIn = document.getElementById('wb-zoom-in');
+    const zoomOut = document.getElementById('wb-zoom-out');
+    const zoomReset = document.getElementById('wb-zoom-reset');
+    if (zoomIn) zoomIn.onclick = () => setZoom(canvas.getZoom() * 1.2);
+    if (zoomOut) zoomOut.onclick = () => setZoom(canvas.getZoom() / 1.2);
+    if (zoomReset) zoomReset.onclick = () => {
+        canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        viewport.zoom = 1;
+        updateZoomUI();
+    };
 
     const exportBtn = document.getElementById('wb-export');
     if(exportBtn) exportBtn.onclick = () => {
@@ -511,18 +620,23 @@ function setupEvents() {
 
     const clearBtn = document.getElementById('wb-clear');
     if(clearBtn) clearBtn.onclick = () => {
-        if (confirm('Limpar todo o quadro?')) {
+        if (confirm('Criar um quadro em branco? O rascunho atual será substituído.')) {
             canvas.clear();
             canvas.backgroundColor = '#ffffff';
             canvas.renderAll();
             saveHistory();
+            try { localStorage.setItem(WHITEBOARD_DRAFT_KEY, JSON.stringify(canvas.toJSON())); } catch { /* o quadro continua disponível até sair da página */ }
         }
     };
 
-    canvas.on('object:modified', saveHistory);
+    canvas.on('object:modified', () => { if (!loadingBoard) saveHistory(); });
     canvas.on('object:added', (e) => {
-        if (e.target.type !== 'pencil') saveHistory();
+        if (loadingBoard) return;
+        if (canvas.isDrawingMode) saveWhiteboardDraft();
+        else saveHistory();
     });
+    canvas.on('object:removed', () => { if (!loadingBoard) saveWhiteboardDraft(); });
+    canvas.on('path:created', () => { if (!loadingBoard) saveHistory(); });
 
     window.addEventListener('resize', resizeCanvas);
 }
@@ -530,10 +644,11 @@ function setupEvents() {
 async function saveWhiteboard() {
     if (!canvas) return;
     const data = JSON.stringify(canvas.toJSON());
+    try { localStorage.setItem(WHITEBOARD_DRAFT_KEY, data); } catch { /* guardar no servidor continua disponível */ }
     try {
         const response = await fetch('/api/vault/file?name=whiteboard.json', {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(window.ContaSync?.requestHeaders?.() || {}) },
             body: JSON.stringify({ content: data })
         });
         if (response.ok) alert('Quadro guardado com sucesso!');
@@ -546,13 +661,31 @@ async function saveWhiteboard() {
 async function loadWhiteboard() {
     if (!canvas) return;
     try {
-        const response = await fetch('/api/vault/file?name=whiteboard.json');
+        let draft = null;
+        try { draft = localStorage.getItem(WHITEBOARD_DRAFT_KEY); } catch { /* usa a cópia remota */ }
+        if (draft) {
+            try {
+                loadWhiteboardData(JSON.parse(draft));
+                return;
+            } catch { /* um rascunho inválido não impede recuperar a cópia remota */ }
+        }
+    } catch (err) {
+        console.warn('O rascunho local do quadro não pôde ser lido.', err);
+    }
+    try {
+        const response = await fetch('/api/vault/file?name=whiteboard.json', { headers: window.ContaSync?.requestHeaders?.() || {} });
         const result = await response.json();
+        if (userChangedBoard) return;
+        // Se o utilizador começou a desenhar enquanto o servidor respondia,
+        // o rascunho local mais recente tem prioridade sobre a cópia remota.
+        const draft = localStorage.getItem(WHITEBOARD_DRAFT_KEY);
+        if (draft) {
+            loadWhiteboardData(JSON.parse(draft));
+            return;
+        }
         if (result.ok && result.existe) {
-            canvas.loadFromJSON(result.content, () => {
-                canvas.renderAll();
-                saveHistory();
-            });
+            loadWhiteboardData(result.content);
+            try { localStorage.setItem(WHITEBOARD_DRAFT_KEY, JSON.stringify(result.content)); } catch { /* usa a cópia do servidor na próxima abertura */ }
         }
     } catch (err) {
         console.log('Nenhum arquivo de quadro encontrado.');

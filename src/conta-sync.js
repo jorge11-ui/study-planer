@@ -107,6 +107,10 @@ window.ContaSync = (() => {
         return user;
     }
 
+    function requestHeaders() {
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
     function ePartilha() {
         return !!token && !user;
     }
@@ -450,6 +454,7 @@ window.ContaSync = (() => {
     return {
         configurado,
         getUser,
+        requestHeaders,
         ePartilha,
         emAberto,
         verificarAberto,

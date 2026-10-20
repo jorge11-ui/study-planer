@@ -305,6 +305,7 @@ function renderTrack() {
         tr.className = 'border-b border-line-soft last:border-0 transition hover:bg-surface-2/60';
         // disciplina
         const tdD = document.createElement('td');
+        tdD.dataset.label = 'Disciplina';
         tdD.className = 'px-3 py-2.5';
         const chip = document.createElement('span');
         chip.className = `chip ${DISC_CHIP[r.disciplina] || DISC_CHIP.Geral}`;
@@ -312,10 +313,12 @@ function renderTrack() {
         tdD.append(chip);
         // tópico
         const tdT = document.createElement('td');
+        tdT.dataset.label = 'Tópico';
         tdT.className = 'px-3 py-2.5 text-muted';
         tdT.textContent = r.topico;
         // ficha
         const tdF = document.createElement('td');
+        tdF.dataset.label = 'Ficha / PDF';
         tdF.className = 'px-3 py-2.5';
         if (isUrl(r.ficha)) {
             const a = document.createElement('a');
@@ -333,16 +336,19 @@ function renderTrack() {
         }
         // dificuldade
         const tdDif = document.createElement('td');
+        tdDif.dataset.label = 'Dificuldade';
         tdDif.className = 'px-3 py-2.5 text-center';
         tdDif.append(difBadge(r.dificuldade));
         // estado
         const tdE = document.createElement('td');
+        tdE.dataset.label = 'Estado';
         tdE.className = 'px-3 py-2.5 text-center';
         const badge = estadoBadge(r.estado);
         badge.dataset.id = r.id;
         tdE.append(badge);
         // acções
         const tdA = document.createElement('td');
+        tdA.dataset.label = 'Ações';
         tdA.className = 'px-3 py-2.5 text-center';
         const del = document.createElement('button');
         del.type = 'button';

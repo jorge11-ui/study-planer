@@ -115,7 +115,7 @@ window.Imagens = (() => {
             if (!b64) return false;
             const resp = await fetch('/api/ficheiros', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(window.ContaSync?.requestHeaders?.() || {}) },
                 body: JSON.stringify({ id, nome: nome || `${id}.jpg`, tipo: blob.type || 'image/jpeg', dados: b64 }),
             });
             if (!resp.ok) return false;
@@ -132,7 +132,7 @@ window.Imagens = (() => {
             if (local) return local;
         } catch { /* segue para o servidor */ }
         try {
-            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(id)}`);
+            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(id)}`, { headers: window.ContaSync?.requestHeaders?.() || {} });
             if (!resp.ok) {
                 if (resp.status === 404) desmarcarEnviada(id);
                 return null;
@@ -246,7 +246,7 @@ window.Imagens = (() => {
             const enviadas = lerEnviadas();
             let presentes = null;
             try {
-                const resp = await fetch('/api/ficheiros', { cache: 'no-store' });
+                const resp = await fetch('/api/ficheiros', { cache: 'no-store', headers: window.ContaSync?.requestHeaders?.() || {} });
                 const r = await resp.json().catch(() => null);
                 if (r && r.ok && Array.isArray(r.ficheiros)) {
                     presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));

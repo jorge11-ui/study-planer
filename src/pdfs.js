@@ -129,7 +129,7 @@ window.Pdfs = (() => {
             if (!dados) return false;
             const resp = await fetch('/api/ficheiros', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(window.ContaSync?.requestHeaders?.() || {}) },
                 body: JSON.stringify({
                     id: doc.id,
                     nome: doc.ficheiro || doc.titulo || 'ficheiro.pdf',
@@ -147,7 +147,7 @@ window.Pdfs = (() => {
 
     async function buscarFicheiroRemoto(doc) {
         try {
-            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(doc.id)}`);
+            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(doc.id)}`, { headers: window.ContaSync?.requestHeaders?.() || {} });
             if (!resp.ok) {
                 // 404 após wipe: esquecer o registo para o backfill voltar
                 // a subir os bytes que ainda vivem neste browser.
@@ -171,7 +171,7 @@ window.Pdfs = (() => {
 
     async function apagarFicheiroRemoto(id) {
         try {
-            await fetch(`/api/ficheiros/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            await fetch(`/api/ficheiros/${encodeURIComponent(id)}`, { method: 'DELETE', headers: window.ContaSync?.requestHeaders?.() || {} });
         } catch { /* best-effort */ }
         const enviados = lerEnviados();
         if (enviados.delete(id)) guardarEnviados(enviados);
@@ -1131,7 +1131,7 @@ window.Pdfs = (() => {
         const enviados = lerEnviados();
         let presentes = null;
         try {
-            const resp = await fetch('/api/ficheiros', { cache: 'no-store' });
+            const resp = await fetch('/api/ficheiros', { cache: 'no-store', headers: window.ContaSync?.requestHeaders?.() || {} });
             const r = await resp.json().catch(() => null);
             if (r && r.ok && Array.isArray(r.ficheiros)) {
                 presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));
@@ -1160,5 +1160,38 @@ window.Pdfs = (() => {
         if (mudou) guardarEnviados(enviados);
     }
 
-    return { carregar, ligar, docs: () => docs, abrir, apagar };
+    async function guardarNoComputador() {
+        let guardados = 0;
+        let indisponiveis = 0;
+        const documentos = docs.filter((doc) => doc.tipo === 'ficheiro');
+        for (const doc of documentos) {
+            let blob = null;
+            try { blob = await lerFicheiro(doc.id); } catch { /* tenta obter do servidor */ }
+            if (!blob || !blob.size) {
+                try {
+                    const response = await fetch(`/api/ficheiros/${encodeURIComponent(doc.id)}`, {
+                        headers: window.ContaSync?.requestHeaders?.() || {},
+                    });
+                    if (response.ok) {
+                        blob = await response.blob();
+                        if (blob.size) await guardarFicheiro(doc.id, blob);
+                    }
+                } catch { /* o PDF pode não estar neste browser/servidor */ }
+            }
+            if (!blob || !blob.size) { indisponiveis += 1; continue; }
+
+            const nomeOriginal = String(doc.ficheiro || doc.titulo || 'documento.pdf')
+                .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 140) || 'documento.pdf';
+            const nomePdf = /\.pdf$/i.test(nomeOriginal) ? nomeOriginal : `${nomeOriginal}.pdf`;
+            const resultado = await Vault.saveBlob(`${doc.id}-${nomePdf}`, blob, 'PDFs');
+            if (resultado.ok) guardados += 1;
+            else indisponiveis += 1;
+        }
+        return { guardados, indisponiveis, total: documentos.length };
+    }
+
+    return { carregar, ligar, docs: () => docs, abrir, apagar, guardarNoComputador };
 })();

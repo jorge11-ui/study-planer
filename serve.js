@@ -110,6 +110,10 @@ function readBody(req, limite = MAX_BODY) {
 }
 
 async function api(req, res, url) {
+    if (contaAtiva && !SYNC_ABERTO && !sessaoValida(tokenDaSessao(req))) {
+        return json(res, 401, { ok: false, reason: 'sessao' });
+    }
+
     const route = url.pathname.slice('/api/vault'.length);
 
     if (route === '' && req.method === 'GET') {
@@ -138,9 +142,6 @@ async function api(req, res, url) {
         const name = url.searchParams.get('name') ?? '';
         if (!DAY_NAME.test(name) && !CONFIG_NAME.test(name)) return json(res, 400, { ok: false, reason: 'nome' });
 
-        const folder = vaultFolder();
-        if (!folder) return json(res, 503, { ok: false, reason: 'sem-vault' });
-
         try {
             const body = await readBody(req);
             let parsed;
@@ -151,6 +152,9 @@ async function api(req, res, url) {
             }
             const { content } = parsed;
             if (typeof content !== 'string') return json(res, 400, { ok: false, reason: 'conteudo' });
+
+            const folder = vaultFolder();
+            if (!folder) return json(res, 503, { ok: false, reason: 'sem-vault' });
 
             const filePath = path.join(folder, name);
             fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -590,6 +594,10 @@ function caminhoFicheiro(id) {
 }
 
 async function apiFicheiros(req, res, url) {
+    if (contaAtiva && !SYNC_ABERTO && !sessaoValida(tokenDaSessao(req))) {
+        return json(res, 401, { ok: false, reason: 'sessao' });
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/ficheiros') {
         // Lista leve (sem bytes) para os aparelhos verificarem o que o
         // servidor tem e reporem o que faltar após um wipe do disco efémero.
@@ -616,7 +624,7 @@ async function apiFicheiros(req, res, url) {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/ficheiros') {
-        const body = await lerJsonBody(req, res, FICHEIROS_MAX_BYTES + 1024 * 1024);
+        const body = await lerJsonBody(req, res, Math.ceil(FICHEIROS_MAX_BYTES * 4 / 3) + 1024 * 1024);
         if (!body) return;
         const id = String(body.id ?? '');
         const nome = String(body.nome ?? 'ficheiro.pdf').slice(0, 200);

@@ -17,6 +17,7 @@ window.Caderno = (() => {
     let fotos = [];
     let filtroDisciplina = 'todas';
     let urls = new Map();
+    let metadataBootstrapDone = false;
 
     /* ── IndexedDB ──────────────────────────────────── */
 
@@ -137,7 +138,7 @@ window.Caderno = (() => {
             if (!dados) return false;
             const resp = await fetch('/api/ficheiros', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(window.ContaSync?.requestHeaders?.() || {}) },
                 body: JSON.stringify({
                     id: foto.id,
                     nome: foto.titulo ? `${foto.titulo}.jpg` : 'foto.jpg',
@@ -155,7 +156,7 @@ window.Caderno = (() => {
 
     async function buscarRemota(foto) {
         try {
-            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(foto.id)}`);
+            const resp = await fetch(`/api/ficheiros/${encodeURIComponent(foto.id)}`, { headers: window.ContaSync?.requestHeaders?.() || {} });
             if (!resp.ok) {
                 if (resp.status === 404) {
                     const enviados = lerEnviados();
@@ -179,7 +180,7 @@ window.Caderno = (() => {
 
     async function apagarRemota(id) {
         try {
-            await fetch(`/api/ficheiros/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            await fetch(`/api/ficheiros/${encodeURIComponent(id)}`, { method: 'DELETE', headers: window.ContaSync?.requestHeaders?.() || {} });
         } catch { /* best-effort */ }
         const enviados = lerEnviados();
         if (enviados.delete(id)) guardarEnviados(enviados);
@@ -223,6 +224,16 @@ window.Caderno = (() => {
 
     const porId = (id) => fotos.find((f) => f.id === id);
 
+    async function sincronizarMetadadosExistentes() {
+        if (window.ContaSync) {
+            const resultado = await window.ContaSync.push();
+            if (!resultado || resultado.reason !== 'sem-conta') return;
+        }
+        if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
+            await window.GitHubSync.sync(true);
+        }
+    }
+
     async function urlDe(foto) {
         if (urls.has(foto.id)) return urls.get(foto.id);
         let blob = null;
@@ -231,7 +242,9 @@ window.Caderno = (() => {
         } catch { blob = null; }
         if (!blob) blob = await buscarRemota(foto);
         const url = blob ? URL.createObjectURL(blob) : '';
-        urls.set(foto.id, url);
+        // Não guardar falhas como resultado definitivo: a foto pode ainda
+        // estar a ser enviada pelo outro aparelho quando chegam os metadados.
+        if (url) urls.set(foto.id, url);
         return url;
     }
 
@@ -695,6 +708,12 @@ window.Caderno = (() => {
         fotos = ler().map(normalizarEntrada).sort((a, b) => (
             a.dia < b.dia ? 1 : a.dia > b.dia ? -1 : a.titulo.localeCompare(b.titulo, 'pt')
         ));
+        // Migra metadados que já existiam neste aparelho para a sincronização
+        // entre dispositivos, mesmo que não haja uma edição nova do Caderno.
+        if (!metadataBootstrapDone) {
+            metadataBootstrapDone = true;
+            if (fotos.length) setTimeout(() => sincronizarMetadadosExistentes().catch(() => {}), 6000);
+        }
         ligar();
         backfill();
     }
@@ -704,7 +723,7 @@ window.Caderno = (() => {
         const enviados = lerEnviados();
         let presentes = null;
         try {
-            const resp = await fetch('/api/ficheiros', { cache: 'no-store' });
+            const resp = await fetch('/api/ficheiros', { cache: 'no-store', headers: window.ContaSync?.requestHeaders?.() || {} });
             const r = await resp.json().catch(() => null);
             if (r && r.ok && Array.isArray(r.ficheiros)) {
                 presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));
