@@ -1425,6 +1425,269 @@
         </nav>
     </footer>
 
+    <!-- Evento Semanal -->
+    <dialog id="week-form"
+        class="m-auto w-[min(28rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        <form class="flex flex-col" novalidate>
+            <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
+                <h3 id="week-form-title" class="flex-1 text-sm font-semibold">Novo compromisso</h3>
+                <button type="button" class="icon-btn" data-week-cancelar title="Fechar" aria-label="Fechar">
+                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                </button>
+            </div>
+
+            <div class="flex flex-col gap-3.5 p-4">
+                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Camada">
+                    <button type="button" data-week-layer="fixo" aria-pressed="true"
+                        class="week-kind">
+                        <svg class="icon h-4 w-4"><use href="#i-panel"/></svg>
+                        <span>Fixo (recorrente)</span>
+                    </button>
+                    <button type="button" data-week-layer="dinamico" aria-pressed="false"
+                        class="week-kind">
+                        <svg class="icon h-4 w-4"><use href="#i-week"/></svg>
+                        <span>Dinâmico (semanal)</span>
+                    </button>
+                </div>
+
+                <div class="flex flex-col gap-1.5">
+                    <label class="week-label" for="week-titulo">Título</label>
+                    <input id="week-titulo" type="text" placeholder="Ex.: Aula de Matemática A" class="field w-full" autocomplete="off">
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="week-label" for="week-dia">Dia</label>
+                        <select id="week-dia" class="field w-full">
+                            <option value="1">Segunda-feira</option>
+                            <option value="2">Terça-feira</option>
+                            <option value="3">Quarta-feira</option>
+                            <option value="4">Quinta-feira</option>
+                            <option value="5">Sexta-feira</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="week-label" for="week-hora">Hora</label>
+                        <select id="week-hora" class="field w-full"></select>
+                    </div>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="week-label" for="week-duracao">Duração</label>
+                        <select id="week-duracao" class="field w-full">
+                            <option value="0.25">15 minutos</option>
+                            <option value="0.5">30 minutos</option>
+                            <option value="0.75">45 minutos</option>
+                            <option value="1">1 hora</option>
+                            <option value="1.25">1 hora e 15</option>
+                            <option value="1.5">1 hora e 30</option>
+                            <option value="1.75">1 hora e 45</option>
+                            <option value="2">2 horas</option>
+                            <option value="2.5">2 horas e 30</option>
+                            <option value="3">3 horas</option>
+                            <option value="3.5">3 horas e 30</option>
+                            <option value="4">4 horas</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="week-label" for="week-cor">Cor</label>
+                        <select id="week-cor" class="field w-full">
+                            <option value="brand">Brand</option>
+                            <option value="blue">Azul</option>
+                            <option value="green">Verde</option>
+                            <option value="yellow">Amarelo</option>
+                            <option value="cyan">Ciano</option>
+                            <option value="rose">Rosa</option>
+                            <option value="purple">Roxo</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1.5">
+                    <label class="week-label" for="week-notas">Notas</label>
+                    <textarea id="week-notas" rows="2" placeholder="Opcional..." class="field w-full text-sm" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-4 py-3">
+                <button type="button" class="btn-soft" data-week-cancelar>Cancelar</button>
+                <button id="week-apagar" type="button" class="btn-soft btn-soft-danger" hidden>
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
+                    <span>Apagar</span>
+                </button>
+                <button id="week-duplicar" type="button" class="btn-soft" hidden title="Duplicar: clica no horário onde queres a cópia">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                    <span>Duplicar</span>
+                </button>
+                <button id="week-salvar" type="button" class="btn-primary">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>
+                    <span>Salvar</span>
+                </button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Toasts -->
+    <div id="toasts" role="status" aria-live="polite"
+        class="pointer-events-none fixed bottom-5 right-5 z-50 flex w-[min(22rem,calc(100vw-2.5rem))] flex-col gap-2"></div>
+
+    <!-- Adicionar PDF ou link -->
+    <dialog id="pdf-form"
+        class="m-auto w-[min(34rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        <form class="flex flex-col" novalidate>
+            <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
+                <h3 class="flex-1 text-sm font-semibold">Adicionar à galeria</h3>
+                <button type="button" class="icon-btn" data-pdf-cancelar title="Fechar" aria-label="Fechar">
+                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                </button>
+            </div>
+
+            <div class="flex flex-col gap-3.5 p-4">
+                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Tipo de documento">
+                    <button type="button" data-pdf-tipo="ficheiro" aria-pressed="true"
+                        class="pdf-kind">
+                        <svg class="icon h-4 w-4"><use href="#i-file-text"/></svg>
+                        <span>Ficheiro PDF</span>
+                    </button>
+                    <button type="button" data-pdf-tipo="link" aria-pressed="false"
+                        class="pdf-kind">
+                        <svg class="icon h-4 w-4"><use href="#i-external"/></svg>
+                        <span>Link</span>
+                    </button>
+                </div>
+
+                <div id="pdf-campo-ficheiro" class="flex flex-col gap-1.5">
+                    <label class="pdf-label" for="pdf-ficheiro">Ficheiro</label>
+                    <input id="pdf-ficheiro" type="file" accept="application/pdf,.pdf" multiple
+                        class="field w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-surface-3 file:px-2.5 file:py-1 file:text-[11px] file:font-medium file:text-fg">
+                    <p class="text-[11px] text-faint">Fica guardado no browser. Aceita vários de uma vez.</p>
+                </div>
+
+                <div id="pdf-campo-remoto" hidden class="flex flex-col gap-1.5">
+                    <label class="pdf-label" for="pdf-url">Endereço do PDF</label>
+                    <input id="pdf-url" type="url" inputmode="url" placeholder="https://exemplo.com/aula.pdf"
+                        class="field w-full" autocomplete="off">
+                </div>
+
+                <div id="pdf-campo-interno" hidden class="flex flex-col gap-1.5 rounded-xl border border-line-soft bg-surface-2 p-2.5">
+                    <label class="flex items-center gap-2 text-xs font-medium text-fg">
+                        <input id="pdf-interno" type="checkbox"
+                            class="h-3.5 w-3.5 rounded border-line text-brand accent-[var(--brand)]">
+                        <span>Apontar para um PDF já adicionado</span>
+                    </label>
+                    <label class="pdf-label" for="pdf-target">Documento</label>
+                    <select id="pdf-target" class="field w-full"></select>
+                </div>
+
+                <div class="flex flex-col gap-1.5">
+                    <label class="pdf-label" for="pdf-titulo">Título</label>
+                    <input id="pdf-titulo" type="text" placeholder="Ex.: Lecture 4 — Escalas" class="field w-full" autocomplete="off">
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="pdf-label" for="pdf-categoria">Categoria</label>
+                        <input id="pdf-categoria" type="text" placeholder="Ex.: 16.355J" class="field w-full" list="pdf-categorias" autocomplete="off">
+                        <datalist id="pdf-categorias"></datalist>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="pdf-label" for="pdf-data">Data</label>
+                        <input id="pdf-data" type="date" class="field w-full">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-4 py-3">
+                <button type="button" class="btn-soft" data-pdf-cancelar>Cancelar</button>
+                <button id="pdf-adicionar" type="button" class="btn-primary">
+                    <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                    <span>Adicionar</span>
+                </button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Visualizador de PDF -->
+    <dialog id="pdf-viewer"
+        class="m-auto w-[min(64rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
+            <h3 id="pdf-viewer-title" class="min-w-0 flex-1 truncate text-sm font-semibold">PDF</h3>
+            <span class="hidden shrink-0 text-[10px] text-faint sm:inline">F ecrã inteiro · Esc fecha</span>
+            <a id="pdf-viewer-link" href="#" target="_blank" rel="noopener"
+                class="btn-soft hidden items-center gap-1.5 sm:inline-flex">
+                <svg class="icon h-3.5 w-3.5"><use href="#i-external"/></svg>
+                <span>Abrir noutro separador</span>
+            </a>
+            <button id="pdf-viewer-full" type="button" class="icon-btn" title="Ecrã inteiro (F)"
+                aria-label="Ecrã inteiro" aria-pressed="false">
+                <svg class="icon h-4 w-4"><use href="#i-expand"/></svg>
+            </button>
+            <button id="pdf-viewer-close" type="button" class="icon-btn" title="Fechar" aria-label="Fechar">
+                <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+            </button>
+        </div>
+        <iframe id="pdf-viewer-frame" title="Visualizar PDF" class="block h-[min(62vh,44rem)] w-full border-0 bg-surface-2"></iframe>
+        <div class="border-t border-line bg-surface-2 px-4 py-3">
+            <details id="pdf-cite-details">
+                <summary class="cursor-pointer text-xs font-semibold text-muted transition hover:text-fg">Guardar citação nas Notas do Dia</summary>
+                <div class="mt-2 flex flex-col gap-2">
+                    <textarea id="pdf-cite-text" rows="2" placeholder="Cola aqui a citação ou escreve o resumo…"
+                        class="field w-full text-xs"></textarea>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <label class="flex items-center gap-1.5 text-[11px] text-muted">p.
+                            <input id="pdf-cite-page" type="number" min="1" placeholder="—"
+                                class="field w-20 px-2 py-1.5 text-xs">
+                        </label>
+                        <div class="ml-auto flex gap-1.5">
+                            <button id="pdf-cite-quote" type="button" class="btn-soft text-xs">Guardar citação</button>
+                            <button id="pdf-cite-summary" type="button" class="btn-soft text-xs">Guardar resumo</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
+        </div>
+    </dialog>
+
+    <!-- Pesquisa global -->
+    <dialog id="search-palette"
+        class="m-auto w-[min(36rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
+        <div class="flex items-center gap-2 border-b border-line px-4 py-3">
+            <svg class="icon h-4 w-4 shrink-0 text-faint"><use href="#i-search"/></svg>
+            <input id="global-search" type="search" placeholder="Pesquisar notas, tarefas, dúvidas…  (Enter abre o 1º)"
+                class="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-faint" autocomplete="off">
+            <button id="search-palette-close" type="button" class="icon-btn" aria-label="Fechar">
+                <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+            </button>
+        </div>
+        <div id="search-tags" class="flex flex-wrap gap-1.5 border-b border-line px-4 py-2"></div>
+        <div id="search-results" class="max-h-[60vh] overflow-auto py-1"></div>
+        <p class="border-t border-line bg-surface-2 px-4 py-2 text-[10px] text-faint">Pesquisa sem acentos · #tag filtra por etiqueta · Enter abre o primeiro resultado</p>
+    </dialog>
+
+    <!-- Foco de revisão (flashcards) -->
+    <dialog id="review-focus"
+        class="m-auto w-[min(30rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop backdrop:bg-black/70">
+        <div class="flex items-center gap-3 border-b border-line px-4 py-3">
+            <h3 class="flex-1 text-sm font-semibold">Revisão</h3>
+            <span id="review-focus-count" class="text-[11px] tabular-nums text-faint"></span>
+            <button type="button" class="icon-btn" data-review-close aria-label="Fechar">
+                <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+            </button>
+        </div>
+        <div class="flex flex-col gap-3 p-4">
+            <p id="review-focus-title" class="text-sm font-semibold"></p>
+            <div id="review-focus-body" class="rounded-xl border border-line-soft bg-surface-2 p-3 text-sm leading-relaxed text-muted"></div>
+            <div class="flex justify-end gap-2">
+                <button type="button" class="btn-soft" data-review-close>Depois</button>
+                <button type="button" class="btn-soft" data-review-grade="0">Falhei</button>
+                <button type="button" class="btn-soft" data-review-grade="1">Quase</button>
+                <button type="button" class="btn-primary" data-review-grade="2">Lembrei</button>
+            </div>
+        </div>
+    </dialog>
+
+
     <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
     <script src="src/whiteboard.js"></script>
     <script src="src/weekly.js"></script>
