@@ -40,9 +40,10 @@ window.GitHubSync = (() => {
             localStorage.setItem(CHAVE_TOKEN, novoToken);
         }
         if (novoGistId !== undefined) {
-            gistId = novoGistId;
-            localStorage.setItem(CHAVE_GIST, novoGistId);
+            gistId = String(novoGistId || '').trim();
+            localStorage.setItem(CHAVE_GIST, gistId);
         }
+        if (hasWriteAccess()) iniciarAutoSync(false);
     }
 
     function setPublicGist(gistIdValue) {
@@ -50,10 +51,10 @@ window.GitHubSync = (() => {
         publicReadOnly = true;
         localStorage.setItem(CHAVE_GIST, gistIdValue);
         localStorage.setItem(CHAVE_PUBLIC_READONLY, 'true');
-        // Clear token if it exists (not needed for public read-only)
+        // Public Gists only support automatic pull.
         token = '';
         localStorage.removeItem(CHAVE_TOKEN);
-        pararAutoSync();
+        iniciarAutoSync();
     }
 
     function clearPublicReadOnly() {
@@ -73,8 +74,8 @@ window.GitHubSync = (() => {
     }
 
     function configurado() {
-        // Configured if we have a gistId (with or without token)
-        return !!gistId;
+        // A token without a Gist is enough: the first sync creates one.
+        return !!gistId || (!!token && !publicReadOnly);
     }
 
     function isPublicReadOnly() {
@@ -82,7 +83,7 @@ window.GitHubSync = (() => {
     }
 
     function hasWriteAccess() {
-        return !!token && !!gistId;
+        return !!token;
     }
 
     async function criarGistInicial() {
@@ -90,7 +91,7 @@ window.GitHubSync = (() => {
 
         const payload = {
             description: 'StudyJournal Sync',
-            public: true, // Public so phone can read without auth
+            public: false,
             files: {
                 'study-journal-data.json': {
                     content: JSON.stringify({
@@ -462,13 +463,34 @@ window.GitHubSync = (() => {
     }
 
     async function sync(pullFirst = true) {
-        if (!hasWriteAccess() || aSyncando) return { ok: false, reason: 'no_write_access_or_syncing' };
+        if ((!configurado() && !hasWriteAccess()) || aSyncando) return { ok: false, reason: 'not_configured_or_syncing' };
         aSyncando = true;
         notificar('sync-start');
 
         try {
+            if (isPublicReadOnly()) {
+                const remote = await lerGist();
+                aplicarDadosRemotos(remote.data);
+                localStorage.setItem(CHAVE_ULTIMO_SYNC, new Date().toISOString());
+                notificar('pull-done', { data: remote.data });
+                aSyncando = false;
+                notificar('sync-done', { success: true, readOnly: true });
+                return { ok: true, readOnly: true };
+            }
+            if (!hasWriteAccess()) {
+                aSyncando = false;
+                notificar('sync-error', { error: 'Sem permissão de escrita no Gist.' });
+                return { ok: false, reason: 'no_write_access' };
+            }
+
             let localData = coletarDadosLocais();
             let remoteSha = null;
+
+            if (!gistId) {
+                gistId = await criarGistInicial();
+                localStorage.setItem(CHAVE_GIST, gistId);
+                iniciarAutoSync(false);
+            }
 
             if (pullFirst) {
                 const remote = await lerGist();
@@ -503,10 +525,11 @@ window.GitHubSync = (() => {
     }
 
 
-    function iniciarAutoSync() {
-        if (!hasWriteAccess()) return;
+    function iniciarAutoSync(imediato = true) {
+        if (!hasWriteAccess() && !isPublicReadOnly()) return;
         if (syncTimer) return;
         syncTimer = setInterval(() => sync(), SYNC_INTERVAL_MS);
+        if (imediato) sync();
     }
 
     function pararAutoSync() {
@@ -520,7 +543,19 @@ window.GitHubSync = (() => {
     }
 
     carregarConfig();
-    if (hasWriteAccess()) iniciarAutoSync();
+    if (hasWriteAccess() || isPublicReadOnly()) iniciarAutoSync();
+
+    window.addEventListener('online', () => sync());
+    window.addEventListener('focus', () => sync());
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') sync();
+    });
+    window.addEventListener('storage', (event) => {
+        if (event.key && event.key.startsWith('study-journal-')
+            && ![CHAVE_TOKEN, CHAVE_GIST, CHAVE_PUBLIC_READONLY].includes(event.key)) {
+            sync();
+        }
+    });
 
     return {
         configurado,

@@ -1352,12 +1352,23 @@
                 <div class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
                     <h3 class="text-sm font-semibold">Sincronização GitHub</h3>
                     <p class="text-xs leading-relaxed text-muted">
-                        Faz backup automático de todos os teus dados num repositório privado no GitHub.
-                        Tudo é encriptado antes de ser enviado.
+                        Faz pull e push automaticamente a cada minuto e quando a página ou a ligação regressa.
+                        Usa um Gist; o conteúdo não é encriptado. Um Gist secreto não aparece na pesquisa, mas
+                        qualquer pessoa com o link pode aceder.
                     </p>
-                    <div class="mt-auto flex flex-wrap gap-2">
-                        <button id="github-sync-action" type="button" class="btn-soft">Ligar GitHub</button>
-                        <button id="github-sync-disconnect" type="button" class="btn-soft btn-soft-danger" hidden>Desligar</button>
+                    <div id="github-not-configured" class="flex flex-col gap-2">
+                        <input id="github-token" type="password" autocomplete="off" placeholder="Personal Access Token com acesso a Gists" class="field text-sm">
+                        <input id="github-gist" type="text" autocomplete="off" placeholder="ID do Gist (opcional; cria um novo)" class="field text-sm">
+                        <button id="github-save" type="button" class="btn-soft self-start">Ativar sincronização automática</button>
+                        <p class="text-[11px] text-faint">O token fica guardado neste browser. Não o uses num computador partilhado.</p>
+                    </div>
+                    <div id="github-configured" class="mt-auto flex flex-col gap-2" hidden>
+                        <p id="github-status" class="text-xs text-muted">A aguardar sincronização…</p>
+                        <p class="text-[11px] text-faint">Última sincronização: <span id="github-last-sync">—</span></p>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="github-sync-now" type="button" class="btn-soft">Sincronizar agora</button>
+                            <button id="github-disconnect" type="button" class="btn-soft btn-soft-danger">Desligar</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1394,6 +1405,7 @@
     <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
     <script src="src/whiteboard.js"></script>
     <script src="src/weekly.js"></script>
+    <script src="src/github-sync.js"></script>
     <script src="src/app.js"></script>
 </body>
 </html>
