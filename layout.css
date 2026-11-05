@@ -274,13 +274,68 @@ body > header.journal-header {
     #view-painel > section:last-child > div,
     #view-semanal, #view-calendario, #view-disciplinas,
     #view-estudar, #view-pdfs, #view-exames, #view-whiteboard,
-    #view-caderno, #view-assistente, #view-definicoes {
+    #view-caderno, #view-definicoes {
         border-radius: 16px !important;
     }
     #view-painel > section:last-child > div { overflow-wrap: anywhere; }
     #view-exames [data-exame-panel] { padding: 14px !important; }
-    #heatmap { gap: 3px; }
-    #heatmap .heatmap-day { min-height: 32px; border-radius: 9px; }
+}
+
+/* Consistência horizontal e Painel mais compacto. */
+#view-painel > section:first-child { padding: 20px 22px 18px; }
+#view-painel #journal-text,
+#view-painel #notes-preview {
+    height: 270px;
+    min-height: 220px !important;
+}
+#view-painel > section:last-child { gap: 10px; }
+#view-painel > section:last-child > div { padding: 14px 16px; }
+#view-painel #card-sessao .mt-4 { margin-top: 10px; }
+#view-painel #card-sessao .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 8px; }
+#view-painel #card-streak p { margin-top: 4px; }
+#view-estudar { min-width: 0; }
+#card-heatmap { width: 100%; }
+.heatmap-chart { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; width: 100%; }
+.heatmap-weekdays { display: grid; grid-template-rows: repeat(7, 1fr); align-items: center; }
+.heatmap-plot { min-width: 0; }
+.heatmap-months { display: grid; height: 20px; align-items: start; white-space: nowrap; }
+.heatmap-months[hidden] { display: none; }
+.heatmap-months span { position: relative; z-index: 1; }
+#heatmap.heatmap-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 4px;
+    width: 100%;
+    aspect-ratio: 53 / 7;
+    overflow: visible;
+}
+#heatmap.heatmap-grid .heatmap-day,
+#heatmap.heatmap-grid .heatmap-empty {
+    width: 100%; min-width: 0; min-height: 0; aspect-ratio: 1;
+}
+#heatmap.heatmap-grid .heatmap-day { display: block; border-radius: 3px; }
+.heatmap-weekdays-monthly { grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto; gap: 4px; text-align: center; }
+.heatmap-chart-monthly { display: block; }
+.heatmap-chart-monthly .heatmap-weekdays-monthly,
+.heatmap-chart-monthly .heatmap-plot { max-width: 420px; }
+.heatmap-chart-monthly .heatmap-weekdays-monthly { margin-bottom: 4px; }
+#heatmap.heatmap-monthly { grid-auto-flow: row; grid-template-rows: auto; grid-auto-columns: auto; gap: 4px; max-width: 420px; aspect-ratio: auto; }
+#heatmap.heatmap-monthly .heatmap-day { position: relative; display: grid; place-items: center; min-height: 32px; border-radius: 6px; font-size: 10px; font-weight: 600; }
+#heatmap.heatmap-monthly .heatmap-day span { font-size: 10px; }
+.heatmap-view-toggle .heatmap-view-active { background: var(--color-surface-3); color: var(--color-fg); }
+
+@media (max-width: 639px) {
+    #view-painel #journal-text,
+    #view-painel #notes-preview { height: 190px; min-height: 160px !important; }
+    #view-painel > section:first-child { padding: 14px 12px; }
+    #card-heatmap { padding: 12px; }
+    .heatmap-chart { grid-template-columns: 25px minmax(0, 1fr); gap: 5px; }
+    #heatmap.heatmap-grid { gap: 2px; }
+    #heatmap.heatmap-monthly { max-width: none; gap: 3px; }
+    .heatmap-chart-monthly .heatmap-weekdays-monthly,
+    .heatmap-chart-monthly .heatmap-plot { max-width: none; }
+    #heatmap.heatmap-monthly .heatmap-day { min-height: 36px; }
 }
 @media (max-width: 420px) {
     #current-date { display: none; }
@@ -380,6 +435,13 @@ body > header.journal-header { background: rgba(16, 16, 16, .98); }
 #view-whiteboard .wb-properties-panel { top: 62px !important; right: 12px !important; width: min(260px, calc(100% - 24px)); max-height: calc(100% - 76px); overflow-y: auto; padding: 14px; }
 #view-whiteboard > .relative.flex-1 { min-width: 0; min-height: clamp(360px, 70vh, 760px) !important; border-radius: 15px !important; }
 #view-whiteboard #wb-canvas { display: block; max-width: 100%; }
+#view-whiteboard .bg-dot-grid {
+    background-color: #fff !important;
+    background-image: radial-gradient(rgba(38, 47, 61, .22) 1px, transparent 1px) !important;
+    background-size: 22px 22px !important;
+}
+#view-whiteboard .wb-toolbar button:disabled { cursor: not-allowed; opacity: .35; }
+#view-whiteboard #wb-save-status { min-height: 1rem; }
 #view-whiteboard > .flex.justify-between { align-items: center; gap: 12px; min-width: 0; }
 #view-whiteboard > .flex.justify-between > p { min-width: 0; }
 #view-whiteboard > .flex.justify-between > div { flex: 0 0 auto; }
@@ -428,14 +490,66 @@ body > header.journal-header { background: rgba(16, 16, 16, .98); }
         gap: 8px;
     }
     #view-painel > section:last-child > div { padding: 12px; }
-    #view-painel #card-heatmap { padding: 12px; }
-    #heatmap .heatmap-day {
+}
+
+/* Exames: navegação curta, estado visível e formulários fáceis de percorrer. */
+#view-exames { gap: 14px; }
+#view-exames > header { align-items: center; padding: 20px 22px !important; }
+#view-exames > header h2 { font-size: clamp(20px, 2.4vw, 26px); }
+#view-exames > header > div:last-child { flex-shrink: 0; }
+#view-exames .exames-tabs { width: 100%; border-radius: 12px !important; }
+#view-exames .exame-tab { min-height: 42px; border-radius: 8px; }
+#view-exames .exame-tab[aria-selected="true"] { background: var(--color-brand); color: var(--color-canvas); box-shadow: none; }
+.exames-stat {
+    display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px;
+    border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface);
+    padding: 10px 14px;
+}
+.exames-stat-label { color: var(--color-muted); font-size: 11px; }
+.exames-stat strong { color: var(--color-fg); font-size: 18px; font-variant-numeric: tabular-nums; }
+#view-exames [data-exame-panel] { border-radius: 12px !important; }
+#view-exames [data-exame-panel] > header { margin-bottom: 16px; }
+#view-exames #exames-foco-grid { gap: 12px; }
+#view-exames [data-foco-card] { border-radius: 10px; }
+#view-exames [data-foco-card] textarea { min-height: 76px; resize: vertical; }
+#view-exames #exames-track-filters { margin: 0; }
+#view-exames #exames-track-empty { margin: 0; }
+#view-exames .exame-badge { line-height: 1; }
+#view-exames:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(170px, 220px);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    align-items: start;
+}
+#view-exames > header,
+#view-exames > #exames-resumo { grid-column: 1 / -1; }
+#view-exames > .exames-tabs {
+    grid-column: 2;
+    grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 5px;
+    padding: 8px;
+}
+#view-exames > .exames-tabs .exame-tab { justify-content: flex-start; padding-inline: 12px; }
+#view-exames > [data-exame-panel] { grid-column: 1; grid-row: 3; width: 100%; }
+
+@media (max-width: 639px) {
+    #view-exames:not([hidden]) { display: flex; }
+    #view-exames > .exames-tabs {
+        order: 3;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        flex-direction: row;
         width: 100%;
-        height: 30px;
-        min-height: 0;
-        aspect-ratio: auto;
-        border-radius: 8px;
     }
-    #heatmap-summary { margin-bottom: 8px; }
-    #card-heatmap > p:last-child { font-size: 9px; }
+    #view-exames > [data-exame-panel] { order: 4; }
+    #view-exames > header { align-items: stretch; gap: 12px; padding: 15px !important; }
+    #view-exames > header > div:last-child { align-self: flex-start; }
+    #view-exames .exames-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
+    #view-exames .exame-tab { min-height: 40px; padding-inline: 4px; font-size: 10px; }
+    .exames-stat { align-items: flex-start; flex-direction: column-reverse; gap: 2px; padding: 8px; }
+    .exames-stat-label { font-size: 9px; line-height: 1.2; }
+    .exames-stat strong { font-size: 16px; }
 }

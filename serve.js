@@ -989,8 +989,8 @@ server.listen(PORT, HOST, () => {
             for (const net of list ?? []) {
                 if (net.family === 'IPv4' && !net.internal) {
                     console.log(`  Rede local: ${scheme}://${net.address}:${PORT}`);
-                }
+
             }
         }
     }
-});
+

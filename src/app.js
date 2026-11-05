@@ -542,82 +542,126 @@ const StudyStats = {
     renderHeatmap() {
         const grid = document.getElementById('heatmap');
         if (!grid) return;
-
-        // Não deixa avançar além do mês atual
         const hoje = startOfDay(new Date());
         const mesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
         if (heatmapCursor > mesAtual) heatmapCursor = new Date(mesAtual);
+        const anual = heatmapView === 'anual';
+        const ano = heatmapCursor.getFullYear();
+        const inicioPeriodo = anual ? new Date(ano, 0, 1) : new Date(ano, heatmapCursor.getMonth(), 1);
+        const fimPeriodo = anual ? new Date(ano, 11, 31) : new Date(ano, heatmapCursor.getMonth() + 1, 0);
+        const inicioSemana = new Date(inicioPeriodo);
+        inicioSemana.setDate(inicioSemana.getDate() - ((inicioSemana.getDay() + 6) % 7));
+        const fimSemana = new Date(fimPeriodo);
+        fimSemana.setDate(fimSemana.getDate() + (6 - ((fimSemana.getDay() + 6) % 7)));
+        const semanas = Math.round((fimSemana - inicioSemana) / 604800000) + 1;
 
         const monthEl = document.getElementById('heatmap-month');
         if (monthEl) {
-            monthEl.textContent = heatmapCursor.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+            monthEl.textContent = anual ? String(ano) : inicioPeriodo.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
         }
         const nextBtn = document.getElementById('heatmap-next');
-        if (nextBtn) nextBtn.disabled = heatmapCursor >= mesAtual;
+        if (nextBtn) nextBtn.disabled = anual ? ano >= hoje.getFullYear() : heatmapCursor >= mesAtual;
+        document.getElementById('heatmap-prev')?.setAttribute('aria-label', anual ? 'Ano anterior' : 'Mês anterior');
+        nextBtn?.setAttribute('aria-label', anual ? 'Ano seguinte' : 'Mês seguinte');
 
         const weekEl = document.getElementById('heatmap-weekdays');
-        if (weekEl && !weekEl.childElementCount) {
-            ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].forEach((l) => {
+        if (weekEl) {
+            weekEl.replaceChildren();
+            weekEl.className = `heatmap-weekdays${anual ? '' : ' heatmap-weekdays-monthly'}`;
+            (anual ? ['', 'Mon', '', 'Wed', '', 'Fri', ''] : ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']).forEach((l) => {
                 const d = document.createElement('div');
                 d.textContent = l;
                 weekEl.append(d);
             });
         }
+        document.querySelector('.heatmap-chart')?.classList.toggle('heatmap-chart-monthly', !anual);
+
+        const monthsEl = document.getElementById('heatmap-months');
+        if (monthsEl) {
+            monthsEl.replaceChildren();
+            monthsEl.hidden = !anual;
+            if (anual) {
+                monthsEl.style.gridTemplateColumns = `repeat(${semanas}, minmax(0, 1fr))`;
+                for (let i = 0; i < 12; i += 1) {
+                    const mes = new Date(ano, i, 1);
+                    const inicioSemanaMs = Date.UTC(inicioSemana.getFullYear(), inicioSemana.getMonth(), inicioSemana.getDate());
+                    const semanasAteMes = Math.floor((Date.UTC(ano, i, 1) - inicioSemanaMs) / 604800000);
+                    const label = document.createElement('span');
+                    label.textContent = mes.toLocaleDateString('en', { month: 'short' });
+                    label.style.gridColumn = `${semanasAteMes + 1} / span 1`;
+                    monthsEl.append(label);
+                }
+            }
+        }
 
         grid.replaceChildren();
-
-        const ano = heatmapCursor.getFullYear();
-        const mes = heatmapCursor.getMonth();
-        // Semana começa à segunda
-        const offset = (new Date(ano, mes, 1).getDay() + 6) % 7;
-        const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+        grid.className = `heatmap-grid${anual ? '' : ' heatmap-monthly'}`;
+        grid.style.gridTemplateColumns = anual ? `repeat(${semanas}, minmax(0, 1fr))` : 'repeat(7, minmax(0, 1fr))';
+        grid.style.gridTemplateRows = anual ? 'repeat(7, minmax(0, 1fr))' : '';
         let diasComEstudo = 0;
-        let minutosNoMes = 0;
-
-        for (let i = 0; i < offset; i += 1) grid.append(document.createElement('div'));
-
-        for (let dia = 1; dia <= diasNoMes; dia += 1) {
-            const data = new Date(ano, mes, dia);
-            const futuro = startOfDay(data) > hoje;
-            const esforco = futuro ? { foco: 0, concluidas: 0, sessoes: 0, total: 0 } : lerEsforcoDoDia(data);
-            const score = Math.max(0, esforco.total);
-            const nivel = futuro ? 0 : nivelHeatmap(score);
-            if (!futuro && score > 0) {
-                diasComEstudo += 1;
-                minutosNoMes += score;
+        let minutosPeriodo = 0;
+        const diasAntes = (inicioPeriodo.getDay() + 6) % 7;
+        const totalDias = Math.round((fimPeriodo - inicioPeriodo) / 86400000) + 1;
+        if (!anual) {
+            for (let i = 0; i < diasAntes; i += 1) {
+                const vazio = document.createElement('div');
+                vazio.className = 'heatmap-empty';
+                grid.append(vazio);
             }
+        }
+        const totalCelulas = anual ? semanas * 7 : totalDias;
+        for (let indice = 0; indice < totalCelulas; indice += 1) {
+                const data = new Date(anual ? inicioSemana : inicioPeriodo);
+                if (anual) data.setDate(inicioSemana.getDate() + indice);
+                else data.setDate(inicioPeriodo.getDate() + indice);
+                const dentroDoPeriodo = data >= inicioPeriodo && data <= fimPeriodo;
+                if (anual && !dentroDoPeriodo) {
+                    const espaco = document.createElement('div');
+                    espaco.className = 'heatmap-empty';
+                    grid.append(espaco);
+                } else {
+                    const futuro = startOfDay(data) > hoje;
+                    const esforco = futuro ? { concluidas: 0, total: 0 } : lerEsforcoDoDia(data);
+                    const score = Math.max(0, esforco.total);
+                    const nivel = futuro ? 0 : nivelHeatmap(score);
+                    if (!futuro && score > 0) {
+                        diasComEstudo += 1;
+                        minutosPeriodo += score;
+                    }
 
-            const cell = document.createElement('button');
-            cell.type = 'button';
-            cell.className = 'heatmap-day';
-            cell.dataset.n = String(nivel);
-            cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
-            const estudoMin = score;
-            const partes = [`${estudoMin} min de estudo`];
-            if (esforco.concluidas) partes.push(`${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}`);
-            cell.title = `${data.toLocaleDateString('pt-PT')}: ${partes.join(' · ')}`;
-            if (startOfDay(data).getTime() === hoje.getTime()) cell.dataset.hoje = 'true';
-            cell.setAttribute('aria-label', `Abrir dia ${data.toLocaleDateString('pt-PT')}: ${estudoMin} minutos de estudo${esforco.concluidas ? `, ${esforco.concluidas} tarefas concluídas` : ''}`);
-
-            const num = document.createElement('span');
-            num.textContent = String(dia);
-            cell.append(num);
-
-            if (futuro) {
-                cell.disabled = true;
-            } else {
-                cell.addEventListener('click', () => openDay(data));
-            }
-
-            grid.append(cell);
+                    const cell = document.createElement('button');
+                    cell.type = 'button';
+                    cell.className = 'heatmap-day';
+                    cell.dataset.n = String(nivel);
+                    cell.style.backgroundColor = `var(--color-heatmap-${nivel})`;
+                    const partes = [`${score} min de estudo`];
+                    if (esforco.concluidas) partes.push(`${esforco.concluidas} ${esforco.concluidas === 1 ? 'tarefa concluída' : 'tarefas concluídas'}`);
+                    cell.title = `${data.toLocaleDateString('pt-PT')}: ${partes.join(' · ')}`;
+                    if (startOfDay(data).getTime() === hoje.getTime()) cell.dataset.hoje = 'true';
+                    cell.setAttribute('aria-label', `Abrir dia ${data.toLocaleDateString('pt-PT')}: ${score} minutos de estudo${esforco.concluidas ? `, ${esforco.concluidas} tarefas concluídas` : ''}`);
+                    if (futuro) cell.disabled = true;
+                    else cell.addEventListener('click', () => openDay(data));
+                    if (!anual) {
+                        const numero = document.createElement('span');
+                        numero.textContent = String(data.getDate());
+                        cell.append(numero);
+                    }
+                    grid.append(cell);
+                }
         }
 
         const resumo = document.getElementById('heatmap-summary');
         if (resumo) {
-            resumo.textContent = minutosNoMes > 0
-                ? `${diasComEstudo} ${diasComEstudo === 1 ? 'dia' : 'dias'} com estudo · ${StudySessions.formatar(minutosNoMes)} no mês`
-                : 'Sem tempo de estudo registado neste mês';
+            resumo.textContent = minutosPeriodo > 0
+                ? `${diasComEstudo} ${diasComEstudo === 1 ? 'dia' : 'dias'} com estudo · ${StudySessions.formatar(minutosPeriodo)} ${anual ? 'no ano' : 'no mês'}`
+                : 'Sem tempo de estudo registado neste período';
         }
+
+        document.querySelectorAll('[data-heatmap-view]').forEach((button) => {
+            const ativo = button.dataset.heatmapView === heatmapView;
+            button.setAttribute('aria-pressed', String(ativo));
+            button.classList.toggle('heatmap-view-active', ativo);
+        });
     },
 
     renderReviewQueue() {
@@ -2147,7 +2191,6 @@ const VIEW_LABELS = {
     estudar: 'Estudar',
     pdfs: 'PDFs',
     caderno: 'Caderno',
-    assistente: 'Assistente',
     semanal: 'Semanal',
     exames: 'Exames Nacionais',
     definicoes: 'Definições',
@@ -2190,7 +2233,6 @@ function showView(view) {
     if (view === 'definicoes') renderSettings();
     if (view === 'pdfs') Pdfs.ligar();
     if (view === 'caderno' && window.Caderno) window.Caderno.ligar();
-    if (view === 'assistente' && window.Assistente) window.Assistente.ligar();
     if (view === 'semanal') Weekly.ligar();
     if (view === 'exames' && window.Exames) window.Exames.ligar();
 
@@ -2202,6 +2244,7 @@ function showView(view) {
 
 let calCursor = new Date(today.getFullYear(), today.getMonth(), 1);
 let heatmapCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+let heatmapView = 'anual';
 
 function daysWithData() {
     const set = new Set();
@@ -2543,7 +2586,18 @@ function shiftMonth(delta) {
 }
 
 function shiftHeatmap(delta) {
-    heatmapCursor = new Date(heatmapCursor.getFullYear(), heatmapCursor.getMonth() + delta, 1);
+    heatmapCursor = heatmapView === 'anual'
+        ? new Date(heatmapCursor.getFullYear() + delta, 0, 1)
+        : new Date(heatmapCursor.getFullYear(), heatmapCursor.getMonth() + delta, 1);
+    StudyStats.renderHeatmap();
+}
+
+function setHeatmapView(view) {
+    if (view !== 'anual' && view !== 'mensal') return;
+    heatmapView = view;
+    if (view === 'mensal' && heatmapCursor.getFullYear() === today.getFullYear()) {
+        heatmapCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    }
     StudyStats.renderHeatmap();
 }
 
@@ -3340,6 +3394,9 @@ function bind() {
 
     document.getElementById('heatmap-prev')?.addEventListener('click', () => shiftHeatmap(-1));
     document.getElementById('heatmap-next')?.addEventListener('click', () => shiftHeatmap(1));
+    document.querySelectorAll('[data-heatmap-view]').forEach((button) => {
+        button.addEventListener('click', () => setHeatmapView(button.dataset.heatmapView));
+    });
 
     // Session Timer
     document.getElementById('session-start')?.addEventListener('click', toggleSessionTimer);

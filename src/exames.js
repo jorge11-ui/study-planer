@@ -70,64 +70,7 @@ const DISC_CHIP = {
     'Geral': 'bg-surface-3 text-muted',
 };
 
-/* ── 0. Seed inicial ──
-   Escrita direta sem push: o seed corre no load, antes do pull inicial —
-   com push, um arranque frio ganhava a corrida e espalhava os exemplos
-   para o servidor. */
-function seedSilencioso(key, value) {
-    try {
-        localStorage.setItem(key, JSON.stringify(value));
-    } catch { /* segue sem demo */ }
-}
-
-function seedIfEmpty() {
-    if (!localStorage.getItem(FOCO_KEY)) {
-        seedSilencioso(FOCO_KEY, {
-            'Portugues': { topico: 'Os Maias — Eça de Queirós', objetivo: 'Dominar caracterização das personagens e contexto histórico.', progresso: 45 },
-            'Matematica A': { topico: 'Cálculo Diferencial: Derivadas', objetivo: 'Resolver 15 exercícios de otimização de exames anteriores.', progresso: 70 },
-            'FQA': { topico: 'Termodinâmica e Entropia', objetivo: 'Memorizar fórmulas de calorimetria e resolver fichas IAVE.', progresso: 30 },
-        });
-    }
-    if (!localStorage.getItem(RECURSOS_KEY)) {
-        seedSilencioso(RECURSOS_KEY, [
-            { id: uid('res'), disciplina: 'Português', nome: 'Fichas IAVE - Texto', url: '' },
-            { id: uid('res'), disciplina: 'Português', nome: 'Resumos de Matéria', url: '' },
-            { id: uid('res'), disciplina: 'Português', nome: 'Exames Resolvidos', url: '' },
-            { id: uid('res'), disciplina: 'Português', nome: 'Critérios de Classificação', url: '' },
-            { id: uid('res'), disciplina: 'Matemática A', nome: 'Fichas IAVE - Cálculo', url: '' },
-            { id: uid('res'), disciplina: 'Matemática A', nome: 'Resumos de Geometria', url: '' },
-            { id: uid('res'), disciplina: 'Matemática A', nome: 'Exames Resolvidos', url: '' },
-            { id: uid('res'), disciplina: 'Matemática A', nome: 'Critérios de Classificação', url: '' },
-            { id: uid('res'), disciplina: 'FQA', nome: 'Fichas IAVE - Química', url: '' },
-            { id: uid('res'), disciplina: 'FQA', nome: 'Resumos de Física', url: '' },
-            { id: uid('res'), disciplina: 'FQA', nome: 'Exames Resolvidos', url: '' },
-            { id: uid('res'), disciplina: 'FQA', nome: 'Critérios de Classificação', url: '' },
-        ]);
-    }
-    if (!localStorage.getItem(TRACK_KEY)) {
-        seedSilencioso(TRACK_KEY, [
-            { id: uid('trk'), disciplina: 'Matemática A', topico: 'Derivadas de Funções Compostas', ficha: 'ficha_der_01.pdf', dificuldade: 4, estado: 'Em progresso' },
-            { id: uid('trk'), disciplina: 'FQA', topico: 'Equilíbrio Químico', ficha: 'ficha_equil_02.pdf', dificuldade: 2, estado: 'Concluído' },
-            { id: uid('trk'), disciplina: 'Português', topico: 'Sintaxe: Orações Subordinadas', ficha: 'sintaxe_resumo.pdf', dificuldade: 3, estado: 'A iniciar' },
-        ]);
-    }
-    if (!localStorage.getItem(DUVIDAS_KEY)) {
-        seedSilencioso(DUVIDAS_KEY, [
-            { id: uid('duv'), tipo: 'conceito', disciplina: 'Matemática A', titulo: 'Regra da Cadeia', texto: "f'(g(x)) · g'(x) — derivada da exterior × derivada da interior." },
-            { id: uid('duv'), tipo: 'conceito', disciplina: 'FQA', titulo: '1ª Lei da Termodinâmica', texto: 'ΔU = Q + W (cuidado com os sinais do trabalho!).' },
-            { id: uid('duv'), tipo: 'erro', disciplina: 'Matemática A', titulo: 'Exame 2022 — Q3', texto: 'Perdi pontos por erro de sinal na integração. Rever sinais.' },
-            { id: uid('duv'), tipo: 'erro', disciplina: 'FQA', titulo: 'Exame 2021 — Gases', texto: 'Esqueci converter °C → K. Sempre verificar unidades.' },
-        ]);
-    }
-}
-
 /* ── 1. Foco prioritário ── */
-const FOCO_CARDS = [
-    { key: 'Portugues', label: 'Português' },
-    { key: 'Matematica A', label: 'Matemática A' },
-    { key: 'FQA', label: 'FQA' },
-];
-
 function renderFoco() {
     const data = exRead(FOCO_KEY, {});
     document.querySelectorAll('[data-foco-card]').forEach((card) => {
@@ -197,10 +140,13 @@ function recursoLi(r) {
         body.append(a, md);
     } else {
         const s = document.createElement('span');
-        s.className = 'block truncate font-medium text-muted';
-        s.textContent = `[${r.nome}](URL_DO_FICHEIRO)`;
-        s.title = 'Edita este recurso: adiciona o URL do PDF';
-        body.append(s);
+        s.className = 'block truncate font-medium text-fg';
+        s.textContent = r.nome;
+        s.title = r.nome;
+        const semLink = document.createElement('span');
+        semLink.className = 'mt-0.5 block text-[10px] text-faint';
+        semLink.textContent = 'Sem ligação';
+        body.append(s, semLink);
     }
     const del = document.createElement('button');
     del.type = 'button';
@@ -572,6 +518,12 @@ function atualizarBadgesExame() {
     definirBadge('track', pendentes ? String(pendentes) : '');
     const duvidas = exRead(DUVIDAS_KEY, []).length;
     definirBadge('duvidas', duvidas ? String(duvidas) : '');
+    const topicosEl = document.getElementById('exames-stat-topicos');
+    const recursosEl = document.getElementById('exames-stat-recursos');
+    const revisaoEl = document.getElementById('exames-stat-revisao');
+    if (topicosEl) topicosEl.textContent = String(pendentes);
+    if (recursosEl) recursosEl.textContent = String(recursos);
+    if (revisaoEl) revisaoEl.textContent = String(duvidas);
 }
 
 /* ── Countdown + data-alvo editável ── */
@@ -617,7 +569,6 @@ function lerTabGuardada() {
 }
 
 function ligar() {
-    seedIfEmpty();
     renderFoco();
     renderRecursos();
     renderTrack();
@@ -638,9 +589,9 @@ function bindOnce() {
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { seedIfEmpty(); bindOnce(); ligar(); });
+    document.addEventListener('DOMContentLoaded', () => { bindOnce(); ligar(); });
 } else {
-    seedIfEmpty(); bindOnce(); ligar();
+    bindOnce(); ligar();
 }
 
 window.Exames = {

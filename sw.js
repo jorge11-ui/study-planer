@@ -2,7 +2,7 @@
    Estratégia: navegação = rede-primeiro (nunca guarda interstitials);
    estáticos = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v27';
+const CACHE = 'study-journal-v28';
 
 const NUCLEO = [
     '/',
@@ -20,7 +20,6 @@ const NUCLEO = [
     '/src/notas.js',
     '/src/imagens.js',
     '/src/caderno.js',
-    '/src/assistente.js',
     '/src/whiteboard.js',
     '/vendor/katex/katex.min.js',
     '/vendor/katex/katex.min.css',

@@ -13,10 +13,8 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%23a24f36'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="app.css?v=5">
-    <link rel="stylesheet" href="layout.css?v=7">
+    <link rel="stylesheet" href="layout.css?v=8">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
-    <!-- Rough.js for hand-drawn aesthetic -->
-    <script src="https://cdn.jsdelivr.net/npm/roughjs@4.5.2/bundled/rough.js"></script>
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
 
@@ -204,7 +202,6 @@
                 <svg class="icon h-6 w-6 shrink-0 text-brand"><use href="#i-book"/></svg>
                 <span class="journal-brand-copy">
                     <span class="truncate text-lg font-semibold tracking-tight text-fg">StudyJournal</span>
-                    <small>Caderno de estudo</small>
                 </span>
             </div>
 
@@ -275,10 +272,6 @@
         <button type="button" data-view="whiteboard" title="Quadro Branco" class="nav-item-wide">
             <svg class="icon h-5 w-5"><use href="#i-whiteboard"/></svg>
             <span>Quadro</span>
-        </button>
-        <button type="button" data-view="assistente" title="Assistente" class="nav-item-wide">
-            <svg class="icon h-5 w-5"><use href="#i-chat"/></svg>
-            <span>Assistente</span>
         </button>
         <button type="button" data-view="definicoes" title="Definições" class="nav-item-wide">
             <svg class="icon h-5 w-5"><use href="#i-settings"/></svg>
@@ -481,35 +474,6 @@
                 </p>
             </div>
 
-            <!-- Consistência (Heatmap) -->
-            <div id="card-heatmap" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-3 flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
-                    <h2 class="text-base font-semibold">Consistência</h2>
-                    <div class="ml-auto flex items-center gap-1">
-                        <button id="heatmap-prev" type="button" aria-label="Mês anterior" class="icon-btn">
-                            <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
-                        </button>
-                        <span id="heatmap-month" class="min-w-[7rem] text-center text-xs font-medium capitalize text-muted"></span>
-                        <button id="heatmap-next" type="button" aria-label="Mês seguinte" class="icon-btn">
-                            <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
-                        </button>
-                    </div>
-                </header>
-                <p id="heatmap-summary" class="mb-3 text-xs text-muted" aria-live="polite"></p>
-                <div id="heatmap-weekdays" class="mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-faint"></div>
-                <div id="heatmap" class="grid grid-cols-7 gap-1"></div>
-                <div class="mt-3 flex items-center justify-end gap-1.5 text-[10px] text-faint">
-                    <span>Menos</span>
-                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-0)]"></div>
-                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-1)]"></div>
-                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-2)]"></div>
-                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-3)]"></div>
-                    <div class="w-2 h-2 rounded-[2px] bg-[#39d353]"></div>
-                    <span>Mais</span>
-                </div>
-                <p class="mt-1 text-right text-[10px] text-faint">40+ min nível 2 · 90+ min nível 3 · 150+ min (2h30) máximo</p>
-            </div>
         </section>
         </div>
 
@@ -569,6 +533,45 @@
                 <svg class="icon h-5 w-5 text-brand-light"><use href="#i-tomato"/></svg>
                 <h2 class="text-base font-semibold">Sessões de Estudo</h2>
             </header>
+
+            <!-- Consistência (Heatmap) -->
+            <div id="card-heatmap" class="glass rounded-2xl border border-line bg-surface p-5 shadow-card">
+                <header class="mb-2 flex flex-wrap items-center gap-2.5">
+                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-calendar"/></svg>
+                    <h2 class="text-base font-semibold">Consistência</h2>
+                    <div class="heatmap-view-toggle ml-auto flex items-center gap-1 rounded-lg border border-line-soft p-1" role="group" aria-label="Vista da consistência">
+                        <button type="button" data-heatmap-view="anual" aria-pressed="true" class="btn-ghost px-2 py-1 text-[11px]">Anual</button>
+                        <button type="button" data-heatmap-view="mensal" aria-pressed="false" class="btn-ghost px-2 py-1 text-[11px]">Mensal</button>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button id="heatmap-prev" type="button" aria-label="Período anterior" class="icon-btn">
+                            <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
+                        </button>
+                        <span id="heatmap-month" class="min-w-[9rem] text-center text-xs font-medium capitalize text-muted"></span>
+                        <button id="heatmap-next" type="button" aria-label="Período seguinte" class="icon-btn">
+                            <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
+                        </button>
+                    </div>
+                </header>
+                <p id="heatmap-summary" class="mb-2 text-xs text-muted" aria-live="polite"></p>
+                <div class="heatmap-chart">
+                    <div id="heatmap-weekdays" class="heatmap-weekdays text-[10px] font-semibold text-faint"></div>
+                    <div class="heatmap-plot">
+                        <div id="heatmap-months" class="heatmap-months text-[10px] font-medium text-faint"></div>
+                        <div id="heatmap" class="heatmap-grid"></div>
+                    </div>
+                </div>
+                <div class="mt-2 flex items-center justify-end gap-1.5 text-[10px] text-faint">
+                    <span>Menos</span>
+                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-0)]"></div>
+                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-1)]"></div>
+                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-2)]"></div>
+                    <div class="w-2 h-2 rounded-[2px] bg-[var(--color-heatmap-3)]"></div>
+                    <div class="w-2 h-2 rounded-[2px] bg-[#39d353]"></div>
+                    <span>Mais</span>
+                </div>
+                <p class="mt-1 text-right text-[10px] text-faint">40+ min nível 2 · 90+ min nível 3 · 150+ min (2h30) máximo</p>
+            </div>
 
             <!-- Timer Principal -->
             <div class="glass-subtle rounded-xl border border-line-soft bg-surface-2 p-6">
@@ -752,10 +755,13 @@
             <!-- Floating UI for Whiteboard -->
             <div id="wb-ui-layer" class="absolute inset-0 pointer-events-none z-10">
                 <!-- Toolbar -->
-                <div class="wb-toolbar pointer-events-auto">
+                <div class="wb-toolbar pointer-events-auto" role="toolbar" aria-label="Ferramentas do quadro">
                     <div class="flex items-center gap-1">
                         <button id="wb-tool-select" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Selecionar (V)">
                             <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.38 7.39.94L21 7l-9-4-7.07 16.97-2.51-7.38-7.39.94L3 3z"/></svg>
+                        </button>
+                        <button id="wb-tool-hand" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Mover o quadro (H ou espaço)" aria-label="Mover o quadro">
+                            <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 11V5a2 2 0 0 1 4 0v5-7a2 2 0 0 1 4 0v8-6a2 2 0 0 1 4 0v9c0 4-2 7-7 7h-2c-2 0-3-1-4-2l-4-5a2 2 0 0 1 3-3l2 2"/></svg>
                         </button>
                         <span class="mx-1 h-4 w-px bg-line"></span>
                         <button id="wb-tool-pencil" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Lápis (P)">
@@ -773,6 +779,9 @@
                         <button id="wb-tool-diamond" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Diamante (D)">
                             <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 9-9 9-9-9z"/></svg>
                         </button>
+                        <button id="wb-tool-erase" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Apagar objeto ao clicar (E)" aria-label="Apagar objeto ao clicar">
+                            <svg class="icon h-4 w-4"><use href="#i-trash"/></svg>
+                        </button>
                         <span class="mx-1 h-4 w-px bg-line"></span>
                         <button id="wb-tool-text" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Texto (T)">
                             <svg class="icon h-4 w-4"><use href="#i-file-text"/></svg>
@@ -780,7 +789,14 @@
                         <button id="wb-tool-text-long" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Texto Longo (L)">
                             <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
                         </button>
+                        <button id="wb-image-add" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Inserir imagem" aria-label="Inserir imagem">
+                            <svg class="icon h-4 w-4"><use href="#i-camera"/></svg>
+                        </button>
+                        <input id="wb-image-file" type="file" accept="image/*" class="hidden">
                         <span class="mx-1 h-4 w-px bg-line"></span>
+                        <button id="wb-duplicate" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Duplicar seleção (Ctrl+D)" aria-label="Duplicar seleção">
+                            <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+                        </button>
                         <button id="wb-undo" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Desfazer (Ctrl+Z)">
                             <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a4 4 0 0 1 0 8h-10"/></svg>
                         </button>
@@ -792,22 +808,31 @@
 
                 <!-- Zoom HUD -->
                 <div class="wb-zoom-controls pointer-events-auto">
-                    <button id="wb-zoom-out" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg">
+                    <button id="wb-zoom-out" type="button" aria-label="Diminuir zoom" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg">
                         <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
                     </button>
                     <span id="wb-zoom-level" class="text-xs font-mono tabular-nums text-muted min-w-[40px] text-center">100%</span>
-                    <button id="wb-zoom-in" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg">
+                    <button id="wb-zoom-in" type="button" aria-label="Aumentar zoom" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg">
                         <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                     </button>
                     <span class="mx-1 h-4 w-px bg-line"></span>
-                    <button id="wb-zoom-reset" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Reset Zoom">
+                    <button id="wb-zoom-reset" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Repor zoom" aria-label="Repor zoom">
                         <svg class="icon h-4 w-4"><use href="#i-reset"/></svg>
+                    </button>
+                    <button id="wb-fit-content" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" title="Enquadrar conteúdo" aria-label="Enquadrar conteúdo">
+                        <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>
+                    </button>
+                    <button id="wb-grid-toggle" type="button" class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg" aria-pressed="true" title="Mostrar/ocultar grelha">
+                        <svg class="icon h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18m6-18v18"/></svg>
                     </button>
                 </div>
 
                 <!-- Properties Panel -->
                 <div id="wb-prop-panel" class="wb-properties-panel pointer-events-auto hidden" style="top: 80px; right: 20px;">
-                    <h3 class="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Propriedades</h3>
+                    <header class="mb-3 flex items-center justify-between gap-2">
+                        <h3 class="text-[11px] font-bold uppercase tracking-wider text-faint">Propriedades</h3>
+                        <button id="wb-prop-close" type="button" class="icon-btn h-7 w-7" aria-label="Fechar propriedades"><svg class="icon h-3.5 w-3.5"><use href="#i-x"/></svg></button>
+                    </header>
 
                     <div class="space-y-3">
                         <div>
@@ -850,7 +875,7 @@
                 <canvas id="wb-canvas"></canvas>
             </div>
 
-            <div class="flex justify-between items-center mt-2">
+            <div class="flex flex-wrap items-center justify-between gap-3 mt-2">
                 <div class="flex gap-2">
                     <button id="wb-export" type="button" class="btn-soft text-xs py-1 px-3 inline-flex items-center gap-1.5">
                         <svg class="icon h-3.5 w-3.5"><use href="#i-download"/></svg>
@@ -865,7 +890,9 @@
                         Novo quadro
                     </button>
                 </div>
+                <p id="wb-save-status" class="text-xs text-muted" role="status" aria-live="polite">Rascunho guardado neste dispositivo automaticamente.</p>
             </div>
+            <p class="text-[10px] leading-relaxed text-faint">Atalhos: V selecionar · H mover · P lápis · R retângulo · C elipse · A seta · T texto · E apagar · Ctrl+D duplicar · Ctrl+Z desfazer</p>
         </section>
 
         <!-- Dialogo do visualizador de fotos -->
@@ -983,13 +1010,13 @@
                 <div class="flex items-center gap-2.5">
                     <svg class="icon h-5 w-5 text-brand-light"><use href="#i-grad"/></svg>
                     <div class="min-w-0 flex-1">
-                        <h2 class="text-base font-semibold">Preparação para Exames Nacionais</h2>
-                        <p class="text-xs text-muted">Português · Matemática A · Física e Química A</p>
+                        <h2 class="text-base font-semibold">Exames Nacionais</h2>
+                        <p class="text-xs text-muted">Organiza o estudo, acompanha tópicos e guarda o que precisas rever.</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 rounded-xl border border-line-soft bg-surface-2 px-3 py-1.5">
                     <svg class="icon h-4 w-4 text-brand-light"><use href="#i-calendar"/></svg>
-                    <span class="text-xs text-muted">Faltam</span>
+                    <span class="text-xs text-muted">Até ao exame</span>
                     <span id="exames-countdown" class="text-sm font-semibold tabular-nums text-fg">—</span>
                     <span class="text-xs text-muted">dias</span>
                     <input id="exames-data" type="date" title="Alterar data do exame" aria-label="Alterar data do exame"
@@ -997,12 +1024,18 @@
                 </div>
             </header>
 
+            <div id="exames-resumo" class="grid grid-cols-3 gap-2" aria-live="polite">
+                <div class="exames-stat"><span class="exames-stat-label">Tópicos por concluir</span><strong id="exames-stat-topicos">0</strong></div>
+                <div class="exames-stat"><span class="exames-stat-label">Materiais</span><strong id="exames-stat-recursos">0</strong></div>
+                <div class="exames-stat"><span class="exames-stat-label">Notas de revisão</span><strong id="exames-stat-revisao">0</strong></div>
+            </div>
+
             <!-- Sub-Navegação: só uma secção visível de cada vez -->
-            <nav class="flex gap-1 overflow-x-auto rounded-full border border-line bg-surface p-1 shadow-card" role="tablist" aria-label="Secções de exames">
-                <button type="button" data-exame-tab="foco" role="tab" aria-selected="true" aria-controls="exames-panel-foco" class="exame-tab" title="Foco prioritário da semana">📍 Foco</button>
-                <button type="button" data-exame-tab="recursos" role="tab" aria-selected="false" aria-controls="exames-panel-recursos" class="exame-tab" title="Recursos e PDFs">📄 Recursos <span data-exame-badge="recursos" class="exame-badge" hidden></span></button>
-                <button type="button" data-exame-tab="track" role="tab" aria-selected="false" aria-controls="exames-panel-track" class="exame-tab" title="Tabela de acompanhamento">📊 Tabela <span data-exame-badge="track" class="exame-badge" hidden></span></button>
-                <button type="button" data-exame-tab="duvidas" role="tab" aria-selected="false" aria-controls="exames-panel-duvidas" class="exame-tab" title="Dúvidas e revisão">❓ Dúvidas <span data-exame-badge="duvidas" class="exame-badge" hidden></span></button>
+            <nav class="exames-tabs grid grid-cols-4 gap-1 rounded-xl border border-line bg-surface p-1 shadow-card" role="tablist" aria-label="Secções de exames">
+                <button type="button" data-exame-tab="foco" role="tab" aria-selected="true" aria-controls="exames-panel-foco" class="exame-tab" title="Plano semanal">Plano</button>
+                <button type="button" data-exame-tab="recursos" role="tab" aria-selected="false" aria-controls="exames-panel-recursos" class="exame-tab" title="Materiais de estudo">Materiais <span data-exame-badge="recursos" class="exame-badge" hidden></span></button>
+                <button type="button" data-exame-tab="track" role="tab" aria-selected="false" aria-controls="exames-panel-track" class="exame-tab" title="Tópicos em acompanhamento">Tópicos <span data-exame-badge="track" class="exame-badge" hidden></span></button>
+                <button type="button" data-exame-tab="duvidas" role="tab" aria-selected="false" aria-controls="exames-panel-duvidas" class="exame-tab" title="Notas para rever">Revisão <span data-exame-badge="duvidas" class="exame-badge" hidden></span></button>
             </nav>
 
             <!-- 1. 📍 O Que Estudar A Seguir -->
@@ -1010,7 +1043,7 @@
                 <header class="mb-4 flex items-center gap-2.5">
                     <span class="text-base">📍</span>
                     <h3 class="text-base font-semibold">Foco Prioritário</h3>
-                    <span class="ml-auto text-[11px] text-faint">guarda automático no browser</span>
+                    <span class="ml-auto text-[11px] text-faint">Guarda automaticamente</span>
                 </header>
                 <div id="exames-foco-grid" class="grid gap-3 md:grid-cols-3">
                     <!-- Português -->
@@ -1095,14 +1128,14 @@
                     <h3 class="text-base font-semibold">Recursos &amp; PDFs</h3>
                     <span id="exames-recursos-count" class="text-xs text-faint"></span>
                 </header>
-                <p class="mb-4 text-xs text-muted">Formato: <code class="text-brand-light">[Nome do Documento / PDF](URL_DO_FICHEIRO)</code> — cola o link do PDF no campo URL.</p>
+                <p class="mb-4 text-xs text-muted">Guarda ligações para exames, fichas e resumos. Podes adicionar um nome sem ligação e completar mais tarde.</p>
                 <form id="exames-recurso-form" class="mb-4 grid gap-2 rounded-xl border border-line-soft bg-surface-2 p-3 sm:grid-cols-[1fr_2fr_2fr_auto]">
                     <select id="exames-recurso-disc" class="field w-full text-sm" aria-label="Disciplina do recurso">
                         <option>Português</option>
                         <option>Matemática A</option>
                         <option>FQA</option>
                     </select>
-                    <input id="exames-recurso-nome" type="text" class="field w-full text-sm" placeholder="[Fichas IAVE - Texto](...)" autocomplete="off">
+                    <input id="exames-recurso-nome" type="text" class="field w-full text-sm" placeholder="Nome do material" autocomplete="off" aria-label="Nome do material">
                     <input id="exames-recurso-url" type="url" inputmode="url" class="field w-full text-sm" placeholder="https://.../ficheiro.pdf" autocomplete="off">
                     <button type="submit" class="btn-soft inline-flex items-center justify-center gap-1.5">
                         <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
@@ -1143,8 +1176,8 @@
                         <option>Matemática A</option>
                         <option>FQA</option>
                     </select>
-                    <input id="exames-track-topico" type="text" class="field w-full text-sm" placeholder="Conteúdo / Tópico — Ex.: Derivadas compostas" autocomplete="off">
-                    <input id="exames-track-ficha" type="text" class="field w-full text-sm" placeholder="Ficha/PDF — Ex.: ficha_der_01.pdf ou URL" autocomplete="off">
+                    <input id="exames-track-topico" type="text" class="field w-full text-sm" placeholder="Tópico que vais estudar" autocomplete="off" aria-label="Tópico">
+                    <input id="exames-track-ficha" type="text" class="field w-full text-sm" placeholder="Ligação ou nome da ficha (opcional)" autocomplete="off" aria-label="Ligação ou nome da ficha (opcional)">
                     <select id="exames-track-dif" class="field w-full text-sm" aria-label="Dificuldade 1 a 5">
                         <option value="1">Dif. 1</option>
                         <option value="2">Dif. 2</option>
@@ -1176,7 +1209,7 @@
                         </thead>
                         <tbody id="exames-track-body" class="text-sm"></tbody>
                     </table>
-                    <p id="exames-track-empty" class="p-6 text-center text-xs text-muted">Sem registos. Adiciona o primeiro tópico em cima. Ex.: Matemática A — Derivadas — ficha_der_01.pdf — Dif. 4 — Em progresso.</p>
+                    <p id="exames-track-empty" class="p-6 text-center text-xs text-muted">Ainda não há tópicos. Adiciona um acima para acompanhar o teu progresso.</p>
                 </div>
             </div>
 
@@ -1215,38 +1248,6 @@
                     </div>
                 </div>
             </div>
-        </section>
-
-        <!-- ══ Vista: Assistente ══ -->
-        <section id="view-assistente" data-panel="assistente" hidden
-            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center justify-between gap-2.5">
-                <div class="flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-chat"/></svg>
-                    <h2 class="text-base font-semibold">Assistente</h2>
-                    <span id="assistente-modelo" class="text-xs text-faint"></span>
-                </div>
-                <button id="assistente-limpar" type="button" class="btn-soft inline-flex items-center gap-1.5">
-                    <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
-                    <span>Limpar</span>
-                </button>
-            </header>
-
-            <p id="assistente-estado" class="text-xs leading-relaxed text-muted" role="status" aria-live="polite">
-                A ligar ao LLM local…
-            </p>
-
-            <div id="assistente-msgs" class="scroll-area flex max-h-[55vh] min-h-[16rem] flex-col gap-3 overflow-auto rounded-xl border border-line-soft bg-surface-2 p-4" aria-live="polite"></div>
-
-            <form id="assistente-form" class="flex flex-wrap items-center gap-2">
-                <input id="assistente-input" type="text" placeholder="Pergunta sobre a matéria…" autocomplete="off"
-                    class="field min-w-[10rem] flex-1">
-                <button type="submit" aria-label="Enviar pergunta"
-                    class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-xl bg-brand text-white transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
-                    <svg class="icon h-4 w-4"><use href="#i-plus"/></svg>
-                </button>
-            </form>
-            <p class="text-[11px] text-faint">Corre no teu portátil (Ollama) — nada sai para a cloud. No link oficial sem túnel, fica indisponível.</p>
         </section>
 
         <!-- ══ Vista: Definições ══ -->
@@ -1413,10 +1414,6 @@
             <button type="button" data-view="whiteboard" class="nav-mobile" title="Whiteboard">
                 <svg class="icon"><use href="#i-whiteboard"/></svg>
                 <span>Quadro</span>
-            </button>
-            <button type="button" data-view="assistente" class="nav-mobile" title="Assistente">
-                <svg class="icon"><use href="#i-chat"/></svg>
-                <span>Ajuda</span>
             </button>
             <button type="button" data-view="definicoes" class="nav-mobile" title="Definições">
                 <svg class="icon"><use href="#i-settings"/></svg>
@@ -1697,7 +1694,6 @@
     <script src="src/imagens.js"></script>
     <script src="src/pdfs.js"></script>
     <script src="src/notas.js"></script>
-    <script src="src/assistente.js"></script>
     <script src="src/caderno.js"></script>
     <script src="src/exames.js"></script>
     <script src="src/app.js"></script>
