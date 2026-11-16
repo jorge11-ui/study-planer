@@ -1006,3 +1006,163 @@ body > header.journal-header { background: rgba(16, 16, 16, .98); }
   #view-exames .ex-row-actions .ex-input-sm,
   #view-exames .ex-row-actions-col .ex-input-sm { grid-column: span 1; }
 }
+
+/* ── Exames: diálogo de edição (anexado ao <body>, fora de #view-exames) ── */
+dialog.ex-dialog {
+  width: min(38rem, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: min(88vh, 46rem);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--color-line, #292C33);
+  border-radius: 14px;
+  background: var(--color-surface, #191B20);
+  color: var(--color-fg, #E8E9ED);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .65);
+  overflow: hidden;
+}
+dialog.ex-dialog::backdrop {
+  background: rgba(0, 0, 0, .62);
+  backdrop-filter: blur(4px);
+}
+dialog.ex-dialog .ex-dialog-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+}
+dialog.ex-dialog .ex-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-line, #292C33);
+  background: var(--color-surface-2, #1F2228);
+}
+dialog.ex-dialog .ex-dialog-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--color-fg, #E8E9ED);
+}
+dialog.ex-dialog .ex-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-soft, #343842) transparent;
+}
+dialog.ex-dialog .ex-dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-line, #292C33);
+  background: var(--color-surface-2, #1F2228);
+}
+dialog.ex-dialog .ex-form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+dialog.ex-dialog .ex-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  color: var(--color-muted, #A7ABB6);
+}
+dialog.ex-dialog .ex-input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--color-line, #292C33);
+  background: var(--color-canvas, #101114);
+  color: var(--color-fg, #E8E9ED);
+  padding: 0 10px;
+  font-size: 13px;
+  transition: border-color .15s ease, background .15s ease;
+}
+dialog.ex-dialog textarea.ex-input {
+  height: auto;
+  padding: 9px 10px;
+  line-height: 1.55;
+  resize: vertical;
+}
+dialog.ex-dialog select.ex-input {
+  padding-right: 26px;
+}
+dialog.ex-dialog select.ex-input[multiple] {
+  height: auto;
+  min-height: 104px;
+  padding: 6px;
+  line-height: 1.4;
+}
+dialog.ex-dialog select.ex-input[multiple] option {
+  padding: 5px 7px;
+  border-radius: 5px;
+  color: var(--color-fg, #E8E9ED);
+  background: transparent;
+}
+dialog.ex-dialog select.ex-input[multiple] option:checked {
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+}
+dialog.ex-dialog .ex-input:focus {
+  outline: none;
+  border-color: var(--color-line-soft, #343842);
+  background: var(--color-surface-2, #1F2228);
+}
+dialog.ex-dialog .ex-input::placeholder { color: var(--color-faint, #7E8390); }
+
+dialog.ex-dialog .ex-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--color-line-soft, #343842);
+  background: var(--color-surface-3, #242830);
+  color: var(--color-fg, #E8E9ED);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+dialog.ex-dialog .ex-btn:hover {
+  background: var(--color-line, #292C33);
+  border-color: var(--color-line-soft, #343842);
+  color: #fff;
+}
+dialog.ex-dialog .ex-btn:active { filter: brightness(.94); }
+dialog.ex-dialog .ex-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(255, 255, 255, .1); }
+dialog.ex-dialog .ex-btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 7px; min-height: 30px; }
+dialog.ex-dialog .ex-btn-primary {
+  background: #f0f0f0;
+  border-color: #f0f0f0;
+  color: #141414;
+  font-weight: 600;
+}
+dialog.ex-dialog .ex-btn-primary:hover { background: #fff; border-color: #fff; color: #0d0d0d; }
+
+@media (max-width: 560px) {
+  dialog.ex-dialog { max-height: calc(100dvh - 24px); }
+  dialog.ex-dialog .ex-form-grid-2 { grid-template-columns: 1fr; }
+  dialog.ex-dialog .ex-dialog-head,
+  dialog.ex-dialog .ex-dialog-foot { padding: 12px; }
+  dialog.ex-dialog .ex-dialog-body { padding: 12px; }
+  dialog.ex-dialog .ex-dialog-foot .ex-btn { flex: 1 1 0; }
+}
