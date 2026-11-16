@@ -1,8 +1,9 @@
 /* StudyJournal — service worker (app shell offline).
    Estratégia: navegação = rede-primeiro (nunca guarda interstitials);
-   estáticos = cache-primeiro; /api/* nunca passa pela cache.
+   JS/CSS = rede-primeiro (para apanhar deploys novos assim que há rede);
+   fontes/imagens/vendor = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v28';
+const CACHE = 'study-journal-v29';
 
 const NUCLEO = [
     '/',
@@ -20,6 +21,7 @@ const NUCLEO = [
     '/src/notas.js',
     '/src/imagens.js',
     '/src/caderno.js',
+    '/src/study-workspace.js',
     '/src/whiteboard.js',
     '/vendor/katex/katex.min.js',
     '/vendor/katex/katex.min.css',
@@ -95,16 +97,36 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
+    // Fontes, imagens e bibliotecas vendor mudam pouco: cache-primeiro.
+    const cachePrimeiro = event.request.destination === 'font'
+        || event.request.destination === 'image'
+        || url.pathname.startsWith('/vendor/');
+
+    if (cachePrimeiro) {
+        event.respondWith(
+            caches.match(event.request, { ignoreSearch: true }).then((hit) => {
+                const rede = fetch(event.request).then((resp) => {
+                    if (resp && resp.ok) {
+                        const copia = resp.clone();
+                        caches.open(CACHE).then((cache) => cache.put(event.request, copia));
+                    }
+                    return resp;
+                }).catch(() => hit);
+                return hit || rede;
+            })
+        );
+        return;
+    }
+
+    // JS, CSS e restantes estáticos: rede-primeiro. Assim um deploy novo
+    // aparece logo na visita seguinte, mesmo com a app já instalada (PWA).
     event.respondWith(
-        caches.match(event.request).then((hit) => {
-            const rede = fetch(event.request).then((resp) => {
-                if (resp && resp.ok) {
-                    const copia = resp.clone();
-                    caches.open(CACHE).then((cache) => cache.put(event.request, copia));
-                }
-                return resp;
-            }).catch(() => hit);
-            return hit || rede;
-        })
+        fetch(event.request).then((resp) => {
+            if (resp && resp.ok) {
+                const copia = resp.clone();
+                caches.open(CACHE).then((cache) => cache.put(event.request, copia));
+            }
+            return resp;
+        }).catch(() => caches.match(event.request, { ignoreSearch: true }))
     );
 });

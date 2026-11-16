@@ -15,8 +15,8 @@
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%23a24f36'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="app.css?v=5">
-    <link rel="stylesheet" href="layout.css?v=9">
+    <link rel="stylesheet" href="app.css?v=6">
+    <link rel="stylesheet" href="layout.css?v=10">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
@@ -1544,27 +1544,43 @@
     </dialog>
 
 
+    <script>
+        // Se já havia um service worker a controlar a página, recarrega uma vez
+        // quando a versão nova assume o controlo. Evita ficar preso a JS/CSS
+        // antigos na cache do PWA depois de um deploy.
+        (function () {
+            if (!('serviceWorker' in navigator)) return;
+            var tinhaControlador = !!navigator.serviceWorker.controller;
+            var aRecarregar = false;
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+                if (!tinhaControlador || aRecarregar) return;
+                aRecarregar = true;
+                window.location.reload();
+            });
+        })();
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
-    <script src="src/whiteboard.js"></script>
-    <script src="src/weekly.js"></script>
-    <script src="src/github-sync.js"></script>
-    <script src="src/conta-sync.js"></script>
-    <script src="src/vault.js"></script>
+    <script src="src/whiteboard.js?v=6"></script>
+    <script src="src/weekly.js?v=6"></script>
+    <script src="src/github-sync.js?v=6"></script>
+    <script src="src/conta-sync.js?v=6"></script>
+    <script src="src/vault.js?v=6"></script>
         </main>
     </div>
 
-    <script src="src/imagens.js"></script>
+    <script src="src/imagens.js?v=6"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
         if (window.pdfjsLib) {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
     </script>
-    <script src="src/pdfs.js"></script>
-    <script src="src/study-workspace.js"></script>
-    <script src="src/notas.js"></script>
-    <script src="src/caderno.js"></script>
-    <script src="src/exames.js"></script>
-    <script src="src/app.js"></script>
+    <script src="src/pdfs.js?v=6"></script>
+    <script src="src/study-workspace.js?v=6"></script>
+    <script src="src/notas.js?v=6"></script>
+    <script src="src/caderno.js?v=6"></script>
+    <script src="src/exames.js?v=6"></script>
+    <script src="src/app.js?v=6"></script>
 </body>
 </html>

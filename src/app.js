@@ -4296,7 +4296,9 @@ async function init() {
     // em contextos sem suporte — a app funciona na mesma.
     try {
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').catch(() => {});
+            navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+                .then((reg) => reg.update().catch(() => {}))
+                .catch(() => {});
         }
     } catch { /* segue sem PWA */ }
 }
