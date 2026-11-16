@@ -2901,10 +2901,10 @@ async function openDay(date) {
 function showDayTasksDialog(date, key) {
     const dlg = document.getElementById('day-tasks-dlg');
     if (!dlg) return createDayTasksDialog(date, key);
-    
+
     dlg.dataset.dateKey = key;
-    dlg.querySelector('#day-tasks-date').textContent = date.toLocaleDateString('pt-PT', { 
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
+    dlg.querySelector('#day-tasks-date').textContent = date.toLocaleDateString('pt-PT', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
     });
     renderDayTasksInDialog(key);
     dlg.showModal();
@@ -2998,12 +2998,12 @@ function bindDayTasksDialog(dlg) {
 function renderDayTasksInDialog(key) {
     const container = document.getElementById('day-tasks-list');
     if (!container) return;
-    
+
     const tasks = read(`study-journal-tasks-${key}`, []);
     const notes = read(`study-journal-notes-${key}`, '');
-    
+
     container.innerHTML = '';
-    
+
     if (notes.trim()) {
         const noteCard = document.createElement('div');
         noteCard.className = 'rounded-lg bg-brand/5 border border-brand/20 p-3';
@@ -3016,12 +3016,12 @@ function renderDayTasksInDialog(key) {
         `;
         container.appendChild(noteCard);
     }
-    
+
     if (tasks.length === 0 && !notes.trim()) {
         container.innerHTML = '<p class="text-center py-6 text-sm text-muted">Sem tarefas nem notas para este dia.</p>';
         return;
     }
-    
+
     tasks.forEach(task => {
         const taskEl = document.createElement('div');
         taskEl.className = `flex items-start gap-2.5 rounded-lg border border-line bg-surface p-2.5 transition hover:border-brand/30 ${task.done ? 'opacity-50' : ''}`;
@@ -3042,7 +3042,7 @@ function renderDayTasksInDialog(key) {
         `;
         container.appendChild(taskEl);
     });
-    
+
     // Bind checkboxes and remove buttons
     const dlg = document.getElementById('day-tasks-dlg');
     container.querySelectorAll('.task-check').forEach(cb => {
@@ -3059,7 +3059,7 @@ function renderDayTasksInDialog(key) {
             }
         });
     });
-    
+
     container.querySelectorAll('.task-remove').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const key = dlg?.dataset.dateKey;
@@ -4390,7 +4390,6 @@ function updateSettingsForReadOnly() {
         btn.addEventListener('click', configurePublicGist);
         githubSection.append(btn);
     }
-
     // Hide export/import/clear day
     const exportData = document.getElementById('export-data');
     const importData = document.getElementById('import-data');
