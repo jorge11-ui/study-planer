@@ -315,38 +315,7 @@ window.Caderno = (() => {
             cat.textContent = foto.disciplina;
             meta.append(cat);
         }
-        if (foto.transcricao) {
-            const tr = document.createElement('span');
-            tr.className = 'pdf-card-category';
-            tr.textContent = 'transcrita';
-            tr.title = 'Esta foto já foi passada a texto';
-            meta.append(tr);
-        }
         corpo.append(meta);
-
-        if (foto.transcricao) {
-            const det = document.createElement('details');
-            det.className = 'rounded-lg border border-line-soft bg-surface-2 px-2 py-1 text-xs text-muted';
-            const sum = document.createElement('summary');
-            sum.className = 'cursor-pointer font-medium';
-            sum.textContent = 'Ver transcrição';
-            const p = document.createElement('p');
-            p.className = 'mt-1 whitespace-pre-wrap leading-relaxed';
-            p.textContent = foto.transcricao;
-            const gbtn = document.createElement('button');
-            gbtn.type = 'button';
-            gbtn.className = 'btn-soft mt-2 px-2 py-1 text-[11px]';
-            gbtn.textContent = 'Guardar nas notas';
-            gbtn.addEventListener('click', () => {
-                const md = `### 📷 Caderno · ${foto.titulo}\n\n_${dataLegivel(foto.dia)} · ${foto.disciplina}_\n\n${foto.transcricao.trim()}`;
-                const ok = window.StudyJournal && typeof window.StudyJournal.adicionarANotas === 'function'
-                    ? window.StudyJournal.adicionarANotas(md)
-                    : false;
-                toast(ok ? 'Transcrição guardada nas notas.' : 'Não foi possível guardar.', ok ? 'success' : 'error');
-            });
-            det.append(sum, p, gbtn);
-            corpo.append(det);
-        }
 
         const accoes = document.createElement('div');
         accoes.className = 'pdf-card-actions';
@@ -372,14 +341,15 @@ window.Caderno = (() => {
         remover.setAttribute('aria-label', `Remover foto: ${foto.titulo}`);
         remover.append(icone('i-trash'));
 
-        const transcrever = document.createElement('button');
-        transcrever.type = 'button';
-        transcrever.className = 'pdf-action pdf-action-secondary';
-        transcrever.dataset.cadernoTranscrever = foto.id;
-        transcrever.title = foto.transcricao ? 'Passar a texto outra vez' : 'Passar a foto a texto (LLM local)';
-        transcrever.append(icone('i-file-text'), textoBotao(foto.transcricao ? 'De novo' : 'Transcrever'));
+        const rodar = document.createElement('button');
+        rodar.type = 'button';
+        rodar.className = 'pdf-action pdf-action-secondary';
+        rodar.dataset.cadernoRodar = foto.id;
+        rodar.title = 'Rodar a imagem 90°';
+        rodar.setAttribute('aria-label', `Rodar foto: ${foto.titulo}`);
+        rodar.append(icone('i-rotate'), textoBotao('Rodar'));
 
-        accoes.append(ver, baixar, transcrever, remover);
+        accoes.append(ver, baixar, rodar, remover);
         corpo.append(accoes);
         li.append(previa, corpo);
         return li;
@@ -452,9 +422,7 @@ window.Caderno = (() => {
             stats.replaceChildren();
             if (fotos.length > 0) {
                 const totalBytes = fotos.reduce((a, f) => a + (Number(f.tamanho) || 0), 0);
-                const tr = fotos.filter((f) => f.transcricao).length;
-                [`${filtradas.length} a mostrar`, tamanhoLegivel(totalBytes), tr ? `${tr} transcritas` : '']
-                    .filter(Boolean)
+                [`${filtradas.length} a mostrar`, tamanhoLegivel(totalBytes)]
                     .forEach((t, i) => {
                         const s = document.createElement('span');
                         s.textContent = t;
@@ -526,9 +494,42 @@ window.Caderno = (() => {
         a.remove();
     }
 
-    /* Passa a foto a texto com o modelo de visão local (Ollama). O texto
-       fica guardado na foto (cache: nunca repete o vision para a mesma). */
-    async function transcrever(id, botao) {
+    function rodarBlob(blob) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.height;
+                    canvas.height = img.width;
+                    const ctx = canvas.getContext('2d');
+                    ctx.translate(canvas.width / 2, canvas.height / 2);
+                    ctx.rotate(Math.PI / 2);
+                    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                    canvas.toBlob((out) => {
+                        if (!out) {
+                            reject(new Error('rodar'));
+                            return;
+                        }
+                        resolve(out);
+                    }, 'image/jpeg', 0.92);
+                } catch (e) {
+                    reject(e);
+                } finally {
+                    URL.revokeObjectURL(url);
+                }
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('imagem'));
+            };
+            img.src = url;
+        });
+    }
+
+    /* Roda a foto 90° no sentido horário e guarda o resultado. */
+    async function rodar(id, botao) {
         const foto = porId(id);
         if (!foto) return;
         if (botao) {
@@ -536,35 +537,43 @@ window.Caderno = (() => {
             botao.classList.add('opacity-50');
         }
         try {
-            const est = await fetch('/api/llm/estado', { cache: 'no-store' })
-                .then((r) => r.json().catch(() => null)).catch(() => null);
-            if (!est || !est.ok || !est.ollama) {
-                toast('LLM local indisponível. Liga o Ollama no portátil e usa o servidor local.', 'error');
+            let blob = null;
+            try {
+                blob = await lerFoto(id);
+            } catch { blob = null; }
+            if (!blob) blob = await buscarRemota(foto);
+            if (!blob) {
+                toast('Esta foto ainda só existe no outro aparelho.', 'error');
                 return;
             }
-            const modelos = Array.isArray(est.modelos) ? est.modelos : [];
-            const visao = modelos.find((m) => /vl|vision|llava|minicpm/i.test(m));
-            const resp = await fetch('/api/llm/transcrever', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, ...(visao ? { modelo: visao } : {}) }),
-            });
-            const r = await resp.json().catch(() => null);
-            if (!resp.ok || !r || !r.ok) {
-                if (r && r.reason === 'sem-modelo') {
-                    toast(`Falta o modelo de visão (${r.modelo}). ${r.dica || ''}`, 'error');
-                } else if (r && r.reason === 'ausente') {
-                    toast('Os bytes desta foto não estão neste servidor.', 'error');
-                } else {
-                    toast('Não foi possível transcrever agora.', 'error');
-                }
+
+            const rodado = await rodarBlob(blob);
+            try {
+                await guardarFoto(id, rodado);
+            } catch {
+                toast('Não foi possível guardar a foto rodada.', 'error');
                 return;
             }
-            foto.transcricao = String(r.texto || '').trim();
-            foto.transcritoEm = Date.now();
-            foto.transcritoPor = String(r.modelo || '');
+
+            foto.tamanho = rodado.size;
+            const urlAntiga = urls.get(id);
+            if (urlAntiga && urlAntiga.startsWith('blob:')) URL.revokeObjectURL(urlAntiga);
+            urls.set(id, URL.createObjectURL(rodado));
+
+            const enviados = lerEnviados();
+            if (enviados.delete(id)) guardarEnviados(enviados);
+
             guardar();
-            toast('Foto transcrita e guardada.', 'success');
+            toast('Imagem rodada.', 'success');
+
+            enviarFoto(foto, rodado).then((ok) => {
+                if (!ok) return;
+                const atuais = lerEnviados();
+                atuais.add(id);
+                guardarEnviados(atuais);
+            }).catch(() => {});
+        } catch {
+            toast('Não foi possível rodar a imagem.', 'error');
         } finally {
             if (botao) {
                 botao.disabled = false;
@@ -680,10 +689,10 @@ window.Caderno = (() => {
             grelha.addEventListener('click', async (evento) => {
                 const abrirBotao = evento.target.closest('[data-caderno-open]');
                 const removerBotao = evento.target.closest('[data-caderno-remove]');
-                const transcreverBotao = evento.target.closest('[data-caderno-transcrever]');
+                const rodarBotao = evento.target.closest('[data-caderno-rodar]');
                 if (abrirBotao) abrir(abrirBotao.dataset.cadernoOpen);
                 else if (removerBotao) apagar(removerBotao.dataset.cadernoRemove);
-                else if (transcreverBotao) transcrever(transcreverBotao.dataset.cadernoTranscrever, transcreverBotao);
+                else if (rodarBotao) rodar(rodarBotao.dataset.cadernoRodar, rodarBotao);
             });
             grelha.addEventListener('click', (evento) => {
                 const link = evento.target.closest('[data-caderno-download]');

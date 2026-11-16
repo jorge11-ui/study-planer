@@ -10,6 +10,7 @@ const els = {
     taskInput: document.getElementById('task-input'),
     taskSubject: document.getElementById('task-subject'),
     taskCategory: document.getElementById('task-category'),
+    taskPriority: document.getElementById('task-priority'),
     taskList: document.getElementById('task-list'),
     taskEmpty: document.getElementById('task-empty'),
     clearDone: document.getElementById('clear-done'),
@@ -32,6 +33,14 @@ const els = {
     calNext: document.getElementById('cal-next'),
     calWeekdays: document.getElementById('cal-weekdays'),
     calGrid: document.getElementById('cal-grid'),
+    calToday: document.getElementById('cal-today'),
+    calSearch: document.getElementById('cal-search'),
+    calNewEvent: document.getElementById('cal-new-event'),
+    calFilters: document.getElementById('cal-filters'),
+    calUpcoming: document.getElementById('cal-upcoming'),
+    calUpcomingCount: document.getElementById('cal-upcoming-count'),
+    calAgendaView: document.getElementById('cal-agenda-view'),
+    calMonthView: document.getElementById('cal-month-view'),
 
     subjectsList: document.getElementById('subjects-list'),
     subjectsDate: document.getElementById('subjects-date'),
@@ -1171,9 +1180,29 @@ function renderTasks() {
         chipCat.style.border = `1px solid ${corPainel.border}`;
         chipCat.textContent = CATEGORIA_NOMES[catPainel] || catPainel;
 
+        const pr = task.priority || 'media';
+        const prLabel = pr === 'alta' ? 'Alta' : pr === 'baixa' ? 'Baixa' : 'Média';
+        const prStyle = pr === 'alta'
+            ? 'background:rgba(239,68,68,.14);color:#fca5a5;border:1px solid rgba(239,68,68,.35)'
+            : pr === 'baixa'
+                ? 'background:rgba(148,163,184,.12);color:#cbd5e1;border:1px solid rgba(148,163,184,.25)'
+                : 'background:rgba(245,158,11,.14);color:#fcd34d;border:1px solid rgba(245,158,11,.35)';
+        const chipPr = document.createElement('span');
+        chipPr.className = 'chip';
+        chipPr.setAttribute('style', prStyle);
+        chipPr.textContent = prLabel;
+
         const chipsRow = document.createElement('div');
         chipsRow.className = 'flex flex-wrap gap-1.5';
-        chipsRow.append(chip, chipCat);
+        chipsRow.append(chip, chipCat, chipPr);
+        if (task.noteTitle || task.noteDay) {
+            const chipNote = document.createElement('span');
+            chipNote.className = 'chip';
+            chipNote.setAttribute('style', 'background:rgba(59,130,246,.12);color:#93c5fd;border:1px solid rgba(59,130,246,.25)');
+            chipNote.textContent = task.noteTitle ? `Nota: ${String(task.noteTitle).slice(0,18)}` : 'Nota';
+            chipNote.title = task.noteTitle ? `Associada à nota: ${task.noteTitle}` : 'Associada à nota do dia';
+            chipsRow.append(chipNote);
+        }
 
         const body = document.createElement('div');
         body.className = 'flex min-w-0 flex-1 flex-col gap-1.5';
@@ -1196,6 +1225,9 @@ function renderTasks() {
 
         const li = document.createElement('li');
         li.className = 'task-item group flex items-start gap-3 rounded-xl border border-line-soft bg-surface-2 p-3 transition hover:border-line';
+        if (task.noteDay) li.dataset.noteDay = String(task.noteDay);
+        if (task.noteTitle) li.dataset.noteTitle = String(task.noteTitle);
+        if (task.noteSubject) li.dataset.noteSubject = String(task.noteSubject);
         li.append(body, remove);
         els.taskList.append(li);
     });
@@ -1219,29 +1251,67 @@ function renderProgress() {
     }
 }
 
-async function addTask(text, subject, category = 'tarefa') {
-    tasks.push({ id: `${Date.now()}-${tasks.length}`, text, subject, category, done: false });
+async function addTask(text, subject, category = 'tarefa', priority = 'media') {
+    const link = (window.__swTaskNoteLink && typeof window.__swTaskNoteLink === 'object') ? window.__swTaskNoteLink : null;
+    const task = { id: `${Date.now()}-${tasks.length}`, text, subject, category, priority, done: false };
+    if (link && (link.noteDay || link.noteTitle)) {
+        task.noteDay = link.noteDay || '';
+        task.noteTitle = link.noteTitle || '';
+        task.noteSubject = link.noteSubject || '';
+    }
+    window.__swTaskNoteLink = null;
+    tasks.push(task);
     await syncTasks();
     renderTasks();
     sincronizarDispositivos();
 }
 
 const CATEGORIA_CORES = {
-    teste: { bg: 'rgba(251, 113, 133, 0.22)', border: '#fb7185', text: '#fda4af' },
-    tarefa: { bg: 'rgba(74, 222, 128, 0.15)', border: '#4ade80', text: '#86efac' },
-    estudo: { bg: 'rgba(129, 140, 248, 0.18)', border: '#818cf8', text: '#a5b4fc' },
+    teste:   { bg: 'rgba(239, 68, 68, 0.14)',  border: '#E57373', text: '#F1A7A7', dot: '#E57373' },
+    tarefa:  { bg: 'rgba(245, 158, 11, 0.14)', border: '#E0A458', text: '#F0C792', dot: '#E0A458' },
+    estudo:  { bg: 'rgba(34, 197, 94, 0.14)',  border: '#6FBF8E', text: '#A7D8B8', dot: '#6FBF8E' },
+    aula:    { bg: 'rgba(34, 197, 94, 0.14)',  border: '#6FBF8E', text: '#A7D8B8', dot: '#6FBF8E' },
+    trabalho:{ bg: 'rgba(245, 158, 11, 0.14)', border: '#E0A458', text: '#F0C792', dot: '#E0A458' },
+    apresentacao: { bg: 'rgba(168, 85, 247, 0.14)', border: '#B794D6', text: '#D4BCEB', dot: '#B794D6' },
+    pessoal: { bg: 'rgba(59, 130, 246, 0.14)', border: '#7AA7D9', text: '#B7D0EC', dot: '#7AA7D9' },
 };
 
-const CATEGORIA_NOMES = { teste: 'Teste', tarefa: 'Tarefa', estudo: 'Estudo' };
+const CATEGORIA_NOMES = {
+    teste: 'Testes',
+    trabalho: 'Trabalhos',
+    tarefa: 'Trabalhos',
+    aula: 'Aulas',
+    estudo: 'Aulas',
+    apresentacao: 'Apresentações',
+    pessoal: 'Pessoais',
+};
+
+const CAL_CATEGORIAS_UI = [
+    { key: 'teste', label: 'Testes', cor: '#E57373' },
+    { key: 'trabalho', label: 'Trabalhos', cor: '#E0A458' },
+    { key: 'aula', label: 'Aulas', cor: '#6FBF8E' },
+    { key: 'apresentacao', label: 'Apresentações', cor: '#B794D6' },
+    { key: 'pessoal', label: 'Pessoais', cor: '#7AA7D9' },
+];
+
+function categoriaCanonica(cat) {
+    const c = String(cat || '').toLower();
+    if (c === 'tarefa') return 'trabalho';
+    if (c === 'estudo') return 'aula';
+    if (CATEGORIA_NOMES[c]) return c;
+    return 'trabalho';
+}
 
 /* Tarefas antigas não têm `category`: infere pelo texto para
    QA-Matematica / Teste-A.I existentes aparecerem a vermelho. */
 function categoriaDaTarefa(task) {
-    if (task && task.category) return task.category;
+    if (task && task.category) return categoriaCanonica(task.category);
     const texto = (task && task.text) || '';
     if (/teste|\bqa[-\s]|\bexame|\bavalia|\bprova|\bfrequência|\bmini[-\s]?teste/i.test(texto)) return 'teste';
-    if (/revis|\bestud|\bresum|\btrein/i.test(texto)) return 'estudo';
-    return 'tarefa';
+    if (/apresent|semin[aá]ri|oral/i.test(texto)) return 'apresentacao';
+    if (/aula|revis|\bestud|\bresum|\btrein/i.test(texto)) return 'aula';
+    if (/pessoal|m[eé]dico|consulta|fam[ií]lia|anivers/i.test(texto)) return 'pessoal';
+    return 'trabalho';
 }
 
 /* Remove os blocos de revisão gerados automaticamente (ids `estudo-…`).
@@ -1604,15 +1674,25 @@ function renderSessionTimer() {
 
     sincronizarSeletoresDisciplina();
 
-    // Show today's summary for selected subject
-    const hoje = StudySessions.obterDoDia(new Date());
-    const subjMin = hoje[sessionTimer.subject] || 0;
-    if (subjMin > 0) {
-        summaryEl.textContent = `Hoje: ${StudySessions.formatar(subjMin)} em ${sessionTimer.subject}`;
-        summaryEl.classList.remove('hidden');
-    } else {
-        summaryEl.classList.add('hidden');
-    }
+    // Show today's summary for selected subject + totals
+    try {
+        const hoje = StudySessions.obterDoDia(new Date());
+        const subjMin = hoje[sessionTimer.subject] || 0;
+        const dayMin = Object.values(hoje).reduce((a,b)=>a + (Number(b)||0), 0);
+        if (summaryEl) {
+            summaryEl.textContent = subjMin > 0
+                ? `Hoje: ${StudySessions.formatar(subjMin)} em ${sessionTimer.subject} · Total do dia: ${StudySessions.formatar(dayMin)}`
+                : `Tempo total estudado hoje: ${StudySessions.formatar(dayMin)}`;
+            summaryEl.classList.remove('hidden');
+        }
+        const totalEl = document.getElementById('session-total-summary');
+        if (totalEl) {
+            let all = 0;
+            const sessions = (typeof read === 'function') ? read('study-journal-sessions', {}) : {};
+            Object.values(sessions || {}).forEach(d => { if (d && typeof d === 'object') Object.values(d).forEach(v => all += (Number(v)||0)); });
+            totalEl.textContent = `Total registado: ${StudySessions.formatar(all)}`;
+        }
+    } catch {}
     saveSessionState();
 }
 
@@ -2245,6 +2325,52 @@ function showView(view) {
 let calCursor = new Date(today.getFullYear(), today.getMonth(), 1);
 let heatmapCursor = new Date(today.getFullYear(), today.getMonth(), 1);
 let heatmapView = 'anual';
+let calViewMode = 'mes';
+let calSearchTerm = '';
+let calActiveFilters = new Set();
+
+function textoCal(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function eventoCombinaFiltros(task) {
+    const cat = categoriaDaTarefa(task);
+    if (calActiveFilters.size && !calActiveFilters.has(cat)) return false;
+    if (!calSearchTerm) return true;
+    const hay = textoCal(`${task.text || ''} ${task.subject || ''} ${CATEGORIA_NOMES[cat] || cat}`);
+    return hay.includes(calSearchTerm);
+}
+
+function obterEventosDoDia(key) {
+    return read(`study-journal-tasks-${key}`, [])
+        .map((t) => ({ ...t, _key: key, _cat: categoriaDaTarefa(t) }))
+        .filter(eventoCombinaFiltros);
+}
+
+function obterEventosDoDiaTodos(key) {
+    return read(`study-journal-tasks-${key}`, []).map((t) => ({ ...t, _key: key, _cat: categoriaDaTarefa(t) }));
+}
+
+function recolherProximosEventos(limiteDias = 45) {
+    const inicio = new Date(today);
+    const grupos = [];
+    let total = 0;
+    const vistos = new Set();
+    for (let i = 0; i < limiteDias; i += 1) {
+        const d = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + i);
+        const key = dayKey(d);
+        if (vistos.has(key)) continue;
+        vistos.add(key);
+        const eventos = obterEventosDoDiaTodos(key)
+            .filter(eventoCombinaFiltros)
+            .sort((a, b) => Number(a.done) - Number(b.done));
+        if (!eventos.length) continue;
+        grupos.push({ date: d, key, eventos });
+        total += eventos.length;
+        if (grupos.length >= 14 && total >= 20) break;
+    }
+    return { grupos, total };
+}
 
 function daysWithData() {
     const set = new Set();
@@ -2269,10 +2395,226 @@ function daysWithData() {
     return set;
 }
 
+function renderCalFilters() {
+    if (!els.calFilters) return;
+    els.calFilters.replaceChildren(...CAL_CATEGORIAS_UI.map(({ key, label, cor }) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cal-filter-chip';
+        b.dataset.cat = key;
+        b.setAttribute('aria-pressed', calActiveFilters.has(key) ? 'true' : 'false');
+        b.innerHTML = `<span class="cal-filter-dot" style="background:${cor}"></span><span>${label}</span>`;
+        b.addEventListener('click', () => {
+            if (calActiveFilters.has(key)) calActiveFilters.delete(key); else calActiveFilters.add(key);
+            renderCalendar();
+        });
+        return b;
+    }));
+}
+
+function renderUpcomingSidebar() {
+    if (!els.calUpcoming) return;
+    const { grupos, total } = recolherProximosEventos();
+    if (els.calUpcomingCount) els.calUpcomingCount.textContent = total ? `${total}` : '';
+    els.calUpcoming.replaceChildren();
+    if (!grupos.length) {
+        const p = document.createElement('p');
+        p.className = 'cal-empty';
+        p.textContent = calSearchTerm || calActiveFilters.size ? 'Sem eventos para os filtros atuais.' : 'Sem próximos eventos.';
+        els.calUpcoming.append(p);
+        return;
+    }
+
+    const hojeKey = dayKey(today);
+    const amanha = new Date(today); amanha.setDate(amanha.getDate() + 1);
+    const amanhaKey = dayKey(amanha);
+
+    const mkGroup = (titulo, items) => {
+        if (!items.length) return null;
+        const wrap = document.createElement('div');
+        wrap.className = 'cal-up-group';
+        const h = document.createElement('div');
+        h.className = 'cal-up-date';
+        h.textContent = titulo;
+        wrap.append(h);
+        items.forEach(({ date, key, eventos }) => {
+            eventos.forEach((task) => {
+                const cat = categoriaDaTarefa(task);
+                const cor = CATEGORIA_CORES[cat] || CATEGORIA_CORES.trabalho;
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'cal-up-item w-full text-left';
+                const hora = task.hora || task.time || '';
+                item.innerHTML = `
+                    <span class="cal-up-dot" style="background:${cor.dot || cor.border}"></span>
+                    <div class="min-w-0 flex-1">
+                        <div class="cal-up-title truncate ${task.done ? 'line-through opacity-60' : ''}">${escapeHtml(task.text || '')}</div>
+                        <div class="cal-up-meta truncate">${hora ? `<span>${escapeHtml(hora)}</span> · ` : ''}${escapeHtml(CATEGORIA_NOMES[cat] || cat)}${task.subject ? ` · ${escapeHtml(task.subject)}` : ''}</div>
+                    </div>`;
+                item.addEventListener('click', () => {
+                    selectDate(date);
+                    calCursor = new Date(date.getFullYear(), date.getMonth(), 1);
+                    showDayTasksDialog(date, key);
+                });
+                wrap.append(item);
+            });
+        });
+        return wrap;
+    };
+
+    const hoje = grupos.filter(g => g.key === hojeKey);
+    const proximos = grupos.filter(g => g.key !== hojeKey);
+    const gHoje = mkGroup('Hoje', hoje);
+    const gProx = mkGroup('Próximos', proximos);
+    if (gHoje) els.calUpcoming.append(gHoje);
+    if (gProx) els.calUpcoming.append(gProx);
+    if (!gHoje && !gProx) {
+        const p = document.createElement('p'); p.className = 'cal-empty'; p.textContent = 'Sem próximos eventos.'; els.calUpcoming.append(p);
+    }
+}
+
+function criarCelulaDia(date, { outroMes = false } = {}) {
+    const key = dayKey(date);
+    const isToday = date.getTime() === today.getTime();
+    const isSelected = date.getTime() === selected.getTime();
+    const tasks = read(`study-journal-tasks-${key}`, []);
+    const notes = read(`study-journal-notes-${key}`, '');
+    const visiveis = tasks.filter(eventoCombinaFiltros);
+
+    const cell = document.createElement('div');
+    cell.className = 'cal-day';
+    cell.dataset.dateKey = key;
+    cell.setAttribute('aria-label', date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+    if (isToday) cell.dataset.hoje = 'true';
+    if (isSelected) cell.dataset.selecionado = 'true';
+    if (outroMes) cell.dataset.outroMes = 'true';
+    const dow = date.getDay();
+    if (dow === 0 || dow === 6) cell.dataset.fimSemana = 'true';
+
+    const number = document.createElement('div');
+    number.className = 'cal-day-num';
+    number.textContent = String(date.getDate());
+    cell.append(number);
+
+    const events = document.createElement('div');
+    events.className = 'cal-day-events';
+
+    visiveis.slice(0, 3).forEach(task => events.append(createCalendarTaskElement(task, key, date)));
+    if (visiveis.length > 3) {
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'cal-more';
+        more.textContent = `+${visiveis.length - 3} mais`;
+        more.addEventListener('click', (e) => { e.stopPropagation(); showDayTasksDialog(date, key); });
+        events.append(more);
+    }
+    if (notes.trim()) {
+        const n = document.createElement('button');
+        n.type = 'button';
+        n.className = 'cal-more';
+        n.textContent = 'Notas';
+        n.addEventListener('click', (e) => { e.stopPropagation(); showDayTasksDialog(date, key); });
+        events.append(n);
+    }
+    cell.append(events);
+
+    cell.addEventListener('click', (e) => {
+        if (e.target.closest('.cal-event') || e.target.closest('.cal-more')) return;
+        selectDate(date);
+        if (outroMes) calCursor = new Date(date.getFullYear(), date.getMonth(), 1);
+        renderCalendar();
+    });
+    cell.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.cal-event')) return;
+        showInlineTaskForm(cell, key, date);
+    });
+
+    // Drag-and-drop target
+    cell.addEventListener('dragover', (e) => { e.preventDefault(); cell.classList.add('drop-target'); });
+    cell.addEventListener('dragleave', () => cell.classList.remove('drop-target'));
+    cell.addEventListener('drop', async (e) => {
+        e.preventDefault(); cell.classList.remove('drop-target');
+        const raw = e.dataTransfer?.getData('text/cal-event');
+        if (!raw) return;
+        try {
+            const { fromKey, taskId } = JSON.parse(raw);
+            if (!fromKey || !taskId || fromKey === key) return;
+            const origem = read(`study-journal-tasks-${fromKey}`, []);
+            const idx = origem.findIndex(t => t.id === taskId);
+            if (idx < 0) return;
+            const [movido] = origem.splice(idx, 1);
+            const destino = read(`study-journal-tasks-${key}`, []);
+            destino.push(movido);
+            await persistirTarefasDia(fromKey, origem);
+            await persistirTarefasDia(key, destino);
+            renderCalendar();
+        } catch { /* ignora */ }
+    });
+
+    return cell;
+}
+
+function renderAgendaView(modo) {
+    if (!els.calAgendaView || !els.calMonthView) return;
+    els.calMonthView.classList.add('hidden');
+    els.calAgendaView.classList.remove('hidden');
+    els.calAgendaView.className = 'cal-agenda';
+    els.calAgendaView.replaceChildren();
+
+    const base = new Date(selected);
+    const dias = [];
+    if (modo === 'dia') {
+        dias.push(new Date(base));
+        els.calMonth.textContent = base.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    } else {
+        const dow = (base.getDay() + 6) % 7;
+        const inicio = new Date(base); inicio.setDate(base.getDate() - dow);
+        for (let i = 0; i < 7; i += 1) { const d = new Date(inicio); d.setDate(inicio.getDate() + i); dias.push(d); }
+        els.calMonth.textContent = `${dias[0].toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' })} – ${dias[6].toLocaleDateString('pt-PT', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+    }
+
+    let tem = false;
+    dias.forEach((date) => {
+        const key = dayKey(date);
+        const eventos = obterEventosDoDia(key);
+        const bloco = document.createElement('div');
+        bloco.className = 'cal-agenda-day';
+        const head = document.createElement('div');
+        head.className = 'cal-agenda-head';
+        head.textContent = date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
+        bloco.append(head);
+        const list = document.createElement('div');
+        list.className = 'cal-agenda-list';
+        if (!eventos.length) {
+            const v = document.createElement('div'); v.className = 'cal-empty'; v.textContent = 'Sem eventos.'; list.append(v);
+        } else {
+            tem = true;
+            eventos.forEach(t => list.append(createCalendarTaskElement(t, key, date, { agenda: true })));
+        }
+        bloco.append(list);
+        els.calAgendaView.append(bloco);
+    });
+    if (!tem && (calSearchTerm || calActiveFilters.size)) {
+        // ok, individual empties shown
+    }
+}
+
 function renderCalendar() {
+    renderCalFilters();
+    document.querySelectorAll('[data-cal-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.calView === calViewMode ? 'true' : 'false'));
+
+    if (calViewMode === 'semana' || calViewMode === 'dia') {
+        renderAgendaView(calViewMode);
+        renderUpcomingSidebar();
+        return;
+    }
+
+    if (els.calMonthView) els.calMonthView.classList.remove('hidden');
+    if (els.calAgendaView) els.calAgendaView.classList.add('hidden');
+
     els.calMonth.textContent = `${calCursor.toLocaleDateString('pt-PT', { month: 'long' })} ${calCursor.getFullYear()}`;
 
-    if (!els.calWeekdays.childElementCount) {
+    if (els.calWeekdays && !els.calWeekdays.childElementCount) {
         WEEKDAYS.forEach((label) => {
             const cell = document.createElement('div');
             cell.textContent = label;
@@ -2285,115 +2627,27 @@ function renderCalendar() {
     const first = new Date(ano, mes, 1);
     const offset = (first.getDay() + 6) % 7;
     const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-    // Só as semanas necessárias (como um calendário de parede)
+    const prevMonthDays = new Date(ano, mes, 0).getDate();
     const totalCells = Math.ceil((offset + diasNoMes) / 7) * 7;
 
     els.calGrid.replaceChildren();
 
     for (let i = 0; i < totalCells; i += 1) {
         const diaNum = i - offset + 1;
-
-        // Casas vazias antes do dia 1 e depois do fim do mês
-        if (diaNum < 1 || diaNum > diasNoMes) {
-            const blank = document.createElement('div');
-            blank.className = 'cal-classic-blank';
-            blank.setAttribute('aria-hidden', 'true');
-            els.calGrid.append(blank);
-            continue;
+        let date, outroMes = false;
+        if (diaNum < 1) {
+            date = new Date(ano, mes - 1, prevMonthDays + diaNum);
+            outroMes = true;
+        } else if (diaNum > diasNoMes) {
+            date = new Date(ano, mes + 1, diaNum - diasNoMes);
+            outroMes = true;
+        } else {
+            date = new Date(ano, mes, diaNum);
         }
-
-        const date = new Date(ano, mes, diaNum);
-
-        const key = dayKey(date);
-        const isToday = date.getTime() === today.getTime();
-        const isSelected = date.getTime() === selected.getTime();
-
-        const tasks = read(`study-journal-tasks-${key}`, []);
-        const notes = read(`study-journal-notes-${key}`, '');
-
-        const cell = document.createElement('div');
-        cell.className = 'cal-classic-day group';
-        cell.dataset.dateKey = key;
-        cell.setAttribute('aria-label', date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
-        if (isToday) cell.dataset.hoje = 'true';
-        if (isSelected) cell.dataset.selecionado = 'true';
-        // Densidade: fonte maior com poucas tarefas, menor com muitas
-        if (tasks.length === 1) cell.dataset.densidade = '1';
-        else if (tasks.length === 2) cell.dataset.densidade = '2';
-        else if (tasks.length >= 3) cell.dataset.densidade = '3';
-        const dow = date.getDay();
-        if (dow === 0 || dow === 6) cell.dataset.fimSemana = 'true';
-
-        // Day number
-        const number = document.createElement('div');
-        number.className = 'cal-classic-num';
-        number.textContent = String(diaNum);
-        cell.append(number);
-
-        // Tasks container
-        const tasksContainer = document.createElement('div');
-        tasksContainer.className = 'cal-classic-tasks';
-        tasksContainer.dataset.tasksContainer = 'true';
-
-        // Show up to 3 tasks inline
-        const displayTasks = tasks.slice(0, 3);
-        displayTasks.forEach(task => {
-            const taskEl = createCalendarTaskElement(task, key, date);
-            tasksContainer.append(taskEl);
-        });
-
-        // Show "+N more" if more tasks
-        if (tasks.length > 3) {
-            const moreEl = document.createElement('div');
-            moreEl.className = 'cal-classic-more';
-            moreEl.textContent = `+${tasks.length - 3} mais`;
-            moreEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showDayTasksDialog(date, key);
-            });
-            tasksContainer.append(moreEl);
-        }
-
-        // Show notes indicator
-        if (notes.trim()) {
-            const notesEl = document.createElement('div');
-            notesEl.className = 'cal-classic-notes';
-            notesEl.innerHTML = '<svg class="icon inline h-3 w-3 mr-0.5"><use href="#i-file-text"/></svg> Notas';
-            notesEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showDayTasksDialog(date, key);
-            });
-            tasksContainer.append(notesEl);
-        }
-
-        // Add task button (shows on hover)
-        const addBtn = document.createElement('button');
-        addBtn.type = 'button';
-        addBtn.className = 'cal-classic-add';
-        addBtn.innerHTML = '<svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>';
-        addBtn.title = 'Adicionar tarefa';
-        addBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showInlineTaskForm(cell, key, date);
-        });
-        tasksContainer.append(addBtn);
-
-        cell.append(tasksContainer);
-
-        // Click on cell (not task/add btn) to select day.
-        // No telemóvel abre logo o diálogo (ver + adicionar tarefas).
-        cell.addEventListener('click', (e) => {
-            if (e.target.closest('.calendar-task') || e.target.closest('.cal-classic-add')) return;
-            selectDate(date);
-            renderCalendar();
-            try {
-                if (window.matchMedia?.('(max-width: 639px)').matches) openDay(date);
-            } catch { /* desktop: só seleciona */ }
-        });
-
-        els.calGrid.append(cell);
+        els.calGrid.append(criarCelulaDia(date, { outroMes }));
     }
 
+    renderUpcomingSidebar();
     atualizarNotasRemotasCalendario(ano, mes);
 }
 
@@ -2412,18 +2666,19 @@ async function atualizarNotasRemotasCalendario(ano, mes) {
             if (!r || !r.ok || !Array.isArray(r.dias)) return;
             notasRemotasCache.dias = new Set(r.dias.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)));
         }
-        // A grelha pode já ser de outro mês quando a resposta chega
         if (calCursor.getFullYear() !== ano || calCursor.getMonth() !== mes) return;
         if (!notasRemotasCache.dias.size || !els.calGrid) return;
-        els.calGrid.querySelectorAll('.cal-classic-day').forEach((cell) => {
+        els.calGrid.querySelectorAll('.cal-day').forEach((cell) => {
             const key = cell.dataset.dateKey;
             if (!key || !notasRemotasCache.dias.has(key)) return;
-            if (cell.querySelector('.cal-classic-notes')) return;
-            const box = cell.querySelector('.cal-classic-tasks');
+            if (cell.querySelector('[data-notes-indicator]')) return;
+            const box = cell.querySelector('.cal-day-events');
             if (!box) return;
-            const notesEl = document.createElement('div');
-            notesEl.className = 'cal-classic-notes';
-            notesEl.innerHTML = '<svg class="icon inline h-3 w-3 mr-0.5"><use href="#i-file-text"/></svg> Notas';
+            const notesEl = document.createElement('button');
+            notesEl.type = 'button';
+            notesEl.className = 'cal-more';
+            notesEl.dataset.notesIndicator = 'true';
+            notesEl.textContent = 'Notas';
             notesEl.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const [y, m, d] = key.split('-').map(Number);
@@ -2434,57 +2689,37 @@ async function atualizarNotasRemotasCalendario(ano, mes) {
     } catch { /* indicador best-effort */ }
 }
 
-function createCalendarTaskElement(task, key, date) {
+function createCalendarTaskElement(task, key, date, opts = {}) {
+    const agenda = !!opts.agenda;
     const el = document.createElement('div');
-    el.className = 'calendar-task flex items-center gap-1.5 px-2 py-1 rounded font-medium truncate cursor-pointer transition hover:shadow-sm';
+    el.className = `cal-event${agenda ? ' cal-event-agenda' : ''}${task.done ? ' cal-event-done' : ''}`;
+    el.draggable = !agenda;
 
     const categoria = categoriaDaTarefa(task);
-    const cat = CATEGORIA_CORES[categoria] || CATEGORIA_CORES.tarefa;
-    el.style.backgroundColor = cat.bg;
-    el.style.borderLeft = `3px solid ${cat.border}`;
-    el.style.color = cat.text;
+    const cat = CATEGORIA_CORES[categoria] || CATEGORIA_CORES.trabalho;
+    const hora = task.hora || task.time || '';
 
     el.dataset.taskId = task.id;
-    el.title = `[${(CATEGORIA_NOMES[categoria] || categoria).toUpperCase()}] ${task.text}`;
+    el.title = `${hora ? hora + ' · ' : ''}[${(CATEGORIA_NOMES[categoria] || categoria)}] ${task.text}`;
 
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'h-3 w-3 shrink-0 accent-current opacity-80';
-    checkbox.checked = task.done;
-    checkbox.addEventListener('change', async (e) => {
-        e.stopPropagation();
-        const tasks = read(`study-journal-tasks-${key}`, []);
-        const t = tasks.find(x => x.id === task.id);
-        if (t) {
-            t.done = e.target.checked;
-            await persistirTarefasDia(key, tasks);
-            renderCalendar();
-        }
-    });
+    el.innerHTML = `
+        <span class="cal-event-dot" style="background:${cat.dot || cat.border}"></span>
+        ${hora ? `<span class="cal-event-time">${escapeHtml(hora)}</span>` : ''}
+        <span class="cal-event-title">${escapeHtml(task.text || '')}</span>
+        ${task.done ? '<span class="cal-event-time" title="Concluído">✓</span>' : ''}
+    `;
 
-    const text = document.createElement('span');
-    text.className = 'truncate flex-1';
-    text.textContent = task.text;
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'shrink-0 p-0.5 rounded text-current/70 hover:text-current hover:bg-current/20 transition opacity-0 group-hover:opacity-100';
-    deleteBtn.innerHTML = '<svg class="icon h-3 w-3"><use href="#i-trash"/></svg>';
-    deleteBtn.title = 'Apagar tarefa';
-    deleteBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (confirm('Apagar esta tarefa?')) {
-            const tasks = read(`study-journal-tasks-${key}`, []).filter(t => t.id !== task.id);
-            await persistirTarefasDia(key, tasks);
-            renderCalendar();
-        }
-    });
-
-    el.append(checkbox, text, deleteBtn);
-    el.classList.add('group');
+    if (!agenda) {
+        el.addEventListener('dragstart', (e) => {
+            el.classList.add('dragging');
+            try { e.dataTransfer?.setData('text/cal-event', JSON.stringify({ fromKey: key, taskId: task.id })); } catch {}
+            e.dataTransfer.effectAllowed = 'move';
+        });
+        el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    }
 
     el.addEventListener('click', (e) => {
-        if (e.target === checkbox) return;
+        e.stopPropagation();
         showDayTasksDialog(date, key);
     });
 
@@ -2523,9 +2758,11 @@ function showInlineTaskForm(cell, key, date) {
                 <div class="flex flex-col gap-1.5">
                     <label class="text-[11px] font-medium text-muted" for="inline-task-category">Categoria</label>
                     <select id="inline-task-category" class="field text-sm">
-                        <option value="tarefa">🟢 Tarefa / Entrega</option>
-                        <option value="estudo">🔵 Bloco de estudo / Revisão</option>
-                        <option value="teste">🔴 Teste / Avaliação</option>
+                        <option value="teste">Testes</option>
+                        <option value="trabalho">Trabalhos</option>
+                        <option value="aula">Aulas</option>
+                        <option value="apresentacao">Apresentações</option>
+                        <option value="pessoal">Pessoais</option>
                     </select>
                 </div>
             </div>
@@ -2581,6 +2818,22 @@ function showInlineTaskForm(cell, key, date) {
 }
 
 function shiftMonth(delta) {
+    if (calViewMode === 'semana') {
+        const d = new Date(selected);
+        d.setDate(d.getDate() + delta * 7);
+        selectDate(d);
+        calCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+        renderCalendar();
+        return;
+    }
+    if (calViewMode === 'dia') {
+        const d = new Date(selected);
+        d.setDate(d.getDate() + delta);
+        selectDate(d);
+        calCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+        renderCalendar();
+        return;
+    }
     calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + delta, 1);
     renderCalendar();
 }
@@ -2646,9 +2899,11 @@ function createDayTasksDialog(date, key) {
                             <option>Hobbies</option>
                         </select>
                         <select id="day-tasks-category" class="field w-full sm:w-auto text-sm" title="Categoria">
-                            <option value="tarefa">🟢 Tarefa</option>
-                            <option value="estudo">🔵 Estudo</option>
-                            <option value="teste">🔴 Teste</option>
+                            <option value="teste">Testes</option>
+                            <option value="trabalho">Trabalhos</option>
+                            <option value="aula">Aulas</option>
+                            <option value="apresentacao">Apresentações</option>
+                            <option value="pessoal">Pessoais</option>
                         </select>
                     </div>
                     <div class="flex justify-end gap-2">
@@ -3391,6 +3646,25 @@ function bind() {
 
     els.calPrev.addEventListener('click', () => shiftMonth(-1));
     els.calNext.addEventListener('click', () => shiftMonth(1));
+    els.calToday?.addEventListener('click', () => {
+        selectDate(today);
+        calCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+        renderCalendar();
+    });
+    els.calSearch?.addEventListener('input', () => {
+        calSearchTerm = textoCal(els.calSearch.value);
+        renderCalendar();
+    });
+    document.querySelectorAll('[data-cal-view]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            calViewMode = btn.dataset.calView || 'mes';
+            renderCalendar();
+        });
+    });
+    els.calNewEvent?.addEventListener('click', () => {
+        const alvo = selected || today;
+        showInlineTaskForm(null, dayKey(alvo), alvo);
+    });
 
     document.getElementById('heatmap-prev')?.addEventListener('click', () => shiftHeatmap(-1));
     document.getElementById('heatmap-next')?.addEventListener('click', () => shiftHeatmap(1));
@@ -3429,11 +3703,12 @@ function bind() {
     els.taskForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        const text = els.taskInput.value.trim();
+        const text = (els.taskInput.value || '').trim();
         if (!text) return;
 
-        const category = document.getElementById('task-category')?.value || 'tarefa';
-        await addTask(text, els.taskSubject.value, category);
+        const category = (els.taskCategory?.value || document.getElementById('task-category')?.value || 'tarefa');
+        const priority = (els.taskPriority?.value || document.getElementById('task-priority')?.value || 'media');
+        await addTask(text, els.taskSubject.value || 'Geral', category, priority);
         els.taskInput.value = '';
         els.taskInput.focus();
     });

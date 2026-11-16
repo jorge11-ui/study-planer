@@ -29,6 +29,163 @@ window.Pdfs = (() => {
     let termos = '';
     let urls = new Map();
     let docAberto = null;
+    const pdfJsCache = new Map(); // docId -> Promise<PDFDocumentProxy|null>
+    const pdfPreviewState = new WeakMap(); // container -> state
+
+    function origemPdfRenderizavel(doc) {
+        if (!doc) return null;
+        if (doc.tipo === 'ficheiro') return doc;
+        if (doc.tipo === 'link' && doc.alvo) {
+            const alvo = porId(doc.alvo);
+            return alvo && alvo.tipo === 'ficheiro' ? alvo : null;
+        }
+        if (doc.tipo === 'link' && doc.url) return doc;
+        return null;
+    }
+
+    async function obterPdfJsDoc(doc) {
+        if (!window.pdfjsLib) return null;
+        const origem = origemPdfRenderizavel(doc);
+        if (!origem) return null;
+        if (pdfJsCache.has(doc.id)) return pdfJsCache.get(doc.id);
+
+        const promessa = (async () => {
+            try {
+                const url = await urlDe(origem);
+                if (!url) return null;
+                const tarefa = window.pdfjsLib.getDocument({ url });
+                return await tarefa.promise;
+            } catch {
+                return null;
+            }
+        })();
+
+        pdfJsCache.set(doc.id, promessa);
+        return promessa;
+    }
+
+    function criarIconePreview(doc) {
+        const wrap = document.createDocumentFragment();
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'icon pdf-card-icon');
+        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+        use.setAttribute('href', doc.tipo === 'link' ? '#i-external' : '#i-file-text');
+        svg.append(use);
+        wrap.append(svg);
+        const formato = document.createElement('span');
+        formato.className = 'pdf-card-format';
+        formato.textContent = doc.tipo === 'link' ? TEXTOS.link : 'PDF';
+        wrap.append(formato);
+        return wrap;
+    }
+
+    async function renderizarPaginaPdf(pdf, num, container, state) {
+        if (!state || state.cancelado || state.rendered.has(num)) return;
+        state.rendered.add(num);
+        try {
+            const page = await pdf.getPage(num);
+            if (state.cancelado) return;
+            const base = page.getViewport({ scale: 1 });
+            const host = container.parentElement || container;
+            const largura = Math.max(120, container.clientWidth || host.clientWidth || 240);
+            const escala = largura / base.width;
+            const viewport = page.getViewport({ scale: escala * (window.devicePixelRatio || 1) });
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page-img';
+            canvas.width = Math.floor(viewport.width);
+            canvas.height = Math.floor(viewport.height);
+            canvas.style.width = '100%';
+            canvas.style.height = 'auto';
+            canvas.dataset.page = String(num);
+            const ctx = canvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            if (state.cancelado) return;
+
+            let inserido = false;
+            for (const filho of container.children) {
+                const p = Number(filho.dataset && filho.dataset.page);
+                if (p && p > num) {
+                    container.insertBefore(canvas, filho);
+                    inserido = true;
+                    break;
+                }
+            }
+            if (!inserido) container.append(canvas);
+        } catch {
+            state.rendered.delete(num);
+        }
+    }
+
+    async function garantirPaginasPdf(container, pdf, state, ate) {
+        const limite = Math.min(ate, pdf.numPages);
+        for (let n = 1; n <= limite; n += 1) {
+            if (state.cancelado) return;
+            await renderizarPaginaPdf(pdf, n, container, state);
+        }
+        state.next = Math.max(state.next, limite + 1);
+    }
+
+    async function iniciarPreviewPdf(doc, previa) {
+        const container = document.createElement('div');
+        container.className = 'pdf-card-pages';
+        const status = document.createElement('div');
+        status.className = 'pdf-page-status';
+        status.textContent = 'A carregar pré-visualização…';
+        container.append(status);
+
+        previa.classList.add('is-pages');
+        previa.replaceChildren(container);
+        const badge = document.createElement('span');
+        badge.className = 'pdf-card-format';
+        badge.textContent = doc.tipo === 'link' ? TEXTOS.link : 'PDF';
+        previa.append(badge);
+
+        const state = { cancelado: false, rendered: new Set(), next: 1, total: 0, busy: false };
+        pdfPreviewState.set(container, state);
+
+        const pdf = await obterPdfJsDoc(doc);
+        if (state.cancelado) return;
+        if (!pdf) {
+            previa.classList.remove('is-pages');
+            previa.replaceChildren(criarIconePreview(doc));
+            return;
+        }
+
+        state.total = pdf.numPages;
+        status.remove();
+
+        const carregarMais = async (extra = 1) => {
+            if (state.busy || state.cancelado) return;
+            state.busy = true;
+            try {
+                const alvo = Math.min(state.total, state.next + extra - 1);
+                await garantirPaginasPdf(container, pdf, state, Math.max(alvo, state.next));
+            } finally {
+                state.busy = false;
+            }
+        };
+
+        await carregarMais(1);
+
+        container.addEventListener('scroll', () => {
+            if (state.cancelado || state.busy || state.next > state.total) return;
+            const pertoFim = container.scrollTop + container.clientHeight >= container.scrollHeight - 80;
+            if (pertoFim) carregarMais(2);
+        }, { passive: true });
+    }
+
+    function montarPreview(doc, previa) {
+        const renderizavel = origemPdfRenderizavel(doc);
+        if (!renderizavel || !window.pdfjsLib) {
+            previa.replaceChildren(criarIconePreview(doc));
+            return;
+        }
+        iniciarPreviewPdf(doc, previa).catch(() => {
+            if (!previa.isConnected) return;
+            previa.classList.remove('is-pages');
+            previa.replaceChildren(criarIconePreview(doc));
+        });
+    }
 
     /* ── IndexedDB: os bytes dos PDFs ───────────────────── */
 
@@ -321,6 +478,7 @@ window.Pdfs = (() => {
             if (url.startsWith('blob:')) URL.revokeObjectURL(url);
         }
         urls = new Map();
+        pdfJsCache.clear();
     }
 
     /* ── Cartões ────────────────────────────────────────── */
@@ -339,17 +497,7 @@ window.Pdfs = (() => {
 
         const previa = document.createElement('div');
         previa.className = 'pdf-card-preview';
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('class', 'icon pdf-card-icon');
-        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', doc.tipo === 'link' ? '#i-external' : '#i-file-text');
-        svg.append(use);
-        previa.append(svg);
-
-        const formato = document.createElement('span');
-        formato.className = 'pdf-card-format';
-        formato.textContent = doc.tipo === 'link' ? TEXTOS.link : 'PDF';
-        previa.append(formato);
+        montarPreview(doc, previa);
 
         const corpo = document.createElement('div');
         corpo.className = 'pdf-card-body';

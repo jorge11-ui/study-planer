@@ -169,6 +169,10 @@
                 <path d="M21 12a9 9 0 1 1-6.219-7.822"/>
                 <path d="M3 3v5h5"/>
             </symbol>
+            <symbol id="i-rotate" viewBox="0 0 24 24">
+                <path d="M21 2v6h-6"/>
+                <path d="M21 13a9 9 0 1 1-3-7.7L21 8"/>
+            </symbol>
             <symbol id="i-play" viewBox="0 0 24 24">
                 <path d="M7 4.5v15l13-7.5Z"/>
             </symbol>
@@ -285,232 +289,297 @@
         <main class="flex min-w-0 flex-1 flex-col gap-6">
 
         <!-- ══ Vista: Painel ══ -->
-        <div id="view-painel" data-panel="painel" class="flex flex-col gap-6 lg:flex-row">
-
-        <!-- Coluna principal: notas -->
-        <section aria-labelledby="notes-title"
-            class="flex min-w-0 flex-1 flex-col glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="mb-4 flex items-center gap-2.5">
-                <svg class="icon h-5 w-5 text-brand-light"><use href="#i-pencil"/></svg>
-                <h2 id="notes-title" class="text-base font-semibold">Notas do Dia</h2>
-            </header>
-
-            <!-- Toolbar Markdown -->
-            <div role="toolbar" aria-label="Formatação Markdown"
-                class="mb-2 flex items-center gap-1 rounded-xl border border-line bg-surface-2 p-1">
-                <button type="button" data-md="bold" title="Negrito (Ctrl+B)"
-                    class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand">
-                    <svg class="icon h-4 w-4"><use href="#i-bold"/></svg>
-                </button>
-                <button type="button" data-md="italic" title="Itálico (Ctrl+I)"
-                    class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand">
-                    <svg class="icon h-4 w-4"><use href="#i-italic"/></svg>
-                </button>
-                <button type="button" data-md="list" title="Lista"
-                    class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand">
-                    <svg class="icon h-4 w-4"><use href="#i-list"/></svg>
-                </button>
-                <button type="button" data-md="code" title="Código"
-                    class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand">
-                    <svg class="icon h-4 w-4"><use href="#i-code"/></svg>
-                </button>
-                <span class="mx-1 h-5 w-px bg-line"></span>
-                <button type="button" data-template="resumo" title="Inserir template Resumo"
-                    class="rounded-lg px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-brand">Resumo</button>
-                <button type="button" data-template="aula" title="Inserir template Aula"
-                    class="rounded-lg px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-brand">Aula</button>
-                <button type="button" data-template="exercicios" title="Inserir template Exercícios"
-                    class="rounded-lg px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-brand">Exerc.</button>
-                <button id="notes-preview-toggle" type="button" aria-pressed="false" title="Pré-visualizar"
-                    class="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-3 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand">
-                    <svg class="icon h-4 w-4"><use href="#i-eye"/></svg>
-                </button>
-                <span class="ml-auto pr-1.5 text-[11px] text-faint">Markdown</span>
-            </div>
-
-            <textarea id="journal-text" spellcheck="true"
-                placeholder="O que aprendeste hoje? Quais as dúvidas para a próxima aula? (podes colar imagens)"
-                class="field min-h-[300px] flex-1 resize-y py-3 font-mono text-[13px] leading-relaxed lg:min-h-[380px]"></textarea>
-            <div id="notes-preview" hidden
-                class="field min-h-[300px] flex-1 overflow-auto py-3 text-[13px] leading-relaxed lg:min-h-[380px]"></div>
-            <div id="notes-tags" class="mt-2 hidden flex-wrap gap-1.5"></div>
-
-            <footer class="mt-4 flex flex-wrap items-center gap-3">
-                <button id="vault-chip" type="button"
-                    class="flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-2.5 py-1 text-[11px] font-medium text-muted transition hover:border-line hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand">
-                    <span id="vault-dot" class="h-1.5 w-1.5 rounded-full bg-faint"></span>
-                    <span id="vault-label">Vault: por ligar</span>
-                </button>
-                <span id="save-status" class="text-[11px] text-faint"></span>
-                <span class="ml-auto text-[11px] tabular-nums text-faint">
-                    <span id="word-count">0</span> palavras
-                </span>
-                <div class="flex gap-2">
-                    <button id="save-notes" type="button"
-                        class="btn-mint">
-                        <svg class="icon h-4 w-4"><use href="#i-check"/></svg>
-                        Guardar Notas
-                    </button>
-                </div>
-            </footer>
-        </section>
-
-        <!-- Coluna lateral: utilitários -->
-        <section class="flex shrink-0 flex-col gap-6 lg:w-[380px]">
-            <!-- Sequência de estudos -->
-            <div id="card-streak" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-flame"/></svg>
-                    <h2 class="text-base font-semibold">Sequência</h2>
-                    <span id="streak-best" class="ml-auto text-[11px] tabular-nums text-faint"></span>
-                </header>
-                <p class="mt-2 flex items-baseline gap-2">
-                    <span id="streak-num" class="text-3xl font-bold tabular-nums text-fg">0</span>
-                    <span class="text-sm text-muted">dias seguidos</span>
-                </p>
-            </div>
-
-            <!-- Sessão de Estudo -->
-            <div id="card-sessao" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-tomato"/></svg>
-                    <h2 class="text-base font-semibold">Sessão de Estudo</h2>
-                </header>
-                <div class="mt-4 space-y-3">
-                    <div class="flex items-center gap-2">
-                        <label class="text-[11px] font-medium text-muted" for="session-subject">Disciplina</label>
-                        <select id="session-subject" class="field flex-1 text-sm" aria-label="Disciplina para a sessão">
-                            <option>Matemática A</option>
-                            <option>FQA</option>
-                            <option>Português</option>
-                            <option>Biologia</option>
-                            <option>Aplicações Informáticas (A.I.)</option>
-                            <option>Hobbies</option>
-                            <option>Geral</option>
-                        </select>
-                    </div>
-                    <div id="session-timer" class="flex items-center justify-center gap-3">
-                        <span id="session-time" class="text-3xl font-mono tabular-nums text-fg">25:00</span>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-center gap-2">
-                        <button id="session-start" type="button" class="btn-mint inline-flex items-center gap-1.5" aria-label="Iniciar sessão">
-                            <svg id="session-start-icon" class="icon h-4 w-4"><use href="#i-play"/></svg>
-                            <span id="session-start-text">Iniciar</span>
-                        </button>
-                        <button id="session-pause" type="button" class="btn-soft inline-flex items-center gap-1.5 hidden" aria-label="Pausar sessão">
-                            <svg class="icon h-4 w-4"><use href="#i-pause"/></svg>
-                            <span>Pausar</span>
-                        </button>
-                        <button id="session-stop" type="button" class="btn-soft inline-flex items-center gap-1.5 hidden" aria-label="Parar sessão">
-                            <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
-                            <span>Parar</span>
-                        </button>
-                    </div>
-                    <div class="flex flex-wrap justify-center gap-1.5">
-                        <button type="button" data-session-preset="25" class="btn-ghost text-xs px-2 py-1" title="25 min">25</button>
-                        <button type="button" data-session-preset="50" class="btn-ghost text-xs px-2 py-1" title="50 min">50</button>
-                        <button type="button" data-session-preset="90" class="btn-ghost text-xs px-2 py-1" title="90 min">90</button>
-                    </div>
-                    <p id="session-today-summary" class="text-center text-[11px] text-muted hidden"></p>
-                </div>
-            </div>
-
-            <!-- Tarefas -->
-            <div class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-4 flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-list-checks"/></svg>
-                    <h2 id="tasks-title" class="text-base font-semibold">Tarefas de Hoje</h2>
-                    <button id="clear-done" type="button"
-                        class="btn-soft ml-auto hidden items-center gap-1.5">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>
-                        <span>Limpar concluídas</span>
-                    </button>
-                </header>
-
-                <div class="mb-5 rounded-xl border border-line-soft bg-surface-2 p-3">
-                    <div class="flex items-baseline justify-between gap-2">
-                        <span class="text-[11px] font-medium uppercase tracking-wider text-faint">Progresso</span>
-                        <span id="progress-label" class="text-xs font-medium text-muted">0 de 0 tarefas concluídas</span>
-                    </div>
-                    <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
-                        <div id="progress-fill"
-                            class="h-full rounded-full bg-gradient-to-r from-brand to-brand-light transition-[width] duration-500 ease-out"
-                            style="width:0%"></div>
-                    </div>
-                </div>
-
-                <form id="task-form" class="mb-4 flex flex-wrap items-center gap-2">
-                    <label class="relative min-w-[10rem] flex-1">
-                        <svg class="icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint"><use href="#i-tag"/></svg>
-                        <input id="task-input" type="text" placeholder="Nova tarefa..." autocomplete="off"
-                            class="field w-full pl-9">
-                    </label>
-                    <div class="relative flex items-center">
-                        <svg class="icon pointer-events-none absolute left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-faint"><use href="#i-tag"/></svg>
-                        <select id="task-subject" class="field cursor-pointer appearance-none py-2 pl-7 pr-2 text-xs">
-                            <option>Geral</option>
-                            <option>Matemática A</option>
-                            <option>FQA</option>
-                            <option>Biologia</option>
-                            <option>Aplicações Informáticas (A.I.)</option>
-                            <option>Hobbies</option>
-                        </select>
-                    </div>
-                    <select id="task-category" class="field cursor-pointer appearance-none py-2 px-2 text-xs" title="Categoria">
-                        <option value="tarefa">Tarefa</option>
-                        <option value="estudo">Estudo</option>
-                        <option value="teste">Teste</option>
+        <div id="view-painel" data-panel="painel" class="sw-root mx-auto flex w-full max-w-[1380px] flex-col gap-3 min-h-0">
+            <!-- Barra compacta: timer + streak + ações -->
+            <div class="sw-focusbar flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#292929] bg-[#141414] px-3 py-2">
+                <div class="flex items-center gap-2 min-w-0">
+                    <svg class="icon h-4 w-4 text-[#ef4444] shrink-0"><use href="#i-tomato"/></svg>
+                    <span id="session-time" class="font-mono text-sm font-semibold tabular-nums text-[#f5f5f5]">25:00</span>
+                    <select id="session-subject" class="max-w-[150px] rounded-md border border-[#292929] bg-[#0D0D0D] px-2 py-1 text-[11px] text-[#d4d4d4] focus:outline-none focus:border-[#444]" aria-label="Disciplina da sessão">
+                        <option>Matemática A</option>
+                        <option>FQA</option>
+                        <option>Português</option>
+                        <option>Biologia</option>
+                        <option>Aplicações Informáticas (A.I.)</option>
+                        <option>Hobbies</option>
+                        <option>Geral</option>
                     </select>
-                    <button type="submit" aria-label="Adicionar tarefa"
-                        class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-xl bg-brand text-white transition hover:bg-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:ml-auto">
-                        <svg class="icon h-4 w-4"><use href="#i-plus"/></svg>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button id="session-start" type="button" class="btn-mint inline-flex h-8 items-center gap-1.5 px-3 text-xs" aria-label="Iniciar sessão">
+                        <svg id="session-start-icon" class="icon h-3.5 w-3.5"><use href="#i-play"/></svg>
+                        <span id="session-start-text">Iniciar</span>
                     </button>
-                </form>
-
-                <ul id="task-list" class="flex flex-col gap-2"></ul>
-
-                <p id="task-empty" class="hidden py-8 text-center text-sm text-faint">
-                    Sem tarefas para este dia. Adiciona a primeira em cima.
-                </p>
+                    <button id="session-pause" type="button" class="btn-soft inline-flex h-8 items-center gap-1.5 px-3 text-xs hidden" aria-label="Pausar sessão">
+                        <svg class="icon h-3.5 w-3.5"><use href="#i-pause"/></svg>
+                        <span>Pausar</span>
+                    </button>
+                    <button id="session-stop" type="button" class="btn-soft inline-flex h-8 items-center gap-1.5 px-3 text-xs hidden" aria-label="Terminar sessão">
+                        <svg class="icon h-3.5 w-3.5"><use href="#i-x"/></svg>
+                        <span>Terminar</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button type="button" data-session-preset="25" class="rounded-md border border-[#292929] bg-[#0f0f0f] px-2 py-1 text-[11px] text-[#bdbdbd] hover:border-[#444] hover:text-white">25</button>
+                    <button type="button" data-session-preset="50" class="rounded-md border border-[#292929] bg-[#0f0f0f] px-2 py-1 text-[11px] text-[#bdbdbd] hover:border-[#444] hover:text-white">50</button>
+                    <button type="button" data-session-preset="90" class="rounded-md border border-[#292929] bg-[#0f0f0f] px-2 py-1 text-[11px] text-[#bdbdbd] hover:border-[#444] hover:text-white">90</button>
+                </div>
+                <div class="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#8a8a8a]">
+                    <span id="session-today-summary" class="hidden sm:inline">Tempo total estudado hoje: 0 min</span>
+                    <span id="session-total-summary" class="hidden lg:inline text-[#777]">Total: 0 min</span>
+                    <span class="inline-flex items-center gap-1.5 text-[#cfcfcf]"><svg class="icon h-3.5 w-3.5 text-[#f59e0b]"><use href="#i-flame"/></svg><span id="streak-num" class="font-semibold tabular-nums text-[#f5f5f5]">0</span><span class="text-[#8a8a8a]">dias</span><span id="streak-best" class="text-[#666]"></span></span>
+                    <button id="quick-note-open" type="button" class="btn-soft inline-flex h-7 items-center gap-1 px-2 text-[11px]" title="Nota rápida"><svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg><span>Nota</span></button>
+                    <button id="notes-history-toggle" type="button" class="btn-soft inline-flex h-7 items-center gap-1 px-2 text-[11px]" title="Histórico / pesquisar"><svg class="icon h-3.5 w-3.5"><use href="#i-search"/></svg></button>
+                </div>
             </div>
 
-        </section>
+            <!-- Janela única integrada: Notas (70) + Tarefas (30) -->
+            <section class="sw-workspace min-h-0 rounded-2xl border border-[#292929] bg-[#141414] overflow-hidden">
+                <div class="sw-split flex h-full min-h-0 flex-col lg:flex-row">
+                    <!-- Esquerda — Editor de notas (~70%) -->
+                    <div class="sw-notes flex min-w-0 min-h-0 flex-[1_1_70%] flex-col p-4">
+                        <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <label for="note-title" class="sr-only">Nota Diária</label>
+                                <input id="note-title" type="text" placeholder="Título da nota..." autocomplete="off"
+                                    class="w-full bg-transparent text-xl font-semibold tracking-tight text-[#f5f5f5] placeholder:text-[#666] outline-none border-0 p-0 focus:ring-0">
+                                <div class="mt-2 flex flex-wrap items-center gap-2">
+                                    <label class="sr-only" for="note-subject">Disciplina</label>
+                                    <select id="note-subject" class="rounded-lg border border-[#292929] bg-[#0D0D0D] px-2.5 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#444]">
+                                        <option value="Geral">Geral</option>
+                                        <option>Matemática A</option>
+                                        <option>FQA</option>
+                                        <option>Português</option>
+                                        <option>Biologia</option>
+                                        <option>Aplicações Informáticas (A.I.)</option>
+                                        <option>Hobbies</option>
+                                    </select>
+                                    <label class="sr-only" for="note-category">Categoria</label>
+                                    <select id="note-category" class="rounded-lg border border-[#292929] bg-[#0D0D0D] px-2.5 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#444]">
+                                        <option value="resumo">Resumo</option>
+                                        <option value="aula">Aula</option>
+                                        <option value="exercicios">Exercícios</option>
+                                    </select>
+                                    <label class="sr-only" for="note-exam-topic">Tópico (Exames)</label>
+                                    <select id="note-exam-topic" class="max-w-[220px] rounded-lg border border-[#292929] bg-[#0D0D0D] px-2.5 py-1.5 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#444]">
+                                        <option value="">Tópico de exame (opcional)</option>
+                                    </select>
+                                    <button id="note-history-quick" type="button" class="rounded-lg border border-[#292929] bg-[#0f0f0f] px-2.5 py-1.5 text-xs text-[#9a9a9a] hover:text-[#f2f2f2] hover:border-[#3a3a3a]" title="Notas anteriores">Notas anteriores</button>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 text-[11px] text-[#8a8a8a]">
+                                <span id="save-status" class="text-[#8a8a8a]">Guardado</span>
+                            </div>
+                        </header>
+
+                        <div role="toolbar" aria-label="Formatação Markdown" class="mb-2 flex flex-wrap items-center gap-1 rounded-xl border border-[#292929] bg-[#0f0f0f] p-1.5">
+                            <button type="button" data-md="bold" title="Negrito (Ctrl+B)" class="grid h-8 w-8 place-items-center rounded-lg text-[#9a9a9a] transition hover:bg-[#1d1d1d] hover:text-[#f2f2f2]"><svg class="icon h-4 w-4"><use href="#i-bold"/></svg></button>
+                            <button type="button" data-md="italic" title="Itálico (Ctrl+I)" class="grid h-8 w-8 place-items-center rounded-lg text-[#9a9a9a] transition hover:bg-[#1d1d1d] hover:text-[#f2f2f2]"><svg class="icon h-4 w-4"><use href="#i-italic"/></svg></button>
+                            <button type="button" data-md="list" title="Lista" class="grid h-8 w-8 place-items-center rounded-lg text-[#9a9a9a] transition hover:bg-[#1d1d1d] hover:text-[#f2f2f2]"><svg class="icon h-4 w-4"><use href="#i-list"/></svg></button>
+                            <button type="button" data-md="code" title="Código" class="grid h-8 w-8 place-items-center rounded-lg text-[#9a9a9a] transition hover:bg-[#1d1d1d] hover:text-[#f2f2f2]"><svg class="icon h-4 w-4"><use href="#i-code"/></svg></button>
+                            <span class="mx-1 h-5 w-px bg-[#292929]"></span>
+                            <button type="button" data-template="resumo" class="rounded-lg px-2 py-1 text-[11px] font-medium text-[#9a9a9a] hover:bg-[#1d1d1d] hover:text-[#f2f2f2]">Resumo</button>
+                            <button type="button" data-template="aula" class="rounded-lg px-2 py-1 text-[11px] font-medium text-[#9a9a9a] hover:bg-[#1d1d1d] hover:text-[#f2f2f2]">Aula</button>
+                            <button type="button" data-template="exercicios" class="rounded-lg px-2 py-1 text-[11px] font-medium text-[#9a9a9a] hover:bg-[#1d1d1d] hover:text-[#f2f2f2]">Exerc.</button>
+                            <span class="mx-1 h-5 w-px bg-[#292929]"></span>
+                            <button id="note-to-task" type="button" class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-[#9a9a9a] hover:bg-[#1d1d1d] hover:text-[#f2f2f2]" title="Criar tarefa a partir da nota/seleção">
+                                <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg><span>+ Tarefa da nota</span>
+                            </button>
+                            <button id="notes-preview-toggle" type="button" aria-pressed="false" title="Pré-visualizar" class="ml-auto grid h-8 w-8 place-items-center rounded-lg text-[#9a9a9a] hover:bg-[#1d1d1d] hover:text-[#f2f2f2]"><svg class="icon h-4 w-4"><use href="#i-eye"/></svg></button>
+                        </div>
+
+                        <textarea id="journal-text" spellcheck="true"
+                            placeholder="Escreve os teus apontamentos em Markdown..."
+                            class="field min-h-[260px] flex-1 resize-y rounded-xl border-[#292929] bg-[#0D0D0D] py-3 px-4 font-mono text-[14px] leading-7 text-[#e6e6e6] placeholder:text-[#555] focus:border-[#3a3a3a] lg:min-h-0"></textarea>
+                        <div id="notes-preview" hidden
+                            class="field min-h-[260px] flex-1 overflow-auto rounded-xl border-[#292929] bg-[#0D0D0D] py-3 px-4 text-[14px] leading-7 text-[#e6e6e6] lg:min-h-0"></div>
+                        <div id="notes-tags" class="mt-2 hidden flex-wrap gap-1.5"></div>
+
+                        <footer class="mt-3 flex flex-wrap items-center gap-3 border-t border-[#292929] pt-3">
+                            <button id="vault-chip" type="button" class="flex items-center gap-1.5 rounded-full border border-[#292929] bg-[#0f0f0f] px-2.5 py-1 text-[11px] font-medium text-[#9a9a9a] hover:border-[#3a3a3a] hover:text-[#e6e6e6]">
+                                <span id="vault-dot" class="h-1.5 w-1.5 rounded-full bg-[#666]"></span>
+                                <span id="vault-label">Vault: por ligar</span>
+                            </button>
+                            <span id="note-meta-hint" class="text-[11px] text-[#777]">Nota do dia · auto-guardado</span>
+                            <span class="ml-auto text-[11px] tabular-nums text-[#8a8a8a]"><span id="word-count">0</span> palavras</span>
+                            <div class="flex gap-2"><button id="save-notes" type="button" class="btn-mint"><svg class="icon h-4 w-4"><use href="#i-check"/></svg>Guardar</button></div>
+                        </footer>
+                    </div>
+
+                    <!-- Divisória subtil -->
+                    <div class="hidden lg:block w-px bg-[#292929]" aria-hidden="true"></div>
+
+                    <!-- Direita — Tarefas (~30%) -->
+                    <aside class="sw-tasks flex min-h-0 flex-[1_1_30%] flex-col bg-[#111111]/40 p-4 lg:max-w-[400px]">
+                        <header class="mb-2 flex items-center justify-between gap-2">
+                            <div>
+                                <h3 id="tasks-title" class="text-sm font-semibold text-[#f2f2f2]">Tarefas de hoje</h3>
+                                <p id="tasks-note-context" class="mt-0.5 text-[11px] text-[#777]">Associadas à nota atual</p>
+                            </div>
+                            <button id="clear-done" type="button" class="btn-soft hidden items-center gap-1.5 text-[11px]">
+                                <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg><span>Limpar</span>
+                            </button>
+                        </header>
+
+                        <div class="mb-3 rounded-xl border border-[#292929] bg-[#0D0D0D] p-2.5">
+                            <div class="flex items-baseline justify-between gap-2">
+                                <span class="text-[11px] font-medium uppercase tracking-wider text-[#777]">Progresso</span>
+                                <span id="progress-label" class="text-xs font-medium text-[#9a9a9a]">0 de 0 concluídas</span>
+                            </div>
+                            <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-[#242424]">
+                                <div id="progress-fill" class="h-full rounded-full bg-emerald-500 transition-[width] duration-500 ease-out" style="width:0%"></div>
+                            </div>
+                        </div>
+
+                        <form id="task-form" class="mb-3 space-y-2">
+                            <label class="relative block">
+                                <svg class="icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#666]"><use href="#i-tag"/></svg>
+                                <input id="task-input" type="text" placeholder="Nova tarefa..." autocomplete="off"
+                                    class="w-full rounded-lg border border-[#292929] bg-[#0D0D0D] py-2 pl-9 pr-3 text-sm text-[#e6e6e6] placeholder:text-[#555] focus:outline-none focus:border-[#444]">
+                            </label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <select id="task-subject" class="rounded-lg border border-[#292929] bg-[#0D0D0D] px-2.5 py-2 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#444]">
+                                    <option>Geral</option>
+                                    <option>Matemática A</option>
+                                    <option>FQA</option>
+                                    <option>Biologia</option>
+                                    <option>Português</option>
+                                    <option>Aplicações Informáticas (A.I.)</option>
+                                    <option>Hobbies</option>
+                                </select>
+                                <select id="task-priority" class="rounded-lg border border-[#292929] bg-[#0D0D0D] px-2.5 py-2 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#444]" title="Prioridade">
+                                    <option value="media">Média</option>
+                                    <option value="alta">Alta</option>
+                                    <option value="baixa">Baixa</option>
+                                </select>
+                                <select id="task-category" class="col-span-2 rounded-lg border border-[#292929] bg-[#0D0D0D] px-2.5 py-2 text-xs text-[#d4d4d4] focus:outline-none focus:border-[#444]" title="Categoria">
+                                    <option value="tarefa">Tarefa</option>
+                                    <option value="estudo">Estudo</option>
+                                    <option value="teste">Teste</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn-mint w-full justify-center">
+                                <svg class="icon h-4 w-4"><use href="#i-plus"/></svg>
+                                <span>Adicionar tarefa</span>
+                            </button>
+                        </form>
+
+                        <div class="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+                            <button type="button" data-task-filter="todas" class="task-filter-btn rounded-md px-2 py-1 text-[#f2f2f2] bg-[#1f1f1f]">Todas</button>
+                            <button type="button" data-task-filter="pendentes" class="task-filter-btn rounded-md px-2 py-1 text-[#8a8a8a] hover:text-[#e6e6e6]">Pendentes</button>
+                            <button type="button" data-task-filter="nota" class="task-filter-btn rounded-md px-2 py-1 text-[#8a8a8a] hover:text-[#e6e6e6]" title="Tarefas relacionadas com a nota atual">Da nota</button>
+                        </div>
+                        <ul id="task-list" class="flex min-h-0 flex-1 flex-col gap-2 overflow-auto pr-1"></ul>
+                        <p id="task-empty" class="hidden py-6 text-center text-sm text-[#777]">Sem tarefas para este dia.</p>
+
+                        <div class="mt-3 border-t border-[#292929] pt-3">
+                            <header class="mb-1.5 flex items-center justify-between gap-2">
+                                <h4 class="text-[11px] font-semibold uppercase tracking-wide text-[#777]">Notas anteriores</h4>
+                                <button type="button" id="recent-notes-refresh" class="text-[11px] text-[#8a8a8a] hover:text-[#e6e6e6]">Atualizar</button>
+                            </header>
+                            <div id="recent-notes-list" class="flex max-h-28 flex-col gap-1.5 overflow-auto text-sm text-[#9a9a9a]">
+                                <p class="text-[12px] text-[#777]">Sem notas recentes.</p>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </section>
+        </div>
+
+        <!-- Janela flutuante: nota rápida -->
+        <div id="quick-note-window" class="quick-note-window hidden" role="dialog" aria-modal="false" aria-label="Nota rápida">
+            <div id="quick-note-header" class="quick-note-header">
+                <span class="text-xs font-semibold text-[#e6e6e6]">Nota rápida</span>
+                <div class="flex items-center gap-1">
+                    <button type="button" id="quick-note-minimize" class="qn-icon-btn" title="Minimizar" aria-label="Minimizar">−</button>
+                    <button type="button" id="quick-note-close" class="qn-icon-btn" title="Fechar" aria-label="Fechar">×</button>
+                </div>
+            </div>
+            <div id="quick-note-body" class="quick-note-body">
+                <input id="quick-note-title" type="text" placeholder="Título (opcional)" class="qn-input" autocomplete="off">
+                <div class="grid grid-cols-2 gap-2">
+                    <select id="quick-note-subject" class="qn-input text-xs">
+                        <option>Geral</option><option>Matemática A</option><option>FQA</option><option>Português</option><option>Biologia</option><option>Aplicações Informáticas (A.I.)</option><option>Hobbies</option>
+                    </select>
+                    <select id="quick-note-category" class="qn-input text-xs">
+                        <option value="resumo">Resumo</option><option value="aula">Aula</option><option value="exercicios">Exercícios</option>
+                    </select>
+                </div>
+                <textarea id="quick-note-text" rows="8" placeholder="Escreve uma nota rápida..." class="qn-textarea"></textarea>
+                <div class="flex items-center justify-between gap-2">
+                    <span id="quick-note-status" class="text-[11px] text-[#777]"></span>
+                    <div class="flex gap-2">
+                        <button type="button" id="quick-note-clear" class="btn-soft text-xs">Limpar</button>
+                        <button type="button" id="quick-note-save" class="btn-mint text-xs">Guardar nota</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ══ Vista: Calendário ══ -->
         <section id="view-calendario" data-panel="calendario" hidden
-            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex items-center justify-between gap-2">
-                <button id="cal-prev" type="button" aria-label="Mês anterior" class="icon-btn">
-                    <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
-                </button>
-                <h2 id="cal-month" class="cal-classic-title min-w-0 flex-1 text-center capitalize"></h2>
-                <button id="cal-next" type="button" aria-label="Mês seguinte" class="icon-btn">
-                    <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
-                </button>
-            </header>
-            <div class="flex flex-wrap items-center gap-4 text-[11px] font-medium text-muted" aria-label="Legenda de categorias">
-                <span class="flex items-center gap-1.5">
-                    <span class="h-2.5 w-2.5 rounded-full" style="background:#fb7185"></span>
-                    Testes e Avaliações
-                </span>
-                <span class="flex items-center gap-1.5">
-                    <span class="h-2.5 w-2.5 rounded-full" style="background:#4ade80"></span>
-                    Tarefas e Entregas
-                </span>
-                <span class="flex items-center gap-1.5">
-                    <span class="h-2.5 w-2.5 rounded-full" style="background:#818cf8"></span>
-                    Blocos de Estudo / Revisão
-                </span>
-            </div>
+            class="cal-shell flex flex-col gap-4 rounded-2xl border p-4 sm:p-5">
+            <header class="cal-header flex flex-col gap-3">
+                <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <h2 id="cal-month" class="cal-title min-w-0 text-xl sm:text-2xl font-semibold capitalize tracking-tight"></h2>
+                    </div>
+                    <div class="flex items-center gap-1.5 sm:ml-1">
+                        <button id="cal-prev" type="button" aria-label="Mês anterior" class="cal-icon-btn" title="Mês anterior">
+                            <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
+                        </button>
+                        <button id="cal-today" type="button" class="cal-btn-secondary text-xs font-medium px-3 py-1.5">Hoje</button>
+                        <button id="cal-next" type="button" aria-label="Mês seguinte" class="cal-icon-btn" title="Mês seguinte">
+                            <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
+                        </button>
+                    </div>
 
-            <div class="overflow-x-auto">
-                <div id="cal-grid-wrap" class="min-w-[680px]">
-                    <div id="cal-weekdays" class="cal-classic-weekdays"></div>
-                    <div id="cal-grid" class="cal-classic-grid"></div>
+                    <div class="relative flex-1 min-w-[180px] sm:max-w-xs sm:ml-auto">
+                        <svg class="icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 cal-muted-icon"><use href="#i-search"/></svg>
+                        <label class="sr-only" for="cal-search">Pesquisar eventos</label>
+                        <input id="cal-search" type="search" placeholder="Pesquisar eventos…" class="cal-input w-full pl-9" autocomplete="off">
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <div class="cal-view-toggle flex items-center rounded-lg p-0.5" role="group" aria-label="Vista do calendário">
+                            <button type="button" data-cal-view="mes" aria-pressed="true" class="cal-view-btn">Mês</button>
+                            <button type="button" data-cal-view="semana" aria-pressed="false" class="cal-view-btn">Semana</button>
+                            <button type="button" data-cal-view="dia" aria-pressed="false" class="cal-view-btn">Dia</button>
+                        </div>
+                        <button id="cal-new-event" type="button" class="cal-btn-primary inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium">
+                            <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
+                            <span>Novo evento</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
 
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-[11px] font-medium cal-text-muted mr-1">Filtrar:</span>
+                    <div id="cal-filters" class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por categoria"></div>
+                </div>
+            </header>
+
+            <div class="cal-layout flex flex-col lg:flex-row gap-4">
+                <div class="cal-main min-w-0 flex-1 lg:basis-3/4">
+                    <div id="cal-agenda-view" class="hidden"></div>
+                    <div id="cal-month-view" class="cal-month-view overflow-x-auto">
+                        <div id="cal-grid-wrap" class="min-w-[520px] sm:min-w-[640px]">
+                            <div id="cal-weekdays" class="cal-weekdays-grid"></div>
+                            <div id="cal-grid" class="cal-days-grid"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="cal-sidebar lg:basis-1/4 lg:max-w-[22rem] shrink-0 flex flex-col gap-3">
+                    <div class="cal-sidebar-card flex flex-col gap-3 p-3.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <h3 class="text-sm font-semibold cal-text-strong">Próximos eventos</h3>
+                            <span id="cal-upcoming-count" class="text-[11px] cal-text-muted"></span>
+                        </div>
+                        <div id="cal-upcoming" class="flex flex-col gap-3 max-h-[70vh] overflow-auto pr-1"></div>
+                    </div>
+                </aside>
+            </div>
         </section>
 
         <!-- ══ Vista: Disciplinas ══ -->
@@ -1003,250 +1072,34 @@
             </div>
         </section>
 
-        <!-- ══ Vista: Exames Nacionais ══ -->
-        <section id="view-exames" data-panel="exames" hidden
-            class="flex flex-col gap-6">
-            <header class="flex flex-wrap items-center justify-between gap-2.5 glass rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5">
-                <div class="flex items-center gap-2.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-grad"/></svg>
-                    <div class="min-w-0 flex-1">
-                        <h2 class="text-base font-semibold">Exames Nacionais</h2>
-                        <p class="text-xs text-muted">Organiza o estudo, acompanha tópicos e guarda o que precisas rever.</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 rounded-xl border border-line-soft bg-surface-2 px-3 py-1.5">
-                    <svg class="icon h-4 w-4 text-brand-light"><use href="#i-calendar"/></svg>
-                    <span class="text-xs text-muted">Até ao exame</span>
-                    <span id="exames-countdown" class="text-sm font-semibold tabular-nums text-fg">—</span>
-                    <span class="text-xs text-muted">dias</span>
-                    <input id="exames-data" type="date" title="Alterar data do exame" aria-label="Alterar data do exame"
-                        class="rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-[11px] text-muted [color-scheme:dark]">
-                </div>
-            </header>
-
-            <div id="exames-resumo" class="grid grid-cols-3 gap-2" aria-live="polite">
-                <div class="exames-stat"><span class="exames-stat-label">Tópicos por concluir</span><strong id="exames-stat-topicos">0</strong></div>
-                <div class="exames-stat"><span class="exames-stat-label">Materiais</span><strong id="exames-stat-recursos">0</strong></div>
-                <div class="exames-stat"><span class="exames-stat-label">Notas de revisão</span><strong id="exames-stat-revisao">0</strong></div>
-            </div>
-
-            <!-- Sub-Navegação: só uma secção visível de cada vez -->
-            <nav class="exames-tabs grid grid-cols-4 gap-1 rounded-xl border border-line bg-surface p-1 shadow-card" role="tablist" aria-label="Secções de exames">
-                <button type="button" data-exame-tab="foco" role="tab" aria-selected="true" aria-controls="exames-panel-foco" class="exame-tab" title="Plano semanal">Plano</button>
-                <button type="button" data-exame-tab="recursos" role="tab" aria-selected="false" aria-controls="exames-panel-recursos" class="exame-tab" title="Materiais de estudo">Materiais <span data-exame-badge="recursos" class="exame-badge" hidden></span></button>
-                <button type="button" data-exame-tab="track" role="tab" aria-selected="false" aria-controls="exames-panel-track" class="exame-tab" title="Tópicos em acompanhamento">Tópicos <span data-exame-badge="track" class="exame-badge" hidden></span></button>
-                <button type="button" data-exame-tab="duvidas" role="tab" aria-selected="false" aria-controls="exames-panel-duvidas" class="exame-tab" title="Notas para rever">Revisão <span data-exame-badge="duvidas" class="exame-badge" hidden></span></button>
+        <!-- ══ Vista: Exames Nacionais (Study Center) ══ -->
+        <section id="view-exames" data-panel="exames" hidden class="ex-shell flex flex-col gap-4 rounded-2xl border p-4 sm:p-5">
+            <nav class="ex-tabs-nav" role="tablist" aria-label="Secções de Exames Nacionais">
+                <button type="button" data-exame-tab="visao" role="tab" aria-selected="true" class="ex-tab">Visão geral</button>
+                <button type="button" data-exame-tab="plano" role="tab" aria-selected="false" class="ex-tab">Plano de estudo <span data-exame-badge="plano" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="topicos" role="tab" aria-selected="false" class="ex-tab">Tópicos <span data-exame-badge="topicos" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="materiais" role="tab" aria-selected="false" class="ex-tab">Materiais <span data-exame-badge="materiais" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="revisao" role="tab" aria-selected="false" class="ex-tab">Revisão <span data-exame-badge="revisao" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="duvidas" role="tab" aria-selected="false" class="ex-tab">Dúvidas e erros <span data-exame-badge="duvidas" class="ex-badge-count" hidden></span></button>
             </nav>
 
-            <!-- 1. 📍 O Que Estudar A Seguir -->
-            <div id="exames-panel-foco" data-exame-panel="foco" role="tabpanel" class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-4 flex items-center gap-2.5">
-                    <span class="text-base">📍</span>
-                    <h3 class="text-base font-semibold">Foco Prioritário</h3>
-                    <span class="ml-auto text-[11px] text-faint">Guarda automaticamente</span>
-                </header>
-                <div id="exames-foco-grid" class="grid gap-3 md:grid-cols-3">
-                    <!-- Português -->
-                    <article data-foco-card="Portugues" class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
-                        <div class="flex items-center gap-2">
-                            <span class="chip bg-subject-yellow/15 text-subject-yellow">Português</span>
-                            <span data-foco-percent class="ml-auto text-[11px] tabular-nums text-faint">0%</span>
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                            <label class="week-label" for="exames-foco-pt-topico">Tópico atual</label>
-                            <input id="exames-foco-pt-topico" data-foco-topico type="text" class="field w-full text-sm" placeholder="Ex.: Os Maias — Eça de Queirós" autocomplete="off">
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                            <label class="week-label" for="exames-foco-pt-objetivo">Objetivo da semana</label>
-                            <textarea id="exames-foco-pt-objetivo" data-foco-objetivo rows="2" class="field w-full text-sm" placeholder="Ex.: Dominar caracterização das personagens + contexto histórico"></textarea>
-                        </div>
-                        <div>
-                            <div class="mb-1 flex items-baseline justify-between">
-                                <span class="week-label">Progresso</span>
-                            </div>
-                            <div class="h-1.5 overflow-hidden rounded-full bg-line">
-                                <div data-foco-bar class="h-full rounded-full bg-subject-yellow transition-[width] duration-500" style="width:0%"></div>
-                            </div>
-                            <input data-foco-range type="range" min="0" max="100" step="5" value="0" class="mt-2 w-full accent-[#d4b25f]" aria-label="Progresso Português">
-                        </div>
-                    </article>
-                    <!-- Matemática A -->
-                    <article data-foco-card="Matematica A" class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
-                        <div class="flex items-center gap-2">
-                            <span class="chip bg-subject-blue/15 text-subject-blue">Matemática A</span>
-                            <span data-foco-percent class="ml-auto text-[11px] tabular-nums text-faint">0%</span>
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                            <label class="week-label" for="exames-foco-mat-topico">Tópico atual</label>
-                            <input id="exames-foco-mat-topico" data-foco-topico type="text" class="field w-full text-sm" placeholder="Ex.: Cálculo Diferencial — Derivadas" autocomplete="off">
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                            <label class="week-label" for="exames-foco-mat-objetivo">Objetivo da semana</label>
-                            <textarea id="exames-foco-mat-objetivo" data-foco-objetivo rows="2" class="field w-full text-sm" placeholder="Ex.: Resolver 15 exercícios de otimização de exames anteriores"></textarea>
-                        </div>
-                        <div>
-                            <div class="mb-1 flex items-baseline justify-between">
-                                <span class="week-label">Progresso</span>
-                            </div>
-                            <div class="h-1.5 overflow-hidden rounded-full bg-line">
-                                <div data-foco-bar class="h-full rounded-full bg-subject-blue transition-[width] duration-500" style="width:0%"></div>
-                            </div>
-                            <input data-foco-range type="range" min="0" max="100" step="5" value="0" class="mt-2 w-full accent-[#7ba3f0]" aria-label="Progresso Matemática A">
-                        </div>
-                    </article>
-                    <!-- FQA -->
-                    <article data-foco-card="FQA" class="flex flex-col gap-3 rounded-xl border border-line-soft bg-surface-2 p-4">
-                        <div class="flex items-center gap-2">
-                            <span class="chip bg-subject-green/15 text-subject-green">Física e Química A</span>
-                            <span data-foco-percent class="ml-auto text-[11px] tabular-nums text-faint">0%</span>
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                            <label class="week-label" for="exames-foco-fqa-topico">Tópico atual</label>
-                            <input id="exames-foco-fqa-topico" data-foco-topico type="text" class="field w-full text-sm" placeholder="Ex.: Termodinâmica e Entropia" autocomplete="off">
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                            <label class="week-label" for="exames-foco-fqa-objetivo">Objetivo da semana</label>
-                            <textarea id="exames-foco-fqa-objetivo" data-foco-objetivo rows="2" class="field w-full text-sm" placeholder="Ex.: Memorizar fórmulas de calorimetria + fichas IAVE"></textarea>
-                        </div>
-                        <div>
-                            <div class="mb-1 flex items-baseline justify-between">
-                                <span class="week-label">Progresso</span>
-                            </div>
-                            <div class="h-1.5 overflow-hidden rounded-full bg-line">
-                                <div data-foco-bar class="h-full rounded-full bg-subject-green transition-[width] duration-500" style="width:0%"></div>
-                            </div>
-                            <input data-foco-range type="range" min="0" max="100" step="5" value="0" class="mt-2 w-full accent-[#85c78c]" aria-label="Progresso FQA">
-                        </div>
-                    </article>
-                </div>
+            <div id="exames-panel-visao" data-exame-panel="visao" role="tabpanel" class="ex-panel">
+                <div id="exames-overview" class="ex-stack"></div>
             </div>
-
-            <!-- 2. 📄 Recursos & Repositório de PDFs -->
-            <div id="exames-panel-recursos" data-exame-panel="recursos" role="tabpanel" hidden class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-1 flex flex-wrap items-center gap-2.5">
-                    <span class="text-base">📄</span>
-                    <h3 class="text-base font-semibold">Recursos &amp; PDFs</h3>
-                    <span id="exames-recursos-count" class="text-xs text-faint"></span>
-                </header>
-                <p class="mb-4 text-xs text-muted">Guarda ligações para exames, fichas e resumos. Podes adicionar um nome sem ligação e completar mais tarde.</p>
-                <form id="exames-recurso-form" class="mb-4 grid gap-2 rounded-xl border border-line-soft bg-surface-2 p-3 sm:grid-cols-[1fr_2fr_2fr_auto]">
-                    <select id="exames-recurso-disc" class="field w-full text-sm" aria-label="Disciplina do recurso">
-                        <option>Português</option>
-                        <option>Matemática A</option>
-                        <option>FQA</option>
-                    </select>
-                    <input id="exames-recurso-nome" type="text" class="field w-full text-sm" placeholder="Nome do material" autocomplete="off" aria-label="Nome do material">
-                    <input id="exames-recurso-url" type="url" inputmode="url" class="field w-full text-sm" placeholder="https://.../ficheiro.pdf" autocomplete="off">
-                    <button type="submit" class="btn-soft inline-flex items-center justify-center gap-1.5">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                        <span>Adicionar</span>
-                    </button>
-                </form>
-                <div class="grid gap-3 md:grid-cols-3">
-                    <div class="rounded-xl border border-line-soft bg-surface-2 p-3">
-                        <h4 class="mb-2 text-xs font-semibold uppercase tracking-wider text-subject-yellow">Português</h4>
-                        <ul id="exames-recursos-pt" class="flex flex-col gap-1.5"></ul>
-                    </div>
-                    <div class="rounded-xl border border-line-soft bg-surface-2 p-3">
-                        <h4 class="mb-2 text-xs font-semibold uppercase tracking-wider text-subject-blue">Matemática A</h4>
-                        <ul id="exames-recursos-mat" class="flex flex-col gap-1.5"></ul>
-                    </div>
-                    <div class="rounded-xl border border-line-soft bg-surface-2 p-3">
-                        <h4 class="mb-2 text-xs font-semibold uppercase tracking-wider text-subject-green">FQA</h4>
-                        <ul id="exames-recursos-fqa" class="flex flex-col gap-1.5"></ul>
-                    </div>
-                </div>
+            <div id="exames-panel-plano" data-exame-panel="plano" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-plano" class="ex-stack"></div>
             </div>
-
-            <!-- 3. 📊 Tabela Dinâmica de Acompanhamento -->
-            <div id="exames-panel-track" data-exame-panel="track" role="tabpanel" hidden class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-4 flex flex-wrap items-center gap-2.5">
-                    <span class="text-base">📊</span>
-                    <h3 class="text-base font-semibold">Tabela de Acompanhamento</h3>
-                    <div id="exames-track-filters" class="ml-auto flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por estado">
-                        <button type="button" data-track-filter="todos" aria-pressed="true" class="pdf-filter">Todos</button>
-                        <button type="button" data-track-filter="A iniciar" aria-pressed="false" class="pdf-filter">A iniciar</button>
-                        <button type="button" data-track-filter="Em progresso" aria-pressed="false" class="pdf-filter">Em progresso</button>
-                        <button type="button" data-track-filter="Concluído" aria-pressed="false" class="pdf-filter">Concluído</button>
-                    </div>
-                </header>
-                <form id="exames-track-form" class="mb-4 grid gap-2 rounded-xl border border-line-soft bg-surface-2 p-3 lg:grid-cols-[1fr_2fr_2fr_110px_140px_auto]">
-                    <select id="exames-track-disc" class="field w-full text-sm" aria-label="Disciplina">
-                        <option>Português</option>
-                        <option>Matemática A</option>
-                        <option>FQA</option>
-                    </select>
-                    <input id="exames-track-topico" type="text" class="field w-full text-sm" placeholder="Tópico que vais estudar" autocomplete="off" aria-label="Tópico">
-                    <input id="exames-track-ficha" type="text" class="field w-full text-sm" placeholder="Ligação ou nome da ficha (opcional)" autocomplete="off" aria-label="Ligação ou nome da ficha (opcional)">
-                    <select id="exames-track-dif" class="field w-full text-sm" aria-label="Dificuldade 1 a 5">
-                        <option value="1">Dif. 1</option>
-                        <option value="2">Dif. 2</option>
-                        <option value="3" selected>Dif. 3</option>
-                        <option value="4">Dif. 4</option>
-                        <option value="5">Dif. 5</option>
-                    </select>
-                    <select id="exames-track-estado" class="field w-full text-sm" aria-label="Estado">
-                        <option>A iniciar</option>
-                        <option>Em progresso</option>
-                        <option>Concluído</option>
-                    </select>
-                    <button type="submit" class="btn-soft inline-flex items-center justify-center gap-1.5">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                        <span>Juntar</span>
-                    </button>
-                </form>
-                <div class="overflow-x-auto rounded-xl border border-line-soft">
-                    <table class="w-full min-w-[760px] border-collapse text-left">
-                        <thead>
-                            <tr class="bg-surface-2 text-[11px] font-semibold uppercase tracking-wider text-faint">
-                                <th class="border-b border-line px-3 py-2">Disciplina</th>
-                                <th class="border-b border-line px-3 py-2">Conteúdo / Tópico</th>
-                                <th class="border-b border-line px-3 py-2">Ficha / PDF Associado</th>
-                                <th class="border-b border-line px-3 py-2 text-center">Dificuldade (1-5)</th>
-                                <th class="border-b border-line px-3 py-2 text-center">Estado</th>
-                                <th class="border-b border-line px-3 py-2 text-center" aria-label="Ações">···</th>
-                            </tr>
-                        </thead>
-                        <tbody id="exames-track-body" class="text-sm"></tbody>
-                    </table>
-                    <p id="exames-track-empty" class="p-6 text-center text-xs text-muted">Ainda não há tópicos. Adiciona um acima para acompanhar o teu progresso.</p>
-                </div>
+            <div id="exames-panel-topicos" data-exame-panel="topicos" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-topicos" class="ex-stack"></div>
             </div>
-
-            <!-- 4. ❓ Registo de Dúvidas & Revisão -->
-            <div id="exames-panel-duvidas" data-exame-panel="duvidas" role="tabpanel" hidden class="glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-                <header class="mb-4 flex items-center gap-2.5">
-                    <span class="text-base">❓</span>
-                    <h3 class="text-base font-semibold">Registo de Dúvidas &amp; Exercícios de Revisão</h3>
-                </header>
-                <form id="exames-duvida-form" class="mb-4 grid gap-2 rounded-xl border border-line-soft bg-surface-2 p-3 lg:grid-cols-[150px_1fr_2fr_2fr_auto]">
-                    <select id="exames-duvida-tipo" class="field w-full text-sm" aria-label="Tipo de registo">
-                        <option value="conceito">💡 Conceito / Fórmula</option>
-                        <option value="erro">⚠️ Onde falhei</option>
-                    </select>
-                    <select id="exames-duvida-disc" class="field w-full text-sm" aria-label="Disciplina">
-                        <option>Português</option>
-                        <option>Matemática A</option>
-                        <option>FQA</option>
-                        <option>Geral</option>
-                    </select>
-                    <input id="exames-duvida-titulo" type="text" class="field w-full text-sm" placeholder="Título — Ex.: Regra da Cadeia / Exame 2022 Q3" autocomplete="off">
-                    <input id="exames-duvida-texto" type="text" class="field w-full text-sm" placeholder="Nota rápida — fórmula, conceito ou erro a rever..." autocomplete="off">
-                    <button type="submit" class="btn-soft inline-flex items-center justify-center gap-1.5">
-                        <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                        <span>Guardar</span>
-                    </button>
-                </form>
-                <div class="grid gap-3 md:grid-cols-2">
-                    <div class="rounded-xl border border-line-soft bg-surface-2 p-4">
-                        <h4 class="mb-3 flex items-center gap-2 text-sm font-semibold">💡 Conceitos Complexos &amp; Fórmulas</h4>
-                        <div id="exames-duvidas-conceitos" class="flex flex-col gap-2"></div>
-                    </div>
-                    <div class="rounded-xl border border-line-soft bg-surface-2 p-4">
-                        <h4 class="mb-3 flex items-center gap-2 text-sm font-semibold">⚠️ Onde Falhei <span class="text-[11px] font-normal text-faint">(análise de exames)</span></h4>
-                        <ul id="exames-duvidas-erros" class="flex flex-col gap-2"></ul>
-                    </div>
-                </div>
+            <div id="exames-panel-materiais" data-exame-panel="materiais" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-materiais" class="ex-stack"></div>
+            </div>
+            <div id="exames-panel-revisao" data-exame-panel="revisao" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-revisao" class="ex-stack"></div>
+            </div>
+            <div id="exames-panel-duvidas" data-exame-panel="duvidas" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-duvidas-erros" class="ex-stack"></div>
             </div>
         </section>
 
@@ -1607,7 +1460,8 @@
 
     <!-- Visualizador de PDF -->
     <dialog id="pdf-viewer"
-        class="m-auto w-[min(64rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
+        class="m-auto max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70"
+        style="width:72vw;min-width:min(94vw,32rem);max-height:92vh;inset:0;">
         <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
             <h3 id="pdf-viewer-title" class="min-w-0 flex-1 truncate text-sm font-semibold">PDF</h3>
             <span class="hidden shrink-0 text-[10px] text-faint sm:inline">F ecrã inteiro · Esc fecha</span>
@@ -1624,7 +1478,7 @@
                 <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
             </button>
         </div>
-        <iframe id="pdf-viewer-frame" title="Visualizar PDF" class="block h-[min(62vh,44rem)] w-full border-0 bg-surface-2"></iframe>
+        <iframe id="pdf-viewer-frame" title="Visualizar PDF" class="block w-full border-0 bg-surface-2" style="height:68vh;"></iframe>
         <div class="border-t border-line bg-surface-2 px-4 py-3">
             <details id="pdf-cite-details">
                 <summary class="cursor-pointer text-xs font-semibold text-muted transition hover:text-fg">Guardar citação nas Notas do Dia</summary>
@@ -1691,8 +1545,18 @@
     <script src="src/github-sync.js"></script>
     <script src="src/conta-sync.js"></script>
     <script src="src/vault.js"></script>
+        </main>
+    </div>
+
     <script src="src/imagens.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+    </script>
     <script src="src/pdfs.js"></script>
+    <script src="src/study-workspace.js"></script>
     <script src="src/notas.js"></script>
     <script src="src/caderno.js"></script>
     <script src="src/exames.js"></script>
