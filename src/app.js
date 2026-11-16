@@ -1334,7 +1334,7 @@ const CAL_CATEGORIAS_UI = [
 ];
 
 function categoriaCanonica(cat) {
-    const c = String(cat || '').toLower();
+    const c = String(cat || '').toLowerCase();
     if (c === 'tarefa') return 'trabalho';
     if (c === 'estudo') return 'aula';
     if (CATEGORIA_NOMES[c]) return c;

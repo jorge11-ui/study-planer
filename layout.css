@@ -579,7 +579,7 @@ body > header.journal-header {
     font-size: 10px; color: #7E8390; padding: 2px 4px; border-radius: 4px; text-align: left;
 }
 #view-calendario .cal-more:hover { color: #D0D0D0; background: #21242B; }
-#view-calendario .cal-day.drop-target { background: #282C3562E; box-shadow: inset 0 0 0 1px rgba(139,156,244,.45); }
+#view-calendario .cal-day.drop-target { background: rgba(40,44,53,.38); box-shadow: inset 0 0 0 1px rgba(139,156,244,.45); }
 
 #view-calendario .cal-sidebar-card { background: #191B20; border: 1px solid #292C33; border-radius: 12px; }
 #view-calendario .cal-up-group { display: flex; flex-direction: column; gap: 6px; }
@@ -589,7 +589,7 @@ body > header.journal-header {
     border: 1px solid #2A2E36; border-radius: 10px; background: #1D2026;
     transition: background .15s ease, border-color .15s ease; cursor: pointer;
 }
-#view-calendario .cal-up-item:hover { background: #282C3562E; border-color: #363B46; }
+#view-calendario .cal-up-item:hover { background: rgba(40,44,53,.38); border-color: #363B46; }
 #view-calendario .cal-up-dot { width: 8px; height: 8px; border-radius: 999px; margin-top: 5px; flex-shrink: 0; }
 #view-calendario .cal-up-title { font-size: 13px; color: #E8E9ED; line-height: 1.35; }
 #view-calendario .cal-up-meta { font-size: 11px; color: #7E8390; margin-top: 2px; }
