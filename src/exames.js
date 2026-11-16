@@ -479,8 +479,6 @@ function bindTopicActions(root){
 }
 function openTopicDialog(id){
   const t=getTopic(id); if(!t) return;
-  const mats = state.materials.filter(m=>m.disciplinaId===t.disciplinaId);
-  const exs = state.issues.filter(i=>i.disciplinaId===t.disciplinaId);
   const dlg = document.createElement('dialog');
   dlg.className = 'm-auto w-[min(38rem,94vw)] ex-dialog';
   dlg.innerHTML = `<form method="dialog" class="ex-dialog-inner">
@@ -492,10 +490,6 @@ function openTopicDialog(id){
         <label class="ex-label">Confiança<select id="td-conf" class="ex-input">${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(t.confianca||3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
       </div>
       <label class="ex-label">Notas pessoais<textarea id="td-notas" class="ex-input" rows="4">${esc(t.notasPessoais||'')}</textarea></label>
-      <div class="ex-form-grid-2">
-        <label class="ex-label">Materiais associados<select id="td-mats" class="ex-input" multiple size="4">${mats.map(m=>`<option value="${esc(m.id)}" ${(t.materialIds||[]).includes(m.id)?'selected':''}>${esc(m.titulo)}</option>`).join('')}</select></label>
-        <label class="ex-label">Exercícios / registos relacionados<select id="td-exs" class="ex-input" multiple size="4">${exs.map(i=>`<option value="${esc(i.id)}" ${(t.exercicioIds||[]).includes(i.id)?'selected':''}>${esc(i.titulo)}</option>`).join('')}</select></label>
-      </div>
     </div>
     <div class="ex-dialog-foot"><button type="button" class="ex-btn" data-close>Cancelar</button><button type="submit" class="ex-btn ex-btn-primary">Guardar</button></div>
   </form>`;
@@ -509,8 +503,6 @@ function openTopicDialog(id){
     t.estado = $('#td-estado',dlg).value;
     t.confianca = Number($('#td-conf',dlg).value||3);
     t.notasPessoais = ($('#td-notas',dlg).value||'').trim();
-    t.materialIds = $all('#td-mats option:checked',dlg).map(o=>o.value);
-    t.exercicioIds = $all('#td-exs option:checked',dlg).map(o=>o.value);
     t.ultimaAtividade = Date.now(); state.ui.lastTopicId = t.id;
     close(); saveState(); miniToast('Tópico atualizado.');
   });
