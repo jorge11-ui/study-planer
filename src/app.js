@@ -411,6 +411,45 @@ const StudySessions = {
         if (typeof pushDebounced === 'function') pushDebounced();
     },
 
+    /* Credita minutos num compartimento explícito (ex.: sessões do plano
+       de Exames). Como o compartimento é determinístico por sessão, o sync
+       funde por máximo e a mesma sessão nunca conta duas vezes. */
+    adicionarMinutosSessao(subject, minutos, dia, compartimento) {
+        const n = Number(minutos);
+        if (!subject || !Number.isFinite(n) || n <= 0) return false;
+        if (typeof dia !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dia)) return false;
+        if (typeof compartimento !== 'string' || !compartimento) return false;
+        this.migrarV2();
+        const slots = this.lerSlots();
+        if (!slots[dia] || typeof slots[dia] !== 'object') slots[dia] = {};
+        if (!slots[dia][subject] || typeof slots[dia][subject] !== 'object') slots[dia][subject] = {};
+        const antes = Number(slots[dia][subject][compartimento]) || 0;
+        slots[dia][subject][compartimento] = Math.max(antes, n);
+        this.escreverSlots(slots);
+        this.recalcularTotais();
+        if (typeof pushDebounced === 'function') pushDebounced();
+        return true;
+    },
+
+    /* Remove o crédito de uma sessão (reabrir ou apagar). */
+    removerMinutosSessao(subject, dia, compartimento) {
+        if (!subject || typeof dia !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dia)) return false;
+        if (typeof compartimento !== 'string' || !compartimento) return false;
+        this.migrarV2();
+        const slots = this.lerSlots();
+        const diaSlots = slots[dia];
+        if (!diaSlots || typeof diaSlots !== 'object') return false;
+        const materia = diaSlots[subject];
+        if (!materia || typeof materia !== 'object' || !(compartimento in materia)) return false;
+        delete materia[compartimento];
+        if (!Object.keys(materia).length) delete diaSlots[subject];
+        if (!Object.keys(diaSlots).length) delete slots[dia];
+        this.escreverSlots(slots);
+        this.recalcularTotais();
+        if (typeof pushDebounced === 'function') pushDebounced();
+        return true;
+    },
+
     obterDoDia(date) {
         const key = dayKey(date);
         const dados = this.ler();

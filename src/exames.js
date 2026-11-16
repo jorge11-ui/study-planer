@@ -893,10 +893,67 @@ function sessionRow(s){
     </div>
   </div>`;
 }
+/* ── Sessões concluídas nas estatísticas de estudo ──
+   Uma sessão do plano só entra no heatmap e nos totais diários/semanais
+   globais depois de ficar concluída. O crédito usa um compartimento
+   determinístico por sessão, para nunca contar duas vezes. */
+const STATS_COMPARTIMENTO_PREFIX = 'exsessao-';
+
+function statsCompartimento(s) {
+  return `${STATS_COMPARTIMENTO_PREFIX}${s.id}`;
+}
+
+function statsSubject(s) {
+  return discLabel(s && s.disciplinaId);
+}
+
+function creditarSessaoNosTotais(s) {
+  if (!s || !s.concluida) return false;
+  const minutos = Math.max(0, Number(s.duracaoMin) || 0);
+  if (!minutos || !/^\d{4}-\d{2}-\d{2}$/.test(s.data || '')) return false;
+  if (Number(s.statsMin) === minutos) return false;
+  if (typeof StudySessions === 'undefined' || typeof StudySessions.adicionarMinutosSessao !== 'function') return false;
+  if (Number(s.statsMin) > 0) descreditarSessaoDosTotais(s);
+  StudySessions.adicionarMinutosSessao(statsSubject(s), minutos, s.data, statsCompartimento(s));
+  s.statsMin = minutos;
+  s.statsCreditedAt = Date.now();
+  return true;
+}
+
+function descreditarSessaoDosTotais(s) {
+  if (!s) return;
+  const minutos = Number(s.statsMin) || 0;
+  s.statsMin = 0;
+  if (!minutos) return;
+  if (typeof StudySessions === 'undefined' || typeof StudySessions.removerMinutosSessao !== 'function') return;
+  StudySessions.removerMinutosSessao(statsSubject(s), s.data, statsCompartimento(s));
+}
+
+function refrescarEstatisticas() {
+  try {
+    if (typeof atualizarVistasAposSessao === 'function') atualizarVistasAposSessao();
+    else if (typeof StudyStats !== 'undefined' && StudyStats.renderHeatmap) StudyStats.renderHeatmap();
+  } catch { /* segue sem refrescar */ }
+}
+
+/* Credita sessões que já estavam concluídas antes desta integração. */
+function reconciliarSessoesConcluidas() {
+  let alterou = false;
+  state.sessions.forEach(s => {
+    if (!s || !s.concluida) return;
+    const minutos = Math.max(0, Number(s.duracaoMin) || 0);
+    if (!minutos || Number(s.statsMin) === minutos) return;
+    if (creditarSessaoNosTotais(s)) alterou = true;
+  });
+  if (alterou) exWrite(STORE_KEY, state);
+}
+
 function bindSessionActions(root){
   $all('[data-sess-done]').forEach(b=>b.addEventListener('click', async ()=>{
     const s = state.sessions.find(x=>x.id===b.dataset.sessDone); if(!s) return;
     s.concluida = !s.concluida;
+    if(s.concluida) creditarSessaoNosTotais(s);
+    else descreditarSessaoDosTotais(s);
     if(s.topicId){ const t=getTopic(s.topicId); if(t){ t.ultimaAtividade=Date.now(); state.ui.lastTopicId=t.id; if(s.concluida && t.estado==='nao_iniciado') t.estado='em_progresso'; } }
     // sync calendar task state if linked
     if(s.calendarTaskId && s.calendarDate && typeof persistirTarefasDia==='function' && typeof read==='function'){
@@ -906,15 +963,18 @@ function bindSessionActions(root){
       } catch {}
     }
     saveState();
+    refrescarEstatisticas();
   }));
   $all('[data-sess-del]').forEach(b=>b.addEventListener('click', async ()=>{
     const id=b.dataset.sessDel; const s = state.sessions.find(x=>x.id===id); if(!s) return;
     if(!confirm('Apagar esta sessão?')) return;
+    descreditarSessaoDosTotais(s);
     if(s.calendarTaskId && s.calendarDate && typeof persistirTarefasDia==='function' && typeof read==='function'){
       try { const key=s.calendarDate; const tasks=read(`study-journal-tasks-${key}`, []).filter(t=>t.id!==s.calendarTaskId); await persistirTarefasDia(key, tasks); } catch {}
     }
     state.sessions = state.sessions.filter(x=>x.id!==id);
     saveState();
+    refrescarEstatisticas();
   }));
   $all('[data-session-open]').forEach(el=>el.addEventListener('click', ()=>{
     ui.planoView='lista'; renderPlano();
@@ -952,6 +1012,7 @@ function lerTabGuardada(){
 
 function ligar(){
   state = loadState();
+  reconciliarSessoesConcluidas();
   bindTabs();
   setTab(lerTabGuardada());
   renderAll();
