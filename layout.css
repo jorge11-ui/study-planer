@@ -761,6 +761,7 @@ body > header.journal-header { background: rgba(16, 16, 16, .98); }
   appearance: none; border: 1px solid #2F2F2F; background: #191919; color: #E6E6E6;
   border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 500; cursor: pointer;
   transition: all .18s ease; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
 #view-exames .ex-btn:hover { background: #222; border-color: #3A3A3A; }
 #view-exames .ex-btn-primary { background: #232323; color: #F5F5F5; border-color: #383838; }

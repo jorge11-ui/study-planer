@@ -450,7 +450,7 @@ function topicRow(t){
       <select class="ex-input ex-input-sm" data-topic-conf="${esc(t.id)}" aria-label="Confiança">
         ${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(t.confianca||3)===n?'selected':''}>Conf. ${n}</option>`).join('')}
       </select>
-      <button type="button" class="ex-btn ex-btn-sm" data-topic-edit="${esc(t.id)}">Editar</button>
+      <button type="button" class="ex-btn ex-btn-sm" data-topic-edit="${esc(t.id)}"><svg class="icon h-3.5 w-3.5" aria-hidden="true"><use href="#i-pencil"/></svg><span>Editar</span></button>
       <button type="button" class="ex-btn ex-btn-sm" data-topic-study="${esc(t.id)}">Estudar</button>
       <button type="button" class="ex-btn ex-btn-sm ex-btn-danger" data-topic-del="${esc(t.id)}" aria-label="Apagar tópico">Apagar</button>
     </div>
