@@ -72,7 +72,31 @@ window.ContaSync = (() => {
         if (window.GitHubSync && window.GitHubSync.coletarLocais) {
             return window.GitHubSync.coletarLocais();
         }
-        return { days: {} };
+        // Inclui dados dos exames para sincronização entre aparelhos
+        const examesRaw = localStorage.getItem('study-journal-exames-center-v2');
+        const exames = examesRaw ? JSON.parse(examesRaw) : { sessions: [] };
+        // Apenas o essencial: sessões com seus dados básicos
+        const essenciais = { sessions: [] };
+        try {
+            exames.sessions && exames.sessions.forEach(s => {
+                if (s && s.id) {
+                    essenciais.sessions.push({
+                        id: s.id,
+                        disciplinaId: s.disciplinaId,
+                        topicId: s.topicId,
+                        data: s.data,
+                        duracaoMin: s.duracaoMin,
+                        notas: s.notas,
+                        concluida: s.concluida,
+                        statsMin: s.statsMin,
+                        statsCreditedAt: s.statsCreditedAt,
+                        calendarTaskId: s.calendarTaskId,
+                        calendarDate: s.calendarDate
+                    });
+                }
+            });
+        } catch { /* segue se houver erro de parsing */ }
+        return { days: {}, exames: essenciais };
     }
 
     function aplicar(remoto) {
@@ -81,6 +105,14 @@ window.ContaSync = (() => {
             // servidor avançou — inclusive quando avançou para vazio
             // porque alguém apagou no outro aparelho.
             window.GitHubSync.aplicarRemotos(remoto || {}, { protegeVazios: false });
+        }
+        // Aplica dados dos exames trazidos pelo sync da conta
+        if (remoto.exames && remoto.exames.sessions) {
+            try {
+                localStorage.setItem('study-journal-exames-center-v2', JSON.stringify(remoto.exames));
+                // Dispatch event para atualizar a UI dos exames
+                window.dispatchEvent(new CustomEvent('studyjournal:exames-sync', { detail: remoto.exames }));
+            } catch { /* segue sem gravamento */ }
         }
     }
 

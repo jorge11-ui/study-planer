@@ -1013,6 +1013,19 @@ function lerTabGuardada(){
 function ligar(){
   state = loadState();
   reconciliarSessoesConcluidas();
+  // Ouvinte para atualizar a UI dos exames quando o sync da conta traz dados novos
+  window.addEventListener('studyjournal:exames-sync', (e) => {
+    try {
+      const dados = e.detail;
+      if (dados && dados.sessions) {
+        // Funde as sessões recebidas com as locais: mantém o último versionamento
+        let local = loadState();
+        local.sessions = dados.sessions;
+        exWrite(STORE_KEY, local);
+        renderAll();
+      }
+    } catch { /* segue silenciosamente */ }
+  });
   bindTabs();
   setTab(lerTabGuardada());
   renderAll();
