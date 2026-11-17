@@ -4,7 +4,7 @@ window.GitHubSync = (() => {
     const CHAVE_ULTIMO_SYNC = 'study-journal-github-last-sync';
     const CHAVE_PUBLIC_READONLY = 'study-journal-github-public-readonly';
     const API_BASE = 'https://api.github.com/gists';
-    const SYNC_INTERVAL_MS = 60000;
+    const SYNC_INTERVAL_MS = 20000;
 
     let token = '';
     let gistId = '';
@@ -12,6 +12,8 @@ window.GitHubSync = (() => {
     let syncTimer = null;
     let aSyncando = false;
     let listeners = [];
+    let ultimoPayloadEnviado = null;
+    let ultimoSyncStorage = 0;
 
     function notificar(tipo, detalhes = {}) {
         listeners.forEach(cb => cb(tipo, detalhes));
@@ -26,6 +28,18 @@ window.GitHubSync = (() => {
             headers['Authorization'] = `token ${token}`;
         }
         return headers;
+    }
+
+    /* fetch com limite de tempo: um pedido pendurado (servidor/rede a
+       acordar) prendia o aSyncando e bloqueava os pushes seguintes. */
+    async function pedir(url, opcoes = {}, timeoutMs = 20000) {
+        const ctrl = new AbortController();
+        const limite = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...opcoes, signal: ctrl.signal });
+        } finally {
+            clearTimeout(limite);
+        }
     }
 
     function carregarConfig() {
@@ -105,7 +119,7 @@ window.GitHubSync = (() => {
             },
         };
 
-        const resp = await fetch(API_BASE, {
+        const resp = await pedir(API_BASE, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(payload),
@@ -126,7 +140,7 @@ window.GitHubSync = (() => {
         // For public read-only, fetch without auth
         const headers = getHeaders(hasWriteAccess());
 
-        const resp = await fetch(`${API_BASE}/${gistId}`, { headers });
+        const resp = await pedir(`${API_BASE}/${gistId}`, { headers });
 
         if (resp.status === 404) {
             if (hasWriteAccess()) {
@@ -154,13 +168,14 @@ window.GitHubSync = (() => {
     async function escreverGist(dados, sha) {
         if (!hasWriteAccess()) throw new Error('Sem permissão de escrita (modo leitura)');
 
+        const marcador = new Date().toISOString();
         const payload = {
             description: 'StudyJournal Sync',
             files: {
                 'study-journal-data.json': {
                     content: JSON.stringify({
                         ...dados,
-                        updatedAt: new Date().toISOString(),
+                        updatedAt: marcador,
                     }, null, 2),
                 },
             },
@@ -168,7 +183,7 @@ window.GitHubSync = (() => {
 
         if (sha) payload.files['study-journal-data.json'].sha = sha;
 
-        const resp = await fetch(`${API_BASE}/${gistId}`, {
+        const resp = await pedir(`${API_BASE}/${gistId}`, {
             method: 'PATCH',
             headers: getHeaders(),
             body: JSON.stringify(payload),
@@ -180,8 +195,8 @@ window.GitHubSync = (() => {
         }
 
         const data = await resp.json();
-        localStorage.setItem(CHAVE_ULTIMO_SYNC, new Date().toISOString());
-        return data.files['study-journal-data.json'].sha;
+        localStorage.setItem(CHAVE_ULTIMO_SYNC, marcador);
+        return { sha: data.files['study-journal-data.json'].sha, updatedAt: marcador };
     }
 
     function coletarDadosLocais() {
@@ -201,6 +216,8 @@ window.GitHubSync = (() => {
                     const k = tasksMatch[1];
                     days[k] = days[k] || {};
                     days[k].tasks = JSON.parse(localStorage.getItem(key) || '[]');
+                    const ts = Number(localStorage.getItem(`study-journal-tasks-${k}-ts`)) || 0;
+                    if (ts > 0) days[k].tasksUpdatedAt = ts;
                 }
             }
         } catch { /* ignora erros de parsing */ }
@@ -288,7 +305,19 @@ window.GitHubSync = (() => {
                         } catch { /* segue */ }
                     }
                 }
-                if (value.tasks !== undefined) localStorage.setItem(`study-journal-tasks-${key}`, JSON.stringify(value.tasks));
+                if (value.tasks !== undefined) {
+                    // LWW por dia, como as notas: sem isto o pull repunha
+                    // a lista antiga do servidor e apagava tarefas acabadas
+                    // de criar neste aparelho.
+                    const rTs = Number(value.tasksUpdatedAt) || 0;
+                    const lTs = Number(localStorage.getItem(`study-journal-tasks-${key}-ts`)) || 0;
+                    if (rTs >= lTs) {
+                        localStorage.setItem(`study-journal-tasks-${key}`, JSON.stringify(value.tasks));
+                        try {
+                            localStorage.setItem(`study-journal-tasks-${key}-ts`, String(rTs || Date.now()));
+                        } catch { /* segue */ }
+                    }
+                }
             });
         }
         if (remoto.semanal) {
@@ -500,8 +529,14 @@ window.GitHubSync = (() => {
             }
 
             localData = coletarDadosLocais();
-            const newSha = await escreverGist(localData, remoteSha);
-            notificar('push-done', { sha: newSha });
+            // Só escreve quando há algo novo: o poll de 20s não deve
+            // reescrever o Gist (e mexer no updatedAt) sem necessidade.
+            const payload = JSON.stringify(localData);
+            if (payload !== ultimoPayloadEnviado) {
+                const enviado = await escreverGist(localData, remoteSha);
+                ultimoPayloadEnviado = payload;
+                notificar('push-done', { sha: enviado.sha, updatedAt: enviado.updatedAt });
+            }
 
             aSyncando = false;
             notificar('sync-done', { success: true });
@@ -516,7 +551,7 @@ window.GitHubSync = (() => {
     async function fetchPublicData() {
         if (!configurado()) throw new Error('GitHub não configurado');
         const headers = getHeaders(false); // No auth for public read
-        const resp = await fetch(`${API_BASE}/${gistId}`, { headers });
+        const resp = await pedir(`${API_BASE}/${gistId}`, { headers });
         if (!resp.ok) throw new Error(`Erro ao ler Gist público: ${resp.status}`);
         const data = await resp.json();
         const arquivo = data.files['study-journal-data.json'];
@@ -553,6 +588,11 @@ window.GitHubSync = (() => {
     window.addEventListener('storage', (event) => {
         if (event.key && event.key.startsWith('study-journal-')
             && ![CHAVE_TOKEN, CHAVE_GIST, CHAVE_PUBLIC_READONLY].includes(event.key)) {
+            // Várias abas a escrever (notas, tarefas, heatmap) disparavam
+            // um sync por chave; um a cada 3s chega e poupa a API.
+            const agora = Date.now();
+            if (agora - ultimoSyncStorage < 3000) return;
+            ultimoSyncStorage = agora;
             sync();
         }
     });

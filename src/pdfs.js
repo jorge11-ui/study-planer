@@ -1050,6 +1050,13 @@ window.Pdfs = (() => {
         const dlg = form();
         const grelha = document.getElementById('pdf-grid');
 
+        if (!window.__pdfsSyncBound) {
+            window.__pdfsSyncBound = true;
+            window.addEventListener('studyjournal:pull', () => {
+                try { atualizarAposSync(); } catch { /* segue */ }
+            });
+        }
+
         if (grelha && !grelha.dataset.pdfBound) {
             grelha.dataset.pdfBound = 'true';
 
@@ -1249,6 +1256,20 @@ window.Pdfs = (() => {
         docs = ordenar(ler().map(normalizarEntrada));
         ligar();
         puxarEspelho();
+    }
+
+    /* Pull de sync (Gist/conta) aplicado: relê a lista local e redesenha
+       sem tocar nos URLs já abertos no visualizador. */
+    function atualizarAposSync() {
+        const assinatura = (lista) => lista
+            .map((d) => [d.id, d.titulo, d.categoria, d.tipo, d.alvo, d.url, d.tamanho].join('|'))
+            .sort()
+            .join('~');
+        const antes = assinatura(docs);
+        docs = ordenar(ler().map(normalizarEntrada));
+        if (antes !== assinatura(docs)) desenhar();
+        // Mesmo com a lista igual, o servidor pode ter recuperado bytes.
+        backfillFicheiros().catch(() => {});
     }
 
     /* O espelho pdfs.json manda quando existe (last-writer-wins, como as

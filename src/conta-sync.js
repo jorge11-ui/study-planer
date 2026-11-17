@@ -10,8 +10,8 @@ window.ContaSync = (() => {
     const K_REV = 'study-journal-conta-rev';
     const K_GID = 'study-journal-conta-gid';
     const K_LAST = 'study-journal-conta-last-sync';
-    const POLL_MS = 30000;
-    const AUTO_MIN_GAP_MS = 15000;
+    const POLL_MS = 15000;
+    const AUTO_MIN_GAP_MS = 8000;
     const ESTADO_TTL_MS = 60000;
 
     let token = '';
@@ -84,19 +84,28 @@ window.ContaSync = (() => {
         }
     }
 
-    async function api(path, { method = 'GET', body = null, auth = true } = {}) {
+    async function api(path, { method = 'GET', body = null, auth = true, timeoutMs = 30000 } = {}) {
         const headers = { 'Content-Type': 'application/json' };
         if (auth && token) headers.Authorization = `Bearer ${token}`;
-        const resp = await fetch(path, {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined,
-        });
-        let data = null;
+        // Sem timeout, um servidor a acordar (Render free) deixava o
+        // aSyncando preso e todos os pushes seguintes eram ignorados.
+        const ctrl = new AbortController();
+        const limite = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
-            data = await resp.json();
-        } catch { /* corpo vazio ou inválido */ }
-        return { status: resp.status, data };
+            const resp = await fetch(path, {
+                method,
+                headers,
+                body: body ? JSON.stringify(body) : undefined,
+                signal: ctrl.signal,
+            });
+            let data = null;
+            try {
+                data = await resp.json();
+            } catch { /* corpo vazio ou inválido */ }
+            return { status: resp.status, data };
+        } finally {
+            clearTimeout(limite);
+        }
     }
 
     function configurado() {
@@ -428,6 +437,9 @@ window.ContaSync = (() => {
     function iniciarAuto() {
         if (timer || (!token && !aberto)) return;
         timer = setInterval(() => pullAuto().catch(() => {}), POLL_MS);
+        // Pull imediato ao arrancar: sem isto a primeira atualização do
+        // outro aparelho só chegava 15s depois de abrir a app.
+        pullAuto().catch(() => {});
     }
 
     function pararAuto() {

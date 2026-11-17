@@ -824,7 +824,17 @@ function read(key, fallback) {
 
 function write(key, value) {
     try {
-        localStorage.setItem(key, JSON.stringify(value));
+        const serializado = JSON.stringify(value);
+        const anterior = localStorage.getItem(key);
+        localStorage.setItem(key, serializado);
+        // Carimbo por dia das tarefas: o sync usa-o para decidir qual das
+        // listas é a mais recente (LWW), em vez de o pull repor a antiga.
+        // Só muda quando o conteúdo muda — espelhos do vault não contam.
+        if (/^study-journal-tasks-\d{4}-\d{2}-\d{2}$/.test(key) && serializado !== anterior) {
+            try {
+                localStorage.setItem(`${key}-ts`, String(Date.now()));
+            } catch { /* segue sem carimbo */ }
+        }
         return true;
     } catch {
         toast('Não foi possível guardar no browser.', 'error');
@@ -898,8 +908,20 @@ function temSyncPendente() {
 }
 
 function anotarResultadoPush(r) {
-    if (r && r.ok) limparSyncPendente();
-    else if (!r || r.reason !== 'sem-conta') marcarSyncPendente();
+    if (r && r.ok) {
+        limparSyncPendente();
+        return;
+    }
+    // Já havia um sync a correr: o pedido não chegou a sair. Repetir em
+    // breve em vez de esperar pelo flush de 15s (o texto ficava parado).
+    if (r && (r.reason === 'a-syncar' || r.reason === 'not_configured_or_syncing')) {
+        marcarSyncPendente();
+        setTimeout(() => {
+            if (temSyncPendente()) descarregarSyncPendente().catch(() => {});
+        }, 2000);
+        return;
+    }
+    if (!r || r.reason !== 'sem-conta') marcarSyncPendente();
     else limparSyncPendente();
 }
 
@@ -907,7 +929,7 @@ function anotarResultadoPush(r) {
    imediato, para não disparar um PUT por keystroke (ex.: exames). */
 let pushDebounceTimer = null;
 
-function pushDebounced(ms = 5000) {
+function pushDebounced(ms = 2500) {
     // Marca sempre como pendente, mesmo com o sync ainda não pronto:
     // ao abrir um link de partilha, verificarAberto()/usarPartilha() ainda
     // estão a resolver e sem isto uma nota escrita nos primeiros segundos
@@ -933,7 +955,9 @@ function sincronizarDispositivos() {
         return;
     }
     if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-        window.GitHubSync.sync(false).then(anotarResultadoPush).catch(() => marcarSyncPendente());
+        // Pull antes de push: sem isto um aparelho com dados parados
+        // escrevia por cima do que o outro acabara de enviar.
+        window.GitHubSync.sync(true).then(anotarResultadoPush).catch(() => marcarSyncPendente());
     }
 }
 
@@ -1028,7 +1052,7 @@ async function descarregarSyncPendente() {
             return;
         }
         if (window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado()) {
-            const r = await window.GitHubSync.sync(false);
+            const r = await window.GitHubSync.sync(true);
             anotarResultadoPush(r);
         }
     } catch {
@@ -1040,7 +1064,7 @@ function iniciarFlushSync() {
     if (flushSyncTimer) return;
     flushSyncTimer = setInterval(() => {
         descarregarSyncPendente().catch(() => {});
-    }, 60000);
+    }, 15000);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') descarregarSyncPendente().catch(() => {});
     });
@@ -1416,17 +1440,23 @@ function commitNotes() {
     saveTimer = null;
 
     const text = els.notes.value;
+    const brutoAnterior = localStorage.getItem(notesKey());
     if (!write(notesKey(), text)) return;
     // Carimbo da última escrita: o sync usa-o para decidir quem ganha
     // quando dois aparelhos mexem nas mesmas notas (LWW por dia).
-    try {
-        localStorage.setItem(`${notesKey()}-ts`, String(Date.now()));
-    } catch { /* segue sem carimbo */ }
+    // Só quando o texto mudou — o commitNotes corre no beforeunload e,
+    // a carimbar sempre, este aparelho ganhava o LWW sem ter editado nada
+    // e as notas do outro nunca chegavam.
+    if (brutoAnterior !== JSON.stringify(text)) {
+        try {
+            localStorage.setItem(`${notesKey()}-ts`, String(Date.now()));
+        } catch { /* segue sem carimbo */ }
+        sincronizarDispositivos();
+    }
 
     const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     setSaveStatus(`guardado às ${time}`);
 
-    sincronizarDispositivos();
     espelharVaultDebounced();
     StudyStats.renderHeatmap();
     renderStreak();
@@ -3939,8 +3969,24 @@ function bind() {
 
     // Listener de eventos de sync para atualizar UI
     if (window.GitHubSync && window.GitHubSync.onSync) {
-        window.GitHubSync.onSync((tipo) => {
+        window.GitHubSync.onSync((tipo, detalhes = {}) => {
             registarSyncEvento(tipo);
+            if (tipo === 'push-done' && detalhes.updatedAt) {
+                // O nosso próprio push não deve disparar o recarregamento
+                // que o próximo pull (com esta marca) faria.
+                window.__gistUltimaMarca = detalhes.updatedAt;
+            }
+            if (tipo === 'pull-done') {
+                // Só recarrega quando o Gist mudou de facto; e nunca por
+                // cima do editor de notas em foco (o helper já protege).
+                const remoto = detalhes.data || {};
+                const marca = String(remoto.updatedAt || '');
+                if (marca && marca !== window.__gistUltimaMarca) {
+                    window.__gistUltimaMarca = marca;
+                    recarregarAposSync();
+                    window.dispatchEvent(new CustomEvent('studyjournal:pull'));
+                }
+            }
             if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
                 atualizarUIEstados();
                 if (currentView === 'definicoes') {
@@ -4154,6 +4200,11 @@ function bind() {
     if (window.ContaSync && window.ContaSync.onSync) {
         window.ContaSync.onSync((tipo, detalhes = {}) => {
             registarSyncEvento(tipo);
+            if (tipo === 'pull-done') {
+                // Galerias (PDFs/Caderno) também devem refletir o pull.
+                // (O ContaSync só emite pull-done quando o rev avançou.)
+                window.dispatchEvent(new CustomEvent('studyjournal:pull'));
+            }
             if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
                 atualizarUIConta();
                 if (contaStatus && currentView === 'definicoes') {
