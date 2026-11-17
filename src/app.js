@@ -1079,9 +1079,14 @@ function recarregarAposSync() {
     tasks = read(tasksKey(), []);
     renderTasks();
 
-    const notasFocadas = document.activeElement === els.notes;
+    // Só não se toca no editor se houver texto por gravar. Olhar para o
+    // foco não chega: ao fechar o teclado do telemóvel (ou clicar fora) o
+    // debounce de 800ms ainda pode estar pendente e a nota acabada de
+    // escrever era substituída por uma versão antiga.
+    const notasFocadas = notesDirty;
     if (!notasFocadas) {
         els.notes.value = read(notesKey(), '');
+        notesDirty = false;
         els.wordCount.textContent = String(countWords(els.notes.value));
         if (window.NotasPro) window.NotasPro.renderTagsNota();
         const vista = document.getElementById('notes-preview');
@@ -1103,6 +1108,10 @@ function recarregarAposSync() {
     if (currentView === 'semanal' && window.Weekly) window.Weekly.ligar();
     if (currentView === 'pdfs' && window.Pdfs) window.Pdfs.carregar();
     if (currentView === 'caderno' && window.Caderno) window.Caderno.carregar();
+    // Título/disciplina/categoria da nota e lista de notas recentes.
+    if (typeof window.__swRefreshNota === 'function') {
+        try { window.__swRefreshNota(); } catch { /* segue */ }
+    }
 
     return !notasFocadas;
 }
@@ -1425,6 +1434,10 @@ async function clearDone() {
 /* ── Notas ────────────────────────────────────────────── */
 
 let saveTimer = null;
+/* Há texto por gravar no editor? Um pull remoto pode substituir o
+   conteúdo mesmo com o cursor lá dentro se não houver edições pendentes
+   (era o que deixava as notas do outro aparelho invisíveis). */
+let notesDirty = false;
 
 function countWords(text) {
     const trimmed = text.trim();
@@ -1453,6 +1466,7 @@ function commitNotes() {
         } catch { /* segue sem carimbo */ }
         sincronizarDispositivos();
     }
+    notesDirty = false;
 
     const time = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
     setSaveStatus(`guardado às ${time}`);
@@ -1508,6 +1522,7 @@ function adicionarANotas(texto) {
 }
 
 function onNotesInput() {
+    notesDirty = true;
     els.wordCount.textContent = String(countWords(els.notes.value));
     setSaveStatus('a guardar…');
 
@@ -2274,7 +2289,7 @@ let vaultSyncTimer = null;
 async function syncDayFromVault() {
     // No telemóvel (modo remoto), ignoramos a verificação de estado 'ligado'
     // e tentamos ler do servidor sempre que possível.
-    if (!els.notes || document.activeElement === els.notes) return;
+    if (!els.notes || notesDirty || document.activeElement === els.notes) return;
 
     const key = dayKey(selected);
     try {

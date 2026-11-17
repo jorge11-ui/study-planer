@@ -29,11 +29,15 @@
   function getMeta(day) { return read(metaKey(day), { title:'', subject:'Geral', category:'resumo', examTopic:'' }); }
   function setMeta(day, patch) {
     const cur = getMeta(day);
-    const next = { ...cur, ...patch };
+    // Carimbo para o sync decidir a versão mais recente por dia.
+    const next = { ...cur, ...patch, updatedAt: Date.now() };
     write(metaKey(day), next);
     const idx = read('study-journal-notes-index', {});
     idx[day] = { day, title: next.title || '', subject: next.subject || 'Geral', category: next.category || 'resumo', updatedAt: Date.now() };
     write('study-journal-notes-index', idx);
+    // Metadados não passam pelo commitNotes: sem isto, mudar só o título
+    // (ou a disciplina) só chegava ao outro aparelho no push seguinte.
+    if (typeof pushDebounced === 'function') pushDebounced(1200);
     updateTasksNoteContext();
   }
 
@@ -57,6 +61,9 @@
       updateTasksNoteContext();
       applyTaskFilter();
     };
+    // Chamado depois de um pull para o Painel mostrar os metadados
+    // (título/disciplina/categoria) que chegaram do outro aparelho.
+    window.__swRefreshNota = load;
 
     const save = () => {
       const day = selectedDayKey();

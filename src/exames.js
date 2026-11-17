@@ -207,7 +207,101 @@ function loadState() {
   return fresh;
 }
 
+/* ── Sync entre aparelhos (documento v2) ─────────────────
+   O estado inteiro viaja no sync (campo examesV2). A fusão é feita por
+   id — união das listas com LWW pelo carimbo de cada item — e os
+   apagados ficam em tombstones durante 30 dias. Assim adicionar num
+   aparelho e editar no outro não perde nada, e apagar propaga. */
+const APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
+const COLECOES = ['exams', 'topics', 'materials', 'sessions', 'issues'];
+
+function carimboItem(x) {
+  if (!x || typeof x !== 'object') return 0;
+  return Number(x.updatedAt || x.atualizadoEm || x.ultimaAtividade
+    || x.createdAt || x.addedAt || 0) || 0;
+}
+
+function normalizarApagados(entrada) {
+  const out = {};
+  COLECOES.forEach((tipo) => {
+    const lista = (entrada && Array.isArray(entrada[tipo])) ? entrada[tipo] : [];
+    const mapa = new Map();
+    lista.forEach((e) => {
+      if (!e || typeof e.id !== 'string') return;
+      const ts = Number(e.ts) || 0;
+      if (!mapa.has(e.id) || ts > mapa.get(e.id)) mapa.set(e.id, ts);
+    });
+    const agora = Date.now();
+    out[tipo] = [...mapa.entries()]
+      .filter(([, ts]) => agora - ts < APAGADO_MS)
+      .map(([id, ts]) => ({ id, ts }));
+  });
+  return out;
+}
+
+function marcarApagado(tipo, id) {
+  if (!COLECOES.includes(tipo) || !id) return;
+  state.apagados = normalizarApagados(state.apagados);
+  state.apagados[tipo] = [
+    ...state.apagados[tipo].filter((e) => e.id !== id),
+    { id, ts: Date.now() },
+  ];
+}
+
+function juntarLista(local, remoto, apagados) {
+  const mapa = new Map();
+  const sepultados = new Map((apagados || []).map((e) => [e.id, Number(e.ts) || 0]));
+  const considerar = (item) => {
+    if (!item || typeof item.id !== 'string') return;
+    const ts = carimboItem(item);
+    if ((sepultados.get(item.id) || 0) >= ts) return; // apagado depois da edição
+    const atual = mapa.get(item.id);
+    if (!atual || ts >= carimboItem(atual)) mapa.set(item.id, item);
+  };
+  (Array.isArray(local) ? local : []).forEach(considerar);
+  (Array.isArray(remoto) ? remoto : []).forEach(considerar);
+  return [...mapa.values()];
+}
+
+function fundirEstado(local, remoto) {
+  const l = normalizeState(local);
+  const r = normalizeState(remoto);
+  const apagados = normalizarApagados({
+    exams: [...(l.apagados && l.apagados.exams || []), ...(r.apagados && r.apagados.exams || [])],
+    topics: [...(l.apagados && l.apagados.topics || []), ...(r.apagados && r.apagados.topics || [])],
+    materials: [...(l.apagados && l.apagados.materials || []), ...(r.apagados && r.apagados.materials || [])],
+    sessions: [...(l.apagados && l.apagados.sessions || []), ...(r.apagados && r.apagados.sessions || [])],
+    issues: [...(l.apagados && l.apagados.issues || []), ...(r.apagados && r.apagados.issues || [])],
+  });
+  const out = normalizeState({ ...l });
+  out.exams = juntarLista(l.exams, r.exams, apagados.exams);
+  out.topics = juntarLista(l.topics, r.topics, apagados.topics);
+  out.materials = juntarLista(l.materials, r.materials, apagados.materials);
+  out.sessions = juntarLista(l.sessions, r.sessions, apagados.sessions);
+  out.issues = juntarLista(l.issues, r.issues, apagados.issues);
+  out.apagados = apagados;
+  out.updatedAt = Math.max(Number(l.updatedAt) || 0, Number(r.updatedAt) || 0);
+  return out;
+}
+
+/* Aplicado pelo sync (Gist/conta) quando chega um documento remoto.
+   Escreve sem `exWrite` de propósito: um pull não deve disparar outro
+   push (senão os dois aparelhos ficavam a empurrar em ciclo). */
+function fundirRemoto(remoto) {
+  if (!remoto || typeof remoto !== 'object') return false;
+  const local = loadState();
+  const fundido = fundirEstado(local, remoto);
+  const antes = JSON.stringify([local.exams, local.topics, local.materials, local.sessions, local.issues]);
+  const depois = JSON.stringify([fundido.exams, fundido.topics, fundido.materials, fundido.sessions, fundido.issues]);
+  state = fundido;
+  if (antes !== depois) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* segue */ }
+  }
+  return antes !== depois;
+}
+
 function saveState() {
+  state.updatedAt = Date.now();
   exWrite(STORE_KEY, state);
   renderAll();
 }
@@ -303,6 +397,7 @@ function renderOverview(){
     inp.addEventListener('change', ()=>{
       const ex = getExam(inp.dataset.examDate); if(!ex) return;
       ex.dataExame = inp.value || '';
+      ex.updatedAt = Date.now();
       saveState(); miniToast('Data do exame atualizada.');
     });
   });
@@ -318,9 +413,9 @@ function renderOverview(){
 // ---------- Topics (hierarchy) ----------
 function ensureDomainSub(disciplinaId, domTitle='Geral', subTitle='Geral'){
   let dom = state.topics.find(t=>t.tipo==='dominio' && t.disciplinaId===disciplinaId && t.titulo.toLowerCase()===domTitle.toLowerCase());
-  if(!dom){ dom={id:uid('dom'), disciplinaId, parentId:null, tipo:'dominio', titulo:domTitle}; state.topics.push(dom); }
+  if(!dom){ dom={id:uid('dom'), disciplinaId, parentId:null, tipo:'dominio', titulo:domTitle, ultimaAtividade: Date.now()}; state.topics.push(dom); }
   let sub = state.topics.find(t=>t.tipo==='subdominio' && t.disciplinaId===disciplinaId && t.parentId===dom.id && t.titulo.toLowerCase()===subTitle.toLowerCase());
-  if(!sub){ sub={id:uid('sub'), disciplinaId, parentId:dom.id, tipo:'subdominio', titulo:subTitle}; state.topics.push(sub); }
+  if(!sub){ sub={id:uid('sub'), disciplinaId, parentId:dom.id, tipo:'subdominio', titulo:subTitle, ultimaAtividade: Date.now()}; state.topics.push(sub); }
   return { dom, sub };
 }
 function renderTopics(){
@@ -470,6 +565,7 @@ function bindTopicActions(root){
   $all('[data-topic-del]', root).forEach(b=>b.addEventListener('click', ()=>{
     const id=b.dataset.topicDel; const t=getTopic(id); if(!t) return;
     if(!confirm(`Apagar o tópico "${t.titulo}"?`)) return;
+    marcarApagado('topics', id);
     state.topics = state.topics.filter(x=>x.id!==id);
     state.materials.forEach(m=>{ if(m.topicId===id) m.topicId=''; });
     state.sessions.forEach(s=>{ if(s.topicId===id) s.topicId=''; });
@@ -575,7 +671,9 @@ function renderMateriais(){
   $('#ex-mat-ftipo')?.addEventListener('change', e=>{ ui.matFilterTipo=e.target.value; renderMateriais(); });
   $('#ex-mat-ftag')?.addEventListener('input', e=>{ ui.matFilterTag=e.target.value; renderMateriais(); });
   $all('[data-mat-del]').forEach(b=>b.addEventListener('click', ()=>{
-    const id=b.dataset.matDel; state.materials = state.materials.filter(x=>x.id!==id);
+    const id=b.dataset.matDel;
+    marcarApagado('materials', id);
+    state.materials = state.materials.filter(x=>x.id!==id);
     state.topics.forEach(t=>{ if(t.materialIds) t.materialIds=t.materialIds.filter(x=>x!==id); });
     saveState();
   }));
@@ -744,7 +842,7 @@ function bindIssueFiltersAndActions(root, kind, rerender){
   $(`#${p}-fdisc`, root)?.addEventListener('change', e=>{ if(kind==='rev') ui.revFilterDisc=e.target.value; else ui.duvFilterDisc=e.target.value; rerender(); });
   $(`#${p}-festado`, root)?.addEventListener('change', e=>{ if(kind==='rev') ui.revFilterEstado=e.target.value; else ui.duvFilterEstado=e.target.value; rerender(); });
   $all('[data-iss-estado]', root).forEach(sel=>sel.addEventListener('change', ()=>{ const i=getIssue(sel.dataset.issEstado); if(!i) return; i.estado=sel.value; i.updatedAt=Date.now(); saveState(); }));
-  $all('[data-iss-del]', root).forEach(b=>b.addEventListener('click', ()=>{ state.issues = state.issues.filter(x=>x.id!==b.dataset.issDel); state.topics.forEach(t=>{ if(t.exercicioIds) t.exercicioIds=t.exercicioIds.filter(x=>x!==b.dataset.issDel); }); saveState(); }));
+  $all('[data-iss-del]', root).forEach(b=>b.addEventListener('click', ()=>{ const id=b.dataset.issDel; marcarApagado('issues', id); state.issues = state.issues.filter(x=>x.id!==id); state.topics.forEach(t=>{ if(t.exercicioIds) t.exercicioIds=t.exercicioIds.filter(x=>x!==id); }); saveState(); }));
   $all('[data-iss-rever]', root).forEach(b=>b.addEventListener('click', ()=>{
     const i=getIssue(b.dataset.issRever); if(!i) return;
     if (window.ReviewSystem && typeof window.ReviewSystem.criarAPartirDeDuvida === 'function') {
@@ -852,7 +950,7 @@ function renderPlano(){
     const notas = ($('#ex-sess-notes').value||'').trim();
     const integrar = $('#ex-sess-cal').checked;
     if(!data) return miniToast('Indica a data.', 'warn');
-    const sess = { id: uid('sess'), disciplinaId, topicId, data, duracaoMin, notas, concluida:false, createdAt: Date.now(), calendarTaskId:null, calendarDate:data };
+    const sess = { id: uid('sess'), disciplinaId, topicId, data, duracaoMin, notas, concluida:false, createdAt: Date.now(), updatedAt: Date.now(), calendarTaskId:null, calendarDate:data };
     state.sessions.unshift(sess);
     if(topicId){ const t=getTopic(topicId); if(t){ t.ultimaAtividade=Date.now(); state.ui.lastTopicId=t.id; } }
     if(integrar && typeof persistirTarefasDia === 'function'){
@@ -952,6 +1050,7 @@ function bindSessionActions(root){
   $all('[data-sess-done]').forEach(b=>b.addEventListener('click', async ()=>{
     const s = state.sessions.find(x=>x.id===b.dataset.sessDone); if(!s) return;
     s.concluida = !s.concluida;
+    s.updatedAt = Date.now();
     if(s.concluida) creditarSessaoNosTotais(s);
     else descreditarSessaoDosTotais(s);
     if(s.topicId){ const t=getTopic(s.topicId); if(t){ t.ultimaAtividade=Date.now(); state.ui.lastTopicId=t.id; if(s.concluida && t.estado==='nao_iniciado') t.estado='em_progresso'; } }
@@ -968,6 +1067,7 @@ function bindSessionActions(root){
   $all('[data-sess-del]').forEach(b=>b.addEventListener('click', async ()=>{
     const id=b.dataset.sessDel; const s = state.sessions.find(x=>x.id===id); if(!s) return;
     if(!confirm('Apagar esta sessão?')) return;
+    marcarApagado('sessions', id);
     descreditarSessaoDosTotais(s);
     if(s.calendarTaskId && s.calendarDate && typeof persistirTarefasDia==='function' && typeof read==='function'){
       try { const key=s.calendarDate; const tasks=read(`study-journal-tasks-${key}`, []).filter(t=>t.id!==s.calendarTaskId); await persistirTarefasDia(key, tasks); } catch {}
@@ -1010,22 +1110,20 @@ function lerTabGuardada(){
   try { const v=localStorage.getItem(EXAME_TAB_KEY); return TABS.includes(v)?v:'visao'; } catch { return 'visao'; }
 }
 
+let ouvinteSyncRegistado = false;
+
 function ligar(){
   state = loadState();
   reconciliarSessoesConcluidas();
-  // Ouvinte para atualizar a UI dos exames quando o sync da conta traz dados novos
-  window.addEventListener('studyjournal:exames-sync', (e) => {
-    try {
-      const dados = e.detail;
-      if (dados && dados.sessions) {
-        // Funde as sessões recebidas com as locais: mantém o último versionamento
-        let local = loadState();
-        local.sessions = dados.sessions;
-        exWrite(STORE_KEY, local);
-        renderAll();
-      }
-    } catch { /* segue silenciosamente */ }
-  });
+  // O sync aplica o documento em fundirRemoto(); aqui só se redesenha.
+  // Um único ouvinte (ligar() corre também em escreverTudo/import).
+  if (!ouvinteSyncRegistado && typeof window !== 'undefined') {
+    ouvinteSyncRegistado = true;
+    window.addEventListener('studyjournal:exames-sync', () => {
+      state = loadState();
+      renderAll();
+    });
+  }
   bindTabs();
   setTab(lerTabGuardada());
   renderAll();
@@ -1042,6 +1140,11 @@ else { bindOnce(); ligar(); }
 
 window.Exames = {
   ligar,
+  /* Aplica o documento remoto (sync) e devolve se algo mudou. */
+  fundirRemoto(remoto) {
+    const mudou = fundirRemoto(remoto);
+    return mudou;
+  },
   lerDataAlvo() {
     const ex = (state||loadState()).exams.find(e=>e.id!=='disc-geral' && e.dataExame);
     return ex ? ex.dataExame : lerDataAlvoLegacy();
@@ -1054,7 +1157,16 @@ window.Exames = {
     if(!d || typeof d !== 'object') return;
     // Accept both v2 and legacy payloads
     if (d.schemaVersion >= 2 || d.exams || d.sessions || d.issues) {
+      const agora = Date.now();
       state = normalizeState(d);
+      // Uma importação não pode perder itens contra os que já cá estão
+      // no sync por não trazerem carimbo: ganha o carimbo da importação.
+      COLECOES.forEach((tipo) => {
+        (state[tipo] || []).forEach((item) => {
+          if (item && typeof item === 'object' && !carimboItem(item)) item.updatedAt = agora;
+        });
+      });
+      state.updatedAt = agora;
       exWrite(STORE_KEY, state);
     } else if (d.foco || d.recursos || d.track || d.duvidas) {
       // legacy import: write to legacy keys then migrate

@@ -21,6 +21,11 @@ window.ContaSync = (() => {
     let ultimoPullAuto = 0;
     let estadoCache = { t: 0, v: null };
     let listeners = [];
+    // Ligação SSE: o servidor avisa quando outro aparelho faz push.
+    let eventos = null;
+    let eventosTimer = null;
+    let eventosReabrir = null;
+    let eventosFalhas = 0;
     // Servidor em modo aberto (SYNC_OPEN=1): sync anónimo, sem login.
     let aberto = false;
 
@@ -69,34 +74,13 @@ window.ContaSync = (() => {
     }
 
     function coletar() {
+        // O documento de sync (notas, tarefas, exames, PDFs, ...) é montado
+        // num único sítio (GitHubSync.coletarLocais), para o Gist e a conta
+        // enviarem exatamente o mesmo formato.
         if (window.GitHubSync && window.GitHubSync.coletarLocais) {
             return window.GitHubSync.coletarLocais();
         }
-        // Inclui dados dos exames para sincronização entre aparelhos
-        const examesRaw = localStorage.getItem('study-journal-exames-center-v2');
-        const exames = examesRaw ? JSON.parse(examesRaw) : { sessions: [] };
-        // Apenas o essencial: sessões com seus dados básicos
-        const essenciais = { sessions: [] };
-        try {
-            exames.sessions && exames.sessions.forEach(s => {
-                if (s && s.id) {
-                    essenciais.sessions.push({
-                        id: s.id,
-                        disciplinaId: s.disciplinaId,
-                        topicId: s.topicId,
-                        data: s.data,
-                        duracaoMin: s.duracaoMin,
-                        notas: s.notas,
-                        concluida: s.concluida,
-                        statsMin: s.statsMin,
-                        statsCreditedAt: s.statsCreditedAt,
-                        calendarTaskId: s.calendarTaskId,
-                        calendarDate: s.calendarDate
-                    });
-                }
-            });
-        } catch { /* segue se houver erro de parsing */ }
-        return { days: {}, exames: essenciais };
+        return { days: {} };
     }
 
     function aplicar(remoto) {
@@ -105,14 +89,6 @@ window.ContaSync = (() => {
             // servidor avançou — inclusive quando avançou para vazio
             // porque alguém apagou no outro aparelho.
             window.GitHubSync.aplicarRemotos(remoto || {}, { protegeVazios: false });
-        }
-        // Aplica dados dos exames trazidos pelo sync da conta
-        if (remoto.exames && remoto.exames.sessions) {
-            try {
-                localStorage.setItem('study-journal-exames-center-v2', JSON.stringify(remoto.exames));
-                // Dispatch event para atualizar a UI dos exames
-                window.dispatchEvent(new CustomEvent('studyjournal:exames-sync', { detail: remoto.exames }));
-            } catch { /* segue sem gravamento */ }
         }
     }
 
@@ -220,6 +196,9 @@ window.ContaSync = (() => {
             token = data.token;
             user = u;
             persistirCredenciais();
+            // O canal de eventos usa o token no URL: ao entrar de novo tem
+            // de ser reaberto com o token novo (outro utilizador/sessão).
+            pararEventos();
             const r = await sync(true);
             if (r.ok) iniciarAuto();
             return r.ok ? { ok: true } : r;
@@ -263,6 +242,7 @@ window.ContaSync = (() => {
                 return { ok: false, error: 'Link inválido ou revogado.' };
             }
             persistirCredenciais();
+            pararEventos();
             const r = await sync(true);
             if (r.ok) iniciarAuto();
             return r.ok ? { ok: true } : r;
@@ -362,8 +342,8 @@ window.ContaSync = (() => {
     }
 
     async function fazerPush() {
-        const payload = coletar();
-        let r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: payload } });
+        let enviado = coletar();
+        let r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: enviado } });
 
         if (r.status === 401) {
             limparSessao();
@@ -381,8 +361,8 @@ window.ContaSync = (() => {
                 guardarRev(revServidor, (r.data.gid && typeof r.data.gid === 'string') ? r.data.gid : null);
                 notificar('pull-done', { rev: lerRev(), conflito: true });
                 if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
-                const payloadF = coletar();
-                r = await api('/api/sync', { method: 'PUT', body: { baseRev: revServidor, forcar: true, data: payloadF } });
+                enviado = coletar();
+                r = await api('/api/sync', { method: 'PUT', body: { baseRev: revServidor, forcar: true, data: enviado } });
                 if (r.status === 409) {
                     throw new Error('Servidor incompatível — atualiza a app nos dois aparelhos.');
                 }
@@ -392,8 +372,8 @@ window.ContaSync = (() => {
                 guardarRev(Number(r.data.rev) || 0, (r.data.gid && typeof r.data.gid === 'string') ? r.data.gid : null);
                 notificar('pull-done', { rev: lerRev(), conflito: true });
                 if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
-                const payload2 = coletar();
-                r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: payload2 } });
+                enviado = coletar();
+                r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: enviado } });
                 if (r.status === 401) {
                     limparSessao();
                     throw new Error('Sessão expirada — entra de novo na conta.');
@@ -405,6 +385,11 @@ window.ContaSync = (() => {
             throw new Error((r.data && r.data.reason) || `HTTP ${r.status}`);
         }
         guardarRev(Number(r.data.rev) || lerRev(), (r.data.gid && typeof r.data.gid === 'string') ? r.data.gid : null);
+        // O que acabou de subir é a base sincronizada: o pull seguinte já
+        // sabe que estas notas/tarefas não têm edições locais por enviar.
+        if (window.GitHubSync && typeof window.GitHubSync.marcarBasesSincronizadas === 'function') {
+            window.GitHubSync.marcarBasesSincronizadas(enviado);
+        }
         notificar('push-done', { rev: lerRev() });
         return { ok: true };
     }
@@ -466,17 +451,74 @@ window.ContaSync = (() => {
         }
     }
 
+    /* ── Push instantâneo (SSE) ──────────────────────────────
+       Uma ligação aberta por aparelho: quando outro faz push, o
+       servidor avisa e puxamos logo. Se a ligação cair (servidor a
+       acordar, rede), o poll de 15s continua a cobrir. Serve também de
+       keep-alive para o Render não adormecer com a app aberta. */
+    function pararEventos() {
+        clearTimeout(eventosTimer);
+        eventosTimer = null;
+        clearTimeout(eventosReabrir);
+        eventosReabrir = null;
+        if (eventos) {
+            try { eventos.close(); } catch { /* segue */ }
+        }
+        eventos = null;
+    }
+
+    function ligarEventos() {
+        if (typeof EventSource === 'undefined' || (!token && !aberto)) return;
+        if (eventos) return;
+        clearTimeout(eventosReabrir);
+        eventosReabrir = null;
+        const alvo = token
+            ? `/api/sync/eventos?token=${encodeURIComponent(token)}`
+            : '/api/sync/eventos';
+        try {
+            eventos = new EventSource(alvo);
+        } catch {
+            eventos = null;
+            return;
+        }
+        eventos.onopen = () => { eventosFalhas = 0; };
+        eventos.onmessage = (ev) => {
+            let rev = 0;
+            try { rev = Number(JSON.parse(ev.data).rev) || 0; } catch { return; }
+            if (rev <= lerRev()) return;
+            // 120ms de folga para agrupar pushes seguidos (ex.: nota +
+            // tarefa quase ao mesmo tempo).
+            clearTimeout(eventosTimer);
+            eventosTimer = setTimeout(() => { pull().catch(() => {}); }, 120);
+        };
+        eventos.onerror = () => {
+            if (!eventos || eventos.readyState !== EventSource.CLOSED) return;
+            eventosFalhas += 1;
+            pararEventos();
+            const espera = Math.min(60000, 5000 * eventosFalhas);
+            eventosReabrir = setTimeout(() => {
+                if (token || aberto) ligarEventos();
+            }, espera);
+        };
+    }
+
     function iniciarAuto() {
-        if (timer || (!token && !aberto)) return;
-        timer = setInterval(() => pullAuto().catch(() => {}), POLL_MS);
-        // Pull imediato ao arrancar: sem isto a primeira atualização do
-        // outro aparelho só chegava 15s depois de abrir a app.
-        pullAuto().catch(() => {});
+        if (!token && !aberto) return;
+        if (!timer) {
+            timer = setInterval(() => pullAuto().catch(() => {}), POLL_MS);
+            // Pull imediato ao arrancar: sem isto a primeira atualização do
+            // outro aparelho só chegava 15s depois de abrir a app.
+            pullAuto().catch(() => {});
+        }
+        // Sempre: num relogin o timer já existe mas o canal SSE (token no
+        // URL) tem de ser reaberto.
+        ligarEventos();
     }
 
     function pararAuto() {
         if (timer) clearInterval(timer);
         timer = null;
+        pararEventos();
     }
 
     function onSync(cb) {
@@ -486,11 +528,17 @@ window.ContaSync = (() => {
 
     if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') pullAuto().catch(() => {});
+            if (document.visibilityState === 'visible') {
+                pullAuto().catch(() => {});
+                ligarEventos();
+            }
         });
     }
     if (typeof window !== 'undefined') {
-        window.addEventListener('focus', () => pullAuto().catch(() => {}));
+        window.addEventListener('focus', () => {
+            pullAuto().catch(() => {});
+            ligarEventos();
+        });
     }
 
     if (token) iniciarAuto();

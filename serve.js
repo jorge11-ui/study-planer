@@ -258,6 +258,20 @@ function guardarSync() {
     fs.renameSync(tmp, SYNC_FILE);
 }
 
+/* ── Push instantâneo por SSE ────────────────────────────────
+   Cada aparelho com a app aberta mantém uma ligação a
+   /api/sync/eventos. Quando um faz push, os outros recebem a revisão
+   nova e puxam logo — sem esperar pelo poll de 15s. Serve também de
+   keep-alive: o servidor do Render não adormece com a app aberta. */
+const syncOuvintes = new Set();
+
+function transmitirSync() {
+    const payload = `data: ${JSON.stringify({ rev: syncDoc.rev, updatedAt: syncDoc.updatedAt })}\n\n`;
+    for (const res of syncOuvintes) {
+        try { res.write(payload); } catch { syncOuvintes.delete(res); }
+    }
+}
+
 function guardarSessoes() {
     fs.writeFileSync(SESSOES_FILE, JSON.stringify(sessoes), { mode: 0o600 });
 }
@@ -567,11 +581,51 @@ async function apiSync(req, res) {
         } catch {
             return json(res, 500, { ok: false, reason: 'erro' });
         }
+        // Avisa já os outros aparelhos (pull imediato no cliente).
+        transmitirSync();
         json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid });
         return;
     }
 
     json(res, 404, { ok: false, reason: 'rota' });
+}
+
+/* Canal de eventos: o cliente puxa assim que a revisão muda. */
+function apiSyncEventos(req, res, url) {
+    if (!contaAtiva && !SYNC_ABERTO) return json(res, 503, { ok: false, reason: 'sem-conta' });
+
+    // EventSource não permite cabeçalhos: o token pode vir no query.
+    const token = tokenDaSessao(req) || url.searchParams.get('token') || '';
+    if (!SYNC_ABERTO || token) {
+        if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
+    }
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 3000\n\n');
+    res.write(`data: ${JSON.stringify({ rev: syncDoc.rev, updatedAt: syncDoc.updatedAt })}\n\n`);
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    syncOuvintes.add(res);
+    const ping = setInterval(() => {
+        try { res.write(': ping\n\n'); } catch { /* a ligação caiu */ }
+    }, 25000);
+
+    let fechado = false;
+    const fechar = () => {
+        if (fechado) return;
+        fechado = true;
+        clearInterval(ping);
+        syncOuvintes.delete(res);
+        try { res.end(); } catch { /* segue */ }
+    };
+    req.on('close', fechar);
+    req.on('error', fechar);
+    res.on('close', fechar);
 }
 
 /* ── Ficheiros (bytes dos PDFs) ────────────────────────
@@ -910,6 +964,15 @@ async function handle(req, res) {
             await apiConta(req, res, url);
         } catch {
             json(res, 500, { ok: false, reason: 'erro' });
+        }
+        return;
+    }
+
+    if (url.pathname === '/api/sync/eventos') {
+        try {
+            apiSyncEventos(req, res, url);
+        } catch {
+            try { res.end(); } catch { /* segue */ }
         }
         return;
     }

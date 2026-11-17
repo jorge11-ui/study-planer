@@ -201,11 +201,13 @@ window.GitHubSync = (() => {
 
     function coletarDadosLocais() {
         const days = {};
+        const notasMeta = {};
         try {
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i) || '';
                 const notesMatch = /^study-journal-notes-(\d{4}-\d{2}-\d{2})$/.exec(key);
                 const tasksMatch = /^study-journal-tasks-(\d{4}-\d{2}-\d{2})$/.exec(key);
+                const metaMatch = /^study-journal-note-meta-(\d{4}-\d{2}-\d{2})$/.exec(key);
                 if (notesMatch) {
                     const k = notesMatch[1];
                     days[k] = days[k] || {};
@@ -218,6 +220,8 @@ window.GitHubSync = (() => {
                     days[k].tasks = JSON.parse(localStorage.getItem(key) || '[]');
                     const ts = Number(localStorage.getItem(`study-journal-tasks-${k}-ts`)) || 0;
                     if (ts > 0) days[k].tasksUpdatedAt = ts;
+                } else if (metaMatch) {
+                    try { notasMeta[metaMatch[1]] = JSON.parse(localStorage.getItem(key) || 'null'); } catch { /* segue */ }
                 }
             }
         } catch { /* ignora erros de parsing */ }
@@ -242,6 +246,11 @@ window.GitHubSync = (() => {
         return {
             days,
             semanal,
+            // Notas: metadados do Painel (título, disciplina, categoria,
+            // tópico) e o índice das notas recentes. Sem isto o texto
+            // viajava mas o Painel do outro aparelho ficava sem títulos.
+            notasMeta,
+            notasIndex: lerJson('study-journal-notes-index', null),
             exames: {
                 foco: lerJson('study-journal-exames-foco', null),
                 recursos: lerJson('study-journal-exames-recursos', null),
@@ -249,6 +258,11 @@ window.GitHubSync = (() => {
                 duvidas: lerJson('study-journal-exames-duvidas', null),
                 dataAlvo: lerJson('study-journal-exames-data-alvo', null),
             },
+            // Exames Nacionais (v2): documento inteiro (disciplinas,
+            // tópicos, materiais, sessões, dúvidas). Só os campos legados
+            // em `exames` viajavam — as sessões nunca chegavam ao outro
+            // aparelho. A fusão por id é feita em Exames.fundirRemoto.
+            examesV2: lerJson('study-journal-exames-center-v2', null),
             reviewsV2: lerJson('study-journal-reviews-v2', null),
             // Metadados dos PDFs (a lista; os bytes vão por /api/ficheiros).
             // Sem isto, no Render (sem vault) a galeria não viajava.
@@ -267,6 +281,38 @@ window.GitHubSync = (() => {
             caderno: lerJson('study-journal-caderno', null),
             cadernoApagados: lerJson('study-journal-caderno-apagados', null),
         };
+    }
+
+    /* Depois de um push bem-sucedido: o que está local é a base
+       sincronizada. Guardá-la permite ao pull seguinte distinguir um
+       editor parado (aceita o remoto) de edições locais por enviar. */
+    function marcarBasesSincronizadas(dados) {
+        try {
+            // Prefere o que foi efetivamente enviado: se o utilizador
+            // escreveu entretanto, isso ainda não está sincronizado.
+            const days = dados && dados.days;
+            if (days && typeof days === 'object') {
+                Object.entries(days).forEach(([dia, v]) => {
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !v || typeof v !== 'object') return;
+                    if (typeof v.notes === 'string') {
+                        try { localStorage.setItem(`study-journal-notes-${dia}-sync`, v.notes); } catch { /* segue */ }
+                    }
+                    if (Array.isArray(v.tasks)) {
+                        try { localStorage.setItem(`study-journal-tasks-${dia}-sync`, JSON.stringify(v.tasks)); } catch { /* segue */ }
+                    }
+                });
+                return;
+            }
+            const chaves = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i) || '';
+                if (/^study-journal-(notes|tasks)-\d{4}-\d{2}-\d{2}$/.test(key)) chaves.push(key);
+            }
+            chaves.forEach((key) => {
+                const valor = localStorage.getItem(key);
+                if (valor !== null) localStorage.setItem(`${key}-sync`, valor);
+            });
+        } catch { /* segue sem bases */ }
     }
 
     function aplicarDadosRemotos(remoto, { protegeVazios = true } = {}) {
@@ -293,15 +339,23 @@ window.GitHubSync = (() => {
             Object.entries(remoto.days).forEach(([key, value]) => {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
                 if (value.notes !== undefined) {
+                    const chave = `study-journal-notes-${key}`;
+                    const chaveTs = `${chave}-ts`;
+                    const chaveBase = `${chave}-sync`;
+                    const base = localStorage.getItem(chaveBase);
+                    const local = localStorage.getItem(chave);
+                    // "Sem edições desde o último sync" é mais fiável do que
+                    // comparar relógios: se o editor local está parado,
+                    // aceita-se sempre o remoto. Se foi editado aqui, decide
+                    // o carimbo (LWW) para não perder a escrita local.
+                    const parado = base !== null && local === base;
                     const rTs = Number(value.updatedAt) || 0;
-                    const lTs = Number(localStorage.getItem(`study-journal-notes-${key}-ts`)) || 0;
-                    // Último a escrever ganha. Sem relógios (clientes antigos),
-                    // aplica como antes. Sem isto, um editor parado noutro
-                    // aparelho republicava texto já apagado aqui.
-                    if (rTs >= lTs) {
-                        localStorage.setItem(`study-journal-notes-${key}`, value.notes);
+                    const lTs = Number(localStorage.getItem(chaveTs)) || 0;
+                    if (parado || rTs >= lTs) {
+                        localStorage.setItem(chave, value.notes);
                         try {
-                            localStorage.setItem(`study-journal-notes-${key}-ts`, String(rTs || Date.now()));
+                            localStorage.setItem(chaveTs, String(rTs || Date.now()));
+                            localStorage.setItem(chaveBase, value.notes);
                         } catch { /* segue */ }
                     }
                 }
@@ -309,12 +363,20 @@ window.GitHubSync = (() => {
                     // LWW por dia, como as notas: sem isto o pull repunha
                     // a lista antiga do servidor e apagava tarefas acabadas
                     // de criar neste aparelho.
+                    const chave = `study-journal-tasks-${key}`;
+                    const chaveTs = `${chave}-ts`;
+                    const chaveBase = `${chave}-sync`;
+                    const base = localStorage.getItem(chaveBase);
+                    const local = localStorage.getItem(chave);
+                    const remoto = JSON.stringify(value.tasks);
+                    const parado = base !== null && local === base;
                     const rTs = Number(value.tasksUpdatedAt) || 0;
-                    const lTs = Number(localStorage.getItem(`study-journal-tasks-${key}-ts`)) || 0;
-                    if (rTs >= lTs) {
-                        localStorage.setItem(`study-journal-tasks-${key}`, JSON.stringify(value.tasks));
+                    const lTs = Number(localStorage.getItem(chaveTs)) || 0;
+                    if (parado || rTs >= lTs) {
+                        localStorage.setItem(chave, remoto);
                         try {
-                            localStorage.setItem(`study-journal-tasks-${key}-ts`, String(rTs || Date.now()));
+                            localStorage.setItem(chaveTs, String(rTs || Date.now()));
+                            localStorage.setItem(chaveBase, remoto);
                         } catch { /* segue */ }
                     }
                 }
@@ -338,6 +400,44 @@ window.GitHubSync = (() => {
             if (Array.isArray(remoto.exames.track) && deveAplicar('study-journal-exames-track', remoto.exames.track)) localStorage.setItem('study-journal-exames-track', JSON.stringify(remoto.exames.track));
             if (Array.isArray(remoto.exames.duvidas) && deveAplicar('study-journal-exames-duvidas', remoto.exames.duvidas)) localStorage.setItem('study-journal-exames-duvidas', JSON.stringify(remoto.exames.duvidas));
             if (typeof remoto.exames.dataAlvo === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(remoto.exames.dataAlvo)) localStorage.setItem('study-journal-exames-data-alvo', JSON.stringify(remoto.exames.dataAlvo));
+        }
+        // Exames Nacionais v2: a fusão por id (com tombstones) é feita
+        // dentro de exames.js para não perder trabalho dos dois lados.
+        if (remoto.examesV2 && window.Exames && typeof window.Exames.fundirRemoto === 'function') {
+            try {
+                window.Exames.fundirRemoto(remoto.examesV2);
+                if (typeof window.dispatchEvent === 'function') {
+                    window.dispatchEvent(new CustomEvent('studyjournal:exames-sync'));
+                }
+            } catch { /* segue sem aplicar */ }
+        }
+        // Metadados das notas (título/disciplina/categoria/tópico) e índice
+        // das notas recentes: LWW por dia, como o texto das notas.
+        if (remoto.notasMeta && typeof remoto.notasMeta === 'object') {
+            Object.entries(remoto.notasMeta).forEach(([dia, meta]) => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !meta || typeof meta !== 'object') return;
+                const chave = `study-journal-note-meta-${dia}`;
+                let local = null;
+                try { local = JSON.parse(localStorage.getItem(chave) || 'null'); } catch { local = null; }
+                const rTs = Number(meta.updatedAt) || 0;
+                const lTs = Number(local && local.updatedAt) || 0;
+                if (rTs >= lTs) {
+                    try { localStorage.setItem(chave, JSON.stringify(meta)); } catch { /* segue */ }
+                }
+            });
+        }
+        if (remoto.notasIndex && typeof remoto.notasIndex === 'object') {
+            let local = {};
+            try { local = JSON.parse(localStorage.getItem('study-journal-notes-index') || '{}') || {}; } catch { local = {}; }
+            if (!local || typeof local !== 'object') local = {};
+            const out = { ...local };
+            Object.entries(remoto.notasIndex).forEach(([dia, entrada]) => {
+                if (!entrada || typeof entrada !== 'object') return;
+                const rTs = Number(entrada.updatedAt) || 0;
+                const lTs = Number(out[dia] && out[dia].updatedAt) || 0;
+                if (rTs >= lTs) out[dia] = entrada;
+            });
+            try { localStorage.setItem('study-journal-notes-index', JSON.stringify(out)); } catch { /* segue */ }
         }
         if (Array.isArray(remoto.reviewsV2) && deveAplicar('study-journal-reviews-v2', remoto.reviewsV2)) {
             localStorage.setItem('study-journal-reviews-v2', JSON.stringify(remoto.reviewsV2));
@@ -535,6 +635,7 @@ window.GitHubSync = (() => {
             if (payload !== ultimoPayloadEnviado) {
                 const enviado = await escreverGist(localData, remoteSha);
                 ultimoPayloadEnviado = payload;
+                marcarBasesSincronizadas(localData);
                 notificar('push-done', { sha: enviado.sha, updatedAt: enviado.updatedAt });
             }
 
@@ -603,6 +704,7 @@ window.GitHubSync = (() => {
         hasWriteAccess,
         coletarLocais: coletarDadosLocais,
         aplicarRemotos: (remoto, opts) => aplicarDadosRemotos(remoto, opts),
+        marcarBasesSincronizadas,
         getToken: () => token,
         getGistId: () => gistId,
         setConfig: salvarConfig,
