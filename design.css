@@ -1514,6 +1514,239 @@ dialog::backdrop { background: rgba(6, 7, 9, .72); backdrop-filter: blur(2px); }
     background: var(--sj-card) !important;
 }
 
+/* Exames · alternador Lista / Quadro */
+.ex-view-toggle {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--sj-line);
+    border-radius: var(--sj-radius-sm);
+    background: #14161B;
+}
+.ex-view-toggle button {
+    height: 26px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sj-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+}
+.ex-view-toggle button:hover { color: var(--sj-fg); }
+.ex-view-toggle button[aria-pressed="true"] {
+    background: #242832;
+    color: var(--sj-fg);
+}
+
+/* Exames · quadro vertical de três estados */
+#view-exames .ex-board {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+#view-exames .ex-board-hint {
+    margin: 0;
+    color: var(--sj-faint);
+    font-size: 11px;
+}
+#view-exames .ex-board-group {
+    padding: 12px;
+    border: 1px solid var(--sj-line);
+    border-radius: var(--sj-radius);
+    background: var(--sj-card);
+    transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+#view-exames .ex-board-group.is-over {
+    border-color: var(--sj-accent);
+    background: rgba(113, 141, 245, .06);
+    box-shadow: 0 0 0 3px rgba(113, 141, 245, .10);
+}
+#view-exames .ex-board-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+#view-exames .ex-board-head h3 {
+    margin: 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--sj-muted);
+}
+#view-exames .ex-board-dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--sj-faint);
+}
+#view-exames .ex-board-dot-nao_iniciado { background: #7E8492; }
+#view-exames .ex-board-dot-em_progresso { background: var(--sj-amber); }
+#view-exames .ex-board-dot-concluido { background: var(--sj-green); }
+#view-exames .ex-board-note {
+    font-size: 10.5px;
+    color: var(--sj-faint);
+}
+#view-exames .ex-board-count {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 0 6px;
+    border: 1px solid var(--sj-line);
+    border-radius: 999px;
+    background: #1A1D23;
+    color: var(--sj-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+}
+#view-exames .ex-board-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-height: 52px;
+}
+#view-exames .ex-board-empty {
+    padding: 14px 12px;
+    border: 1px dashed var(--sj-line);
+    border-radius: var(--sj-radius-sm);
+    color: var(--sj-faint);
+    font-size: 11.5px;
+    text-align: center;
+}
+
+#view-exames .ex-board-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: start;
+    padding: 10px 10px 10px 6px;
+    border: 1px solid var(--sj-line);
+    border-radius: 10px;
+    background: #191C22;
+    transition: border-color .15s ease, background-color .15s ease, opacity .15s ease;
+}
+#view-exames .ex-board-card:hover { border-color: var(--sj-line-soft); background: #1C2028; }
+#view-exames .ex-board-card.is-dragging {
+    opacity: .38;
+    border-style: dashed;
+    border-color: var(--sj-accent-line);
+    background: #171A20;
+}
+#view-exames .ex-board-grip {
+    display: grid;
+    width: 16px;
+    height: 26px;
+    place-items: center;
+    color: var(--sj-faint);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+#view-exames .ex-board-grip::before {
+    content: "";
+    width: 10px;
+    height: 16px;
+    background-image: radial-gradient(circle, currentColor 1.2px, transparent 1.4px);
+    background-size: 5px 5px;
+    opacity: .85;
+}
+#view-exames .ex-board-card:hover .ex-board-grip { color: var(--sj-muted); }
+#view-exames .ex-board-title {
+    color: var(--sj-fg);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+#view-exames .ex-board-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+    color: var(--sj-muted);
+    font-size: 10.5px;
+}
+#view-exames .ex-board-disc {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+}
+#view-exames .ex-board-notes {
+    display: -webkit-box;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--sj-faint);
+    font-size: 11px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+#view-exames .ex-board-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+}
+#view-exames .ex-board-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+}
+#view-exames .ex-board-actions .ex-input-sm { max-width: 168px; }
+#view-exames .ex-board-btns { display: flex; gap: 4px; }
+#view-exames .ex-icon-btn { padding-inline: 7px; }
+#view-exames .ex-icon-btn .icon { pointer-events: none; }
+
+body.ex-board-dragging { cursor: grabbing; user-select: none; }
+body.ex-board-dragging .ex-board-grip { cursor: grabbing; }
+
+#view-exames .ex-board-ghost {
+    position: fixed;
+    inset: auto;
+    left: 0;
+    top: 0;
+    z-index: 90;
+    margin: 0;
+    border-color: var(--sj-accent-line) !important;
+    background: #1F232B !important;
+    box-shadow: var(--sj-shadow-pop);
+    opacity: .98;
+    pointer-events: none;
+    will-change: transform;
+}
+
+@media (max-width: 720px) {
+    #view-exames .ex-board-card {
+        grid-template-columns: 16px minmax(0, 1fr);
+    }
+    #view-exames .ex-board-actions {
+        grid-column: 2;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin-top: 8px;
+    }
+    #view-exames .ex-board-actions .ex-input-sm { max-width: none; flex: 1 1 auto; }
+}
+
+/* Em coluna, o flex-basis de 160px dos formulários antigos virava altura. */
+@media (max-width: 640px) {
+    #view-exames .ex-inline-form .ex-input,
+    #view-exames .ex-inline-form .ex-btn { flex: 0 0 auto; }
+    #view-exames .ex-view-toggle button { width: 100%; }
+}
+
 /* Definições */
 #view-definicoes .rounded-xl { border-color: var(--sj-line) !important; border-radius: 10px !important; background: #191C22 !important; }
 

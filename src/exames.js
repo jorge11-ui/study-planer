@@ -411,6 +411,212 @@ function renderOverview(){
 }
 
 // ---------- Topics (hierarchy) ----------
+const TOPIC_VIEW_KEY = 'study-journal-exames-topico-vista';
+
+function lerVistaTopicos() {
+  try { return localStorage.getItem(TOPIC_VIEW_KEY) === 'lista' ? 'lista' : 'quadro'; } catch { return 'quadro'; }
+}
+function guardarVistaTopicos(vista) {
+  try { localStorage.setItem(TOPIC_VIEW_KEY, vista === 'lista' ? 'lista' : 'quadro'); } catch { /* segue */ }
+}
+
+const BOARD_GRUPOS = [
+  { chave: 'nao_iniciado', titulo: 'O que vou estudar', nota: 'Ainda por começar', inclui: ['nao_iniciado'] },
+  { chave: 'em_progresso', titulo: 'O que estou a estudar', nota: 'Em progresso', inclui: ['em_progresso', 'precisa_revisao'] },
+  { chave: 'concluido', titulo: 'O que já estudei', nota: 'Concluído', inclui: ['concluido'] },
+];
+
+function grupoDoEstado(estado) {
+  if (estado === 'concluido') return 'concluido';
+  if (estado === 'nao_iniciado') return 'nao_iniciado';
+  return 'em_progresso';
+}
+
+function caminhoTopico(t) {
+  const sub = t.parentId ? state.topics.find(x => x.id === t.parentId) : null;
+  const dom = sub && sub.parentId ? state.topics.find(x => x.id === sub.parentId) : null;
+  const partes = [discLabel(t.disciplinaId)];
+  if (dom && dom.titulo && dom.titulo.toLowerCase() !== 'geral') partes.push(dom.titulo);
+  if (sub && sub.titulo && sub.titulo.toLowerCase() !== 'geral') partes.push(sub.titulo);
+  return partes;
+}
+
+function topicCard(t) {
+  const mats = (t.materialIds || []).map(id => getMat(id)).filter(Boolean);
+  const exs = (t.exercicioIds || []).map(id => getIssue(id)).filter(Boolean);
+  const caminho = caminhoTopico(t);
+  const cor = getExam(t.disciplinaId)?.cor || '#7AA7D9';
+  return `<article class="ex-board-card" data-topic-id="${esc(t.id)}">
+    <span class="ex-board-grip" role="presentation" title="Arrastar tópico"></span>
+    <div class="ex-board-main">
+      <div class="ex-board-title">${esc(t.titulo)}</div>
+      <div class="ex-board-meta">
+        <span class="ex-board-disc" style="background:${esc(cor)}"></span>
+        <span>${esc(caminho.join(' · '))}</span>
+      </div>
+      ${t.notasPessoais ? `<div class="ex-board-notes">${esc(t.notasPessoais)}</div>` : ''}
+      <div class="ex-board-tags">
+        <span class="ex-badge ${topicStatusClass(t.estado)}">${esc(topicStatusLabel(t.estado))}</span>
+        <span class="ex-muted-sm">Confiança ${esc(String(t.confianca || 3))}/5</span>
+        ${mats.length ? `<span class="ex-muted-sm">${mats.length} materiais</span>` : ''}
+        ${exs.length ? `<span class="ex-muted-sm">${exs.length} exercícios</span>` : ''}
+      </div>
+    </div>
+    <div class="ex-board-actions">
+      <select class="ex-input ex-input-sm" data-topic-estado="${esc(t.id)}" aria-label="Estado de ${esc(t.titulo)}">
+        ${['nao_iniciado', 'em_progresso', 'concluido', 'precisa_revisao'].map(s => `<option value="${s}" ${t.estado === s ? 'selected' : ''}>${topicStatusLabel(s)}</option>`).join('')}
+      </select>
+      <div class="ex-board-btns">
+        <button type="button" class="ex-btn ex-btn-sm ex-icon-btn" data-topic-edit="${esc(t.id)}" title="Editar" aria-label="Editar ${esc(t.titulo)}"><svg class="icon h-3.5 w-3.5" aria-hidden="true"><use href="#i-pencil"/></svg></button>
+        <button type="button" class="ex-btn ex-btn-sm ex-icon-btn" data-topic-study="${esc(t.id)}" title="Estudar" aria-label="Estudar ${esc(t.titulo)}"><svg class="icon h-3.5 w-3.5" aria-hidden="true"><use href="#i-play"/></svg></button>
+        <button type="button" class="ex-btn ex-btn-sm ex-icon-btn ex-btn-danger" data-topic-del="${esc(t.id)}" title="Apagar" aria-label="Apagar ${esc(t.titulo)}"><svg class="icon h-3.5 w-3.5" aria-hidden="true"><use href="#i-trash"/></svg></button>
+      </div>
+    </div>
+  </article>`;
+}
+
+function boardTopicsHtml(tops) {
+  return `<div class="ex-board">
+    <p class="ex-board-hint">Arrasta um tópico pela pega para o mover entre estados. No telemóvel, toca na pega e desliza.</p>
+    ${BOARD_GRUPOS.map(g => {
+    const itens = tops.filter(t => g.inclui.includes(t.estado));
+    return `<section class="ex-board-group" data-grupo="${g.chave}" aria-label="${esc(g.titulo)}">
+      <header class="ex-board-head">
+        <span class="ex-board-dot ex-board-dot-${g.chave}"></span>
+        <h3>${esc(g.titulo)}</h3>
+        <span class="ex-board-note">${esc(g.nota)}</span>
+        <span class="ex-board-count">${itens.length}</span>
+      </header>
+      <div class="ex-board-list">
+        ${itens.length ? itens.map(topicCard).join('') : '<div class="ex-board-empty">Arrasta tópicos para aqui.</div>'}
+      </div>
+    </section>`;
+  }).join('')}</div>`;
+}
+
+/* ── Arrastar tópicos entre estados ───────────────────── */
+
+let arrastoTopico = null;
+let ouvintesArrasto = false;
+
+function garantirOuvintesArrasto() {
+  if (ouvintesArrasto) return;
+  ouvintesArrasto = true;
+  window.addEventListener('pointermove', moverArrastoTopico, { passive: false });
+  window.addEventListener('pointerup', soltarArrastoTopico);
+  window.addEventListener('pointercancel', cancelarArrastoTopico);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && arrastoTopico) cancelarArrastoTopico();
+  });
+}
+
+function posicionarFantasma(x, y) {
+  if (!arrastoTopico) return;
+  arrastoTopico.ghost.style.transform = `translate3d(${x - arrastoTopico.dx}px, ${y - arrastoTopico.dy}px, 0) rotate(.6deg)`;
+}
+
+function destacarGrupoSob(x, y) {
+  if (!arrastoTopico) return;
+  let grupo = null;
+  try {
+    const el = document.elementFromPoint(x, y);
+    grupo = el ? el.closest('.ex-board-group') : null;
+  } catch { grupo = null; }
+  if (grupo === arrastoTopico.grupo) return;
+  if (arrastoTopico.grupo) arrastoTopico.grupo.classList.remove('is-over');
+  arrastoTopico.grupo = grupo;
+  if (grupo) grupo.classList.add('is-over');
+}
+
+function autoScrollArrasto(y) {
+  const margem = 80;
+  if (y < margem) window.scrollBy(0, -14);
+  else if (y > window.innerHeight - margem) window.scrollBy(0, 14);
+}
+
+function moverArrastoTopico(e) {
+  if (!arrastoTopico) return;
+  e.preventDefault();
+  posicionarFantasma(e.clientX, e.clientY);
+  destacarGrupoSob(e.clientX, e.clientY);
+  autoScrollArrasto(e.clientY);
+}
+
+function iniciarArrastoTopico(card, e) {
+  if (arrastoTopico) return;
+  const r = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.classList.add('ex-board-ghost');
+  ghost.style.width = `${r.width}px`;
+  (card.closest('#view-exames') || document.body).append(ghost);
+  card.classList.add('is-dragging');
+  document.body.classList.add('ex-board-dragging');
+  arrastoTopico = {
+    card,
+    id: card.dataset.topicId,
+    ghost,
+    dx: e.clientX - r.left,
+    dy: e.clientY - r.top,
+    grupo: null,
+  };
+  posicionarFantasma(e.clientX, e.clientY);
+  destacarGrupoSob(e.clientX, e.clientY);
+  garantirOuvintesArrasto();
+}
+
+function terminarArrastoTopico(grupo, cancelado) {
+  const d = arrastoTopico;
+  if (!d) return;
+  arrastoTopico = null;
+  d.ghost.remove();
+  d.card.classList.remove('is-dragging');
+  document.body.classList.remove('ex-board-dragging');
+  document.querySelectorAll('.ex-board-group.is-over').forEach(el => el.classList.remove('is-over'));
+  if (cancelado || !grupo) return;
+
+  const novo = grupo.dataset.grupo;
+  const t = getTopic(d.id);
+  if (!t || grupoDoEstado(t.estado) === novo) return;
+
+  t.estado = novo;
+  t.ultimaAtividade = Date.now();
+  state.ui.lastTopicId = t.id;
+  saveState();
+
+  const nomes = { nao_iniciado: 'O que vou estudar', em_progresso: 'O que estou a estudar', concluido: 'O que já estudei' };
+  miniToast(`Tópico movido para “${nomes[novo] || novo}”.`);
+}
+
+function soltarArrastoTopico() {
+  if (!arrastoTopico) return;
+  const grupo = arrastoTopico.grupo;
+  terminarArrastoTopico(grupo, false);
+}
+
+function cancelarArrastoTopico() {
+  terminarArrastoTopico(null, true);
+}
+
+function bindTopicBoard(root) {
+  $all('.ex-board-grip', root).forEach(grip => {
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const card = grip.closest('.ex-board-card');
+      if (!card) return;
+      e.preventDefault();
+      iniciarArrastoTopico(card, e);
+    });
+  });
+  $all('.ex-board-card', root).forEach(card => {
+    card.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') return; // no toque, só pela pega
+      if (e.button !== 0) return;
+      if (e.target.closest('button, select, input, textarea, a, option')) return;
+      iniciarArrastoTopico(card, e);
+    });
+  });
+}
+
 function ensureDomainSub(disciplinaId, domTitle='Geral', subTitle='Geral'){
   let dom = state.topics.find(t=>t.tipo==='dominio' && t.disciplinaId===disciplinaId && t.titulo.toLowerCase()===domTitle.toLowerCase());
   if(!dom){ dom={id:uid('dom'), disciplinaId, parentId:null, tipo:'dominio', titulo:domTitle, ultimaAtividade: Date.now()}; state.topics.push(dom); }
@@ -420,13 +626,15 @@ function ensureDomainSub(disciplinaId, domTitle='Geral', subTitle='Geral'){
 }
 function renderTopics(){
   const wrap = $('#exames-topicos'); if(!wrap) return;
+  if(arrastoTopico) return; // não trocar o DOM a meio de um arrasto
   const discOpts = state.exams.map(e=>`<option value="${esc(e.id)}" ${ui.topicFilterDisc===e.id?'selected':''}>${esc(e.nome)}</option>`).join('');
   const discFormOpts = state.exams.filter(e=>e.id!=='disc-geral').concat(state.exams.filter(e=>e.id==='disc-geral')).map(e=>`<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
   const q = (ui.topicQuery||'').toLowerCase().trim();
+  const vista = lerVistaTopicos();
 
   const tops = allTopicsFlat().filter(t=>{
     if(ui.topicFilterDisc!=='all' && t.disciplinaId!==ui.topicFilterDisc) return false;
-    if(ui.topicFilterEstado!=='all' && t.estado!==ui.topicFilterEstado) return false;
+    if(vista==='lista' && ui.topicFilterEstado!=='all' && t.estado!==ui.topicFilterEstado) return false;
     if(q){
       const hay = `${t.titulo} ${t.notasPessoais||''} ${discLabel(t.disciplinaId)}`.toLowerCase();
       if(!hay.includes(q)) return false;
@@ -483,16 +691,22 @@ function renderTopics(){
     <div class="ex-card ex-toolbar">
       <input id="ex-topic-q" class="ex-input" placeholder="Pesquisar tópicos…" value="${esc(ui.topicQuery)}">
       <select id="ex-topic-fdisc" class="ex-input"><option value="all">Todas as disciplinas</option>${discOpts}</select>
-      <select id="ex-topic-festado" class="ex-input">
+      ${vista === 'lista' ? `<select id="ex-topic-festado" class="ex-input">
         <option value="all" ${ui.topicFilterEstado==='all'?'selected':''}>Todos os estados</option>
         <option value="nao_iniciado" ${ui.topicFilterEstado==='nao_iniciado'?'selected':''}>Não iniciado</option>
         <option value="em_progresso" ${ui.topicFilterEstado==='em_progresso'?'selected':''}>Em progresso</option>
         <option value="concluido" ${ui.topicFilterEstado==='concluido'?'selected':''}>Concluído</option>
         <option value="precisa_revisao" ${ui.topicFilterEstado==='precisa_revisao'?'selected':''}>Precisa de revisão</option>
-      </select>
+      </select>` : ''}
+      <div class="ex-view-toggle" role="group" aria-label="Vista dos tópicos">
+        <button type="button" data-topic-view="quadro" aria-pressed="${vista === 'quadro'}">Quadro</button>
+        <button type="button" data-topic-view="lista" aria-pressed="${vista === 'lista'}">Lista</button>
+      </div>
     </div>
 
-    <div class="ex-topics-tree">${treeHtml}</div>
+    ${vista === 'quadro'
+      ? boardTopicsHtml(tops)
+      : `<div class="ex-topics-tree">${treeHtml}</div>`}
   `;
 
   $('#ex-topic-form')?.addEventListener('submit', e=>{
@@ -520,8 +734,14 @@ function renderTopics(){
   $('#ex-topic-q')?.addEventListener('input', e=>{ ui.topicQuery = e.target.value; renderTopics(); });
   $('#ex-topic-fdisc')?.addEventListener('change', e=>{ ui.topicFilterDisc = e.target.value; renderTopics(); });
   $('#ex-topic-festado')?.addEventListener('change', e=>{ ui.topicFilterEstado = e.target.value; renderTopics(); });
+  $all('[data-topic-view]', wrap).forEach(b=>b.addEventListener('click', ()=>{
+    if(b.dataset.topicView === vista) return;
+    guardarVistaTopicos(b.dataset.topicView);
+    renderTopics();
+  }));
 
   bindTopicActions(wrap);
+  if(vista === 'quadro') bindTopicBoard(wrap);
 }
 
 function topicRow(t){
