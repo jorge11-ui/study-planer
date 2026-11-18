@@ -421,6 +421,7 @@ window.Pdfs = (() => {
             titulo: String(bruta.titulo).trim(),
             categoria: String(bruta.categoria || '').trim(),
             data,
+            favorito: !!bruta.favorito,
         };
 
         if (bruta.tipo === 'link') {
@@ -489,6 +490,7 @@ window.Pdfs = (() => {
         li.dataset.pdfId = doc.id;
         li.dataset.pdfCategory = normalizar(doc.categoria);
         li.dataset.pdfKind = doc.tipo;
+        li.dataset.pdfFav = doc.favorito ? '1' : '0';
         li.dataset.pdfText = normalizar([
             doc.titulo,
             doc.categoria,
@@ -556,6 +558,19 @@ window.Pdfs = (() => {
         baixar.download = doc.tipo === 'ficheiro' ? doc.ficheiro : '';
         baixar.append(icone('i-download'), textoBotao(TEXTOS.baixar));
 
+        const favorito = document.createElement('button');
+        favorito.type = 'button';
+        favorito.className = `pdf-action pdf-action-secondary pdf-fav${doc.favorito ? ' is-fav' : ''}`;
+        favorito.title = doc.favorito ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
+        favorito.setAttribute('aria-label', `${doc.favorito ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}: ${doc.titulo}`);
+        favorito.setAttribute('aria-pressed', String(!!doc.favorito));
+        favorito.append(icone('i-star'));
+        favorito.addEventListener('click', async (evento) => {
+            evento.stopPropagation();
+            doc.favorito = !doc.favorito;
+            try { await guardar(); } catch { /* segue */ }
+        });
+
         const remover = document.createElement('button');
         remover.type = 'button';
         remover.className = 'pdf-action pdf-action-danger';
@@ -564,7 +579,7 @@ window.Pdfs = (() => {
         remover.setAttribute('aria-label', `${TEXTOS.remover}: ${doc.titulo}`);
         remover.append(icone('i-trash'));
 
-        accoes.append(ver, baixar, remover);
+        accoes.append(ver, baixar, favorito, remover);
         corpo.append(accoes);
 
         li.append(previa, corpo);
@@ -608,7 +623,8 @@ window.Pdfs = (() => {
 
         for (const card of grelha.querySelectorAll('.pdf-card')) {
             const combina = card.dataset.pdfText.includes(termos)
-                && (filtroActivo === 'todos' || card.dataset.pdfCategory === filtroActivo);
+                && (filtroActivo === 'todos'
+                    || (filtroActivo === 'favoritos' ? card.dataset.pdfFav === '1' : card.dataset.pdfCategory === filtroActivo));
             card.hidden = !combina;
             if (combina) mostrados += 1;
         }
@@ -677,11 +693,16 @@ window.Pdfs = (() => {
             const lista = categorias();
 
             // Um filtro que já não existe volta a "Todos".
-            if (filtroActivo !== 'todos' && !lista.some(([chave]) => chave === filtroActivo)) filtroActivo = 'todos';
+            if (filtroActivo !== 'todos' && filtroActivo !== 'favoritos' && !lista.some(([chave]) => chave === filtroActivo)) filtroActivo = 'todos';
 
             filtros.hidden = docs.length === 0;
+            const temFavoritos = docs.some((d) => d.favorito);
             filtros.replaceChildren(
-                ...[botaoFiltro('todos', TEXTOS.todos), ...lista.map(([chave, nome]) => botaoFiltro(chave, nome))],
+                ...[
+                    botaoFiltro('todos', TEXTOS.todos),
+                    ...(temFavoritos ? [botaoFiltro('favoritos', '★ Favoritos')] : []),
+                    ...lista.map(([chave, nome]) => botaoFiltro(chave, nome)),
+                ],
             );
         }
 

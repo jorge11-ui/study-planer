@@ -204,6 +204,7 @@ const ReviewSystem = {
         carta.revistaEm = new Date().toISOString();
         this.escreverV2(lista);
         if (typeof pushDebounced === 'function') pushDebounced();
+        try { document.dispatchEvent(new CustomEvent('sj:review-changed')); } catch { /* segue */ }
         return carta;
     }
 };
@@ -1321,6 +1322,8 @@ function renderProgress() {
         els.clearDone.classList.toggle('hidden', done === 0);
         els.clearDone.classList.toggle('inline-flex', done > 0);
     }
+
+    try { window.SJDash?.refreshTasks?.(); } catch { /* segue */ }
 }
 
 async function addTask(text, subject, category = 'tarefa', priority = 'media') {
@@ -1690,7 +1693,7 @@ function restoreSessionState() {
             // Terminou com a página fechada: credita a sessão sem alarme
             const jaMin = Math.floor(sessionTimer.creditedSec / 60);
             const emFalta = Math.max(0, sessionTimer.minutes - jaMin);
-            if (emFalta > 0) StudySessions.adicionarMinutos(sessionTimer.subject, emFalta);
+            if (emFalta > 0) registarSessaoEstudo(sessionTimer.subject, emFalta);
             sessionTimer.remaining = full;
             sessionTimer.creditedSec = 0;
             saveSessionState();
@@ -1777,6 +1780,7 @@ function renderSessionTimer() {
             totalEl.textContent = `Total registado: ${StudySessions.formatar(all)}`;
         }
     } catch {}
+    try { window.SJDash?.refreshSession?.(); } catch { /* segue */ }
     saveSessionState();
 }
 
@@ -1827,7 +1831,7 @@ function concluirSessao() {
     const jaCreditadoMin = Math.floor(sessionTimer.creditedSec / 60);
     const emFalta = Math.max(0, sessionTimer.minutes - jaCreditadoMin);
     if (emFalta > 0) {
-        StudySessions.adicionarMinutos(sessionTimer.subject, emFalta);
+        registarSessaoEstudo(sessionTimer.subject, emFalta);
     }
     const totalCiclo = jaCreditadoMin + emFalta;
     toast(totalCiclo > 0 && jaCreditadoMin > 0
@@ -1850,11 +1854,36 @@ function creditarTempoParcial(subject) {
     const porCreditarSec = Math.max(0, decorridoSec - sessionTimer.creditedSec);
     const minutos = Math.floor(porCreditarSec / 60);
     if (minutos > 0) {
-        StudySessions.adicionarMinutos(subject, minutos);
+        registarSessaoEstudo(subject, minutos);
         sessionTimer.creditedSec += minutos * 60;
     }
     return minutos;
 }
+
+/* Registo de sessões concluídas: alimenta o histórico de Concentração e as
+   estatísticas. Mantém-se curto (200 entradas) para não encher o storage. */
+function registarSessaoEstudo(subject, minutos) {
+    if (!(minutos > 0)) return;
+    StudySessions.adicionarMinutos(subject, minutos);
+    try {
+        const anterior = read('study-journal-session-log', []);
+        const lista = Array.isArray(anterior) ? anterior : [];
+        const objetivo = document.getElementById('session-goal')?.value
+            || document.getElementById('estudar-goal')?.value
+            || read('study-journal-session-goal', '')
+            || '';
+        lista.push({
+            subject,
+            minutos,
+            goal: String(objetivo || '').slice(0, 120),
+            created: Date.now(),
+            day: dayKey(new Date()),
+        });
+        write('study-journal-session-log', lista.slice(-200));
+    } catch { /* histórico é acessório */ }
+    try { window.SJDash?.refreshSession?.(); } catch { /* segue */ }
+}
+
 
 function atualizarVistasAposSessao() {
     StudyStats.renderHeatmap();
@@ -2352,10 +2381,12 @@ const VIEW_LABELS = {
     painel: 'Painel',
     calendario: 'Calendário',
     disciplinas: 'Disciplinas',
-    estudar: 'Estudar',
-    pdfs: 'PDFs',
+    estatisticas: 'Estatísticas',
+    revisao: 'Revisão',
+    estudar: 'Concentração',
+    pdfs: 'Biblioteca',
     caderno: 'Caderno',
-    semanal: 'Semanal',
+    semanal: 'Planeamento',
     exames: 'Exames Nacionais',
     definicoes: 'Definições',
     whiteboard: 'Quadro Branco',
@@ -2390,15 +2421,28 @@ function showView(view) {
         StudyStats.renderHeatmap();
         StudyStats.renderReviewQueue();
         renderSessionTimer();
+        if (window.SJDash) window.SJDash.render();
     }
     if (view === 'calendario') renderCalendar();
     if (view === 'disciplinas') renderSubjects();
     if (view === 'estudar') renderEstudarView();
+    if (view === 'estatisticas') {
+        renderEstudarView();
+        StudyStats.renderHeatmap();
+        if (window.SJDash) window.SJDash.renderStats();
+    }
+    if (view === 'revisao') {
+        StudyStats.renderReviewQueue();
+        if (window.Revisao) window.Revisao.render();
+    }
     if (view === 'definicoes') renderSettings();
     if (view === 'pdfs') Pdfs.ligar();
     if (view === 'caderno' && window.Caderno) window.Caderno.ligar();
     if (view === 'semanal') Weekly.ligar();
     if (view === 'exames' && window.Exames) window.Exames.ligar();
+
+    const titleEl = document.getElementById('page-title');
+    if (titleEl) titleEl.textContent = VIEW_LABELS[view] || 'Painel';
 
     document.title = `${VIEW_LABELS[view]} · StudyJournal`;
     window.scrollTo({ top: 0 });
@@ -3784,6 +3828,23 @@ function bind() {
         });
     });
 
+    // Objetivo da sessão: guardado e partilhado entre Painel e Concentração
+    const goalInputs = ['session-goal', 'estudar-goal']
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
+    if (goalInputs.length) {
+        const guardado = read('study-journal-session-goal', '');
+        goalInputs.forEach((input) => {
+            if (guardado) input.value = guardado;
+            input.addEventListener('input', () => {
+                write('study-journal-session-goal', input.value.slice(0, 120));
+                goalInputs.forEach((outro) => {
+                    if (outro !== input && outro.value !== input.value) outro.value = input.value;
+                });
+            });
+        });
+    }
+
     els.taskForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
@@ -4479,9 +4540,15 @@ window.StudyJournal = {
     adicionarANotas,
     irAExames() { showView('exames'); },
     irAPainel() { showView('painel'); },
+    irARevisao() { showView('revisao'); },
+    abrirReviewFocus,
 };
 window.ReviewSystem = ReviewSystem;
+window.StudyStats = StudyStats;
+window.StudySessions = StudySessions;
+window.abrirReviewFocus = abrirReviewFocus;
 
 init();
+try { window.Revisao?.render?.(); } catch { /* segue */ }
 Pdfs.carregar();
 if (window.Caderno) window.Caderno.carregar();

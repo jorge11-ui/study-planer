@@ -3,14 +3,17 @@
    JS/CSS = rede-primeiro (para apanhar deploys novos assim que há rede);
    fontes/imagens/vendor = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v32';
+const CACHE = 'study-journal-v33';
 
 const NUCLEO = [
     '/',
     '/index.html',
     '/app.css',
     '/layout.css',
+    '/design.css',
     '/manifest.webmanifest',
+    '/src/dashboard.js',
+    '/src/revisao.js',
     '/src/app.js',
     '/src/vault.js',
     '/src/pdfs.js',

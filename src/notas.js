@@ -150,6 +150,50 @@ window.NotasPro = (() => {
             }
         });
 
+        // Biblioteca: PDFs e links (título + categoria funcionam como tags).
+        (() => {
+            let pdfs = [];
+            try {
+                pdfs = JSON.parse(localStorage.getItem('study-journal-pdfs') || '[]');
+            } catch { pdfs = []; }
+            (Array.isArray(pdfs) ? pdfs : []).forEach((doc) => {
+                if (!doc || !doc.titulo) return;
+                const alvo = normalizar(`${doc.titulo} ${doc.categoria || ''}`);
+                if (tagN && !normalizar(doc.categoria || '').includes(tagN)) return;
+                if (tokens.length && !tokens.every((t) => alvo.includes(t))) return;
+                resultados.push({
+                    dia: '', tipo: 'pdf',
+                    titulo: String(doc.titulo).slice(0, 80),
+                    excerto: doc.categoria ? `Biblioteca · ${doc.categoria}` : 'Biblioteca',
+                    pdfId: doc.id,
+                });
+            });
+        })();
+
+        // Exames: tópicos do programa e registos de dificuldades.
+        (() => {
+            let dados = null;
+            try {
+                dados = window.Exames?.lerTudo?.() || null;
+            } catch { dados = null; }
+            if (!dados) return;
+            const nomes = new Map((dados.exams || []).map((e) => [e.id, e.nome]));
+            (dados.topics || []).forEach((t) => {
+                if (!t || t.tipo !== 'topico' || !t.titulo) return;
+                const disciplina = nomes.get(t.disciplinaId) || '';
+                const alvo = normalizar(`${t.titulo} ${disciplina}`);
+                if (tagN && !normalizar(disciplina).includes(tagN)) return;
+                if (tokens.length && !tokens.every((tok) => alvo.includes(tok))) return;
+                const estado = t.estado === 'concluido' ? 'concluído' : t.estado === 'em_progresso' ? 'em progresso' : 'por começar';
+                resultados.push({
+                    dia: '', tipo: 'exame',
+                    titulo: String(t.titulo).slice(0, 80),
+                    excerto: `Exame · ${disciplina} · ${estado}`,
+                    examTopicId: t.id,
+                });
+            });
+        })();
+
         return resultados.slice(0, limite);
     }
 
@@ -248,6 +292,16 @@ window.NotasPro = (() => {
         fecharPaleta();
         if (r.dia && window.StudyJournal && typeof window.StudyJournal.abrirDia === 'function') {
             window.StudyJournal.abrirDia(r.dia);
+            return;
+        }
+        if (r.tipo === 'pdf') {
+            document.querySelector('[data-view="pdfs"]')?.click();
+            setTimeout(() => {
+                const campo = document.getElementById('pdf-search');
+                if (!campo) return;
+                campo.value = r.titulo || '';
+                campo.dispatchEvent(new Event('input', { bubbles: true }));
+            }, 180);
             return;
         }
         if (!r.dia && window.Exames) {
