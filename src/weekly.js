@@ -93,7 +93,7 @@ window.Weekly = (() => {
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
         d.setDate(diff);
         d.setHours(0, 0, 0, 0);
-        return d.toISOString().slice(0, 10);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     }
 
     function getWeekNumber(date) {
@@ -165,7 +165,48 @@ window.Weekly = (() => {
             cor: String(e.cor || 'brand'),
             notas: String(e.notas || ''),
             layer: e.layer === 'dinamico' ? 'dinamico' : 'fixo',
+            examPlanItemId: e.examPlanItemId ? String(e.examPlanItemId) : '',
+            examPlanId: e.examPlanId ? String(e.examPlanId) : '',
         };
+    }
+
+    function importarPlanoExames(events, options = {}) {
+        const week = semanaKey(new Date(`${options.monday || semanaAtual}T00:00:00`));
+        if (week !== semanaAtual) {
+            salvar(); semanaAtual = week;
+            localStorage.setItem(CHAVE_DINAMICO_ATUAL, semanaAtual);
+            dinamicos = lerDinamicos(CHAVE_DINAMICO_PREFIXO + semanaAtual).map(normalizarEvento);
+        }
+        const completed = new Set(options.completedPlanItemIds || []);
+        // Remove only unfinished generated study blocks. Completed sessions
+        // remain as historical timetable entries when a plan is regenerated.
+        dinamicos = dinamicos.filter(e => !e.examPlanItemId || completed.has(e.examPlanItemId));
+        const ocupados = [...fixos, ...dinamicos];
+        const placed = [], skipped = [];
+        const sorted = [...(events || [])].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+        for (const item of sorted) {
+            if (completed.has(item.id)) continue;
+            const d = new Date(`${item.date}T12:00:00`);
+            const dia = (d.getDay() + 6) % 7 + 1;
+            const duracaoMin = Math.max(15, Number(item.durationMin)||45);
+            const duracao = Math.ceil(duracaoMin/15)/4;
+            let found = null;
+            // Search the timetable's available daytime window, respecting
+            // recurring fixed and current-week variable commitments.
+            for (let start = 8; start + duracao <= 22; start += .25) {
+                const clash = ocupados.some(e => e.dia === dia && start < e.hora + e.duracao && start + duracao > e.hora);
+                if (!clash) { found = start; break; }
+            }
+            if (found == null) { skipped.push(item); continue; }
+            const event = normalizarEvento({
+                id:`exam_${item.id}`, titulo:item.topicTitle||item.title||'Tópico de exame', dia,
+                hora:found, duracao, cor:'blue', notas:'Sessão planeada pelo Exam Center',
+                layer:'dinamico', examPlanItemId:item.id, examPlanId:options.planId||'',
+            });
+            dinamicos.push(event); ocupados.push(event); placed.push(event);
+        }
+        salvar(); render();
+        return { placed, skipped, week };
     }
 
     function gerarId() {
@@ -291,7 +332,7 @@ window.Weekly = (() => {
                         <div class="week-block week-block-dinamico" style="border-color: var(${varCor}); height: ${e.duracao * PX_POR_HORA}px;" 
                              data-id="${e.id}" data-layer="dinamico" data-dia="${dia}" data-hora="${e.hora}" draggable="true" title="${e.titulo}${e.notas ? ': ' + e.notas : ''}">
                              <span class="week-block-title">${e.titulo}</span>
-                             ${e.duracao > 1 ? `<span class="week-block-duracao">${fmtDuracao(e.duracao)}</span>` : ''}
+                             ${e.duracao > 1 && !e.examPlanItemId ? `<span class="week-block-duracao">${fmtDuracao(e.duracao)}</span>` : ''}
                         </div>
                         `;
                     }).join('');
@@ -1005,6 +1046,7 @@ window.Weekly = (() => {
         semanaAtual: () => semanaAtual,
         semanaAnterior,
         semanaSeguinte,
-        irParaSemanaAtual
+        irParaSemanaAtual,
+        importarPlanoExames
     };
 })();

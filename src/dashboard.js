@@ -457,7 +457,28 @@ window.SJDash = (() => {
 
     function renderAcademico() {
         const alvo = $('dash-academic');
-        if (alvo) linhasResumo(alvo);
+        if (alvo) {
+            linhasResumo(alvo);
+            const plan = window.Exames?.getTodayPlan?.() || [];
+            const box = document.createElement('div');
+            box.className = 'dash-exam-today';
+            const title = document.createElement('strong');
+            title.textContent = 'Plano de exames de hoje';
+            box.append(title);
+            if (!plan.length) {
+                const empty = document.createElement('p'); empty.textContent = 'Abre Exames para gerar o plano do dia.'; box.append(empty);
+            }
+            plan.slice(0, 3).forEach((item) => {
+                const row = document.createElement('div'); row.className = 'dash-exam-today-row';
+                const text = document.createElement('span');
+                const topic = window.Exames?.lerTudo?.().topics?.find((t) => t.id === item.topicId);
+                text.textContent = `${topic?.titulo || 'Tópico'} · ${item.durationMin} min · ${item.activity}`;
+                const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Registar';
+                button.addEventListener('click', () => window.Exames?.startPlanSession?.(item.id));
+                row.append(text, button); box.append(row);
+            });
+            alvo.append(box);
+        }
     }
 
     /* ── Estatísticas ───────────────────────────────────── */
@@ -615,6 +636,7 @@ window.SJDash = (() => {
         ['study-journal:pull', 'studyjournal:pull'].forEach((evento) => {
             window.addEventListener(evento, render);
         });
+        window.addEventListener('studyjournal:exam-plan-updated', renderAcademico);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') render();
         });

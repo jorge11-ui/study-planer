@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="dark">
     <title>StudyJournal</title>
-    <meta name="theme-color" content="#101114">
+    <meta name="theme-color" content="#08090A">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,8 +16,8 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%23a24f36'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="app.css?v=6">
-    <link rel="stylesheet" href="layout.css?v=10">
-    <link rel="stylesheet" href="design.css?v=2">
+    <link rel="stylesheet" href="layout.css?v=11">
+    <link rel="stylesheet" href="design.css?v=5">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
@@ -157,6 +157,10 @@
                 <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>
             </symbol>
+            <symbol id="i-bell" viewBox="0 0 24 24">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/>
+                <path d="M10 21h4"/>
+            </symbol>
             <symbol id="i-check" viewBox="0 0 24 24">
                 <path d="m20 6-11 11-5-5"/>
             </symbol>
@@ -237,48 +241,58 @@
 
         <nav class="sj-nav-scroll">
             <div class="sj-nav-group">
-                <p class="sj-nav-label">Geral</p>
+                <p class="sj-nav-label">Workspace</p>
                 <button type="button" data-view="painel" data-label="Painel" title="Painel" class="sj-nav-item nav-item-active">
-                    <svg class="icon"><use href="#i-panel"/></svg><span>Painel</span>
+                    <svg class="icon"><use href="#i-panel"/></svg><span>Overview</span>
                 </button>
+            </div>
+            <div class="sj-nav-group">
+                <p class="sj-nav-label">Planner</p>
                 <button type="button" data-view="calendario" data-label="Calendário" title="Calendário" class="sj-nav-item">
                     <svg class="icon"><use href="#i-calendar"/></svg><span>Calendário</span>
                 </button>
-                <button type="button" data-view="estatisticas" data-label="Estatísticas" title="Estatísticas" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-chart"/></svg><span>Estatísticas</span>
+                <button type="button" data-view="semanal" data-label="Planeamento" title="Horário semanal" class="sj-nav-item">
+                    <svg class="icon"><use href="#i-week"/></svg><span>Horário semanal</span>
                 </button>
             </div>
-
             <div class="sj-nav-group">
-                <p class="sj-nav-label">Estudo</p>
+                <p class="sj-nav-label">Learning</p>
                 <button type="button" data-view="disciplinas" data-label="Disciplinas" title="Disciplinas" class="sj-nav-item">
                     <svg class="icon"><use href="#i-subjects"/></svg><span>Disciplinas</span>
                 </button>
-                <button type="button" data-view="revisao" data-label="Revisão" title="Revisão" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-layers"/></svg><span>Revisão</span>
+                <button type="button" data-view="revisao" data-label="Flashcards" title="Flashcards e revisões" class="sj-nav-item">
+                    <svg class="icon"><use href="#i-layers"/></svg><span>Flashcards</span>
                     <span id="nav-revisao-badge" class="sj-nav-badge" aria-hidden="true"></span>
                 </button>
-                <button type="button" data-view="estudar" data-label="Concentração" title="Concentração" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-tomato"/></svg><span>Concentração</span>
-                </button>
-                <button type="button" data-view="exames" data-label="Exames" title="Exames" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-grad"/></svg><span>Exames</span>
+                <button type="button" data-view="estudar" data-label="Sessões de estudo" title="Focus Mode e sessões" class="sj-nav-item">
+                    <svg class="icon"><use href="#i-tomato"/></svg><span>Sessões de estudo</span>
                 </button>
             </div>
-
             <div class="sj-nav-group">
-                <p class="sj-nav-label">Recursos</p>
+                <p class="sj-nav-label">Exams</p>
+                <button type="button" data-view="exames" data-label="Exames" title="Exam Center" class="sj-nav-item">
+                    <svg class="icon"><use href="#i-grad"/></svg><span>Exam Center</span>
+                </button>
+            </div>
+            <div class="sj-nav-group">
+                <p class="sj-nav-label">Resources</p>
                 <button type="button" data-view="pdfs" data-label="Biblioteca" title="Biblioteca" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-file-text"/></svg><span>Biblioteca</span>
+                    <svg class="icon"><use href="#i-file-text"/></svg><span>Library</span>
                 </button>
                 <button type="button" data-view="caderno" data-label="Caderno" title="Caderno" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-camera"/></svg><span>Caderno</span>
-                </button>
-                <button type="button" data-view="semanal" data-label="Planeamento" title="Planeamento" class="sj-nav-item">
-                    <svg class="icon"><use href="#i-week"/></svg><span>Planeamento</span>
+                    <svg class="icon"><use href="#i-camera"/></svg><span>Caderno digital</span>
                 </button>
                 <button type="button" data-view="whiteboard" data-label="Quadro" title="Quadro Branco" class="sj-nav-item">
                     <svg class="icon"><use href="#i-whiteboard"/></svg><span>Quadro</span>
+                </button>
+            </div>
+            <div class="sj-nav-group">
+                <p class="sj-nav-label">Insights</p>
+                <button type="button" data-view="estatisticas" data-label="Estatísticas" title="Analytics" class="sj-nav-item">
+                    <svg class="icon"><use href="#i-chart"/></svg><span>Analytics</span>
+                </button>
+                <button id="nav-weekly-review" type="button" data-view="estatisticas" data-nav-key="weekly-review" data-label="Weekly Review" title="Revisão semanal" class="sj-nav-item">
+                    <svg class="icon"><use href="#i-list-checks"/></svg><span>Weekly Review</span>
                 </button>
             </div>
         </nav>
@@ -310,6 +324,13 @@
             </button>
 
             <div class="sj-topbar-right">
+                <button id="topbar-reviews-btn" type="button" data-view="revisao" class="sj-icon-btn topbar-reviews" aria-label="Revisões pendentes" title="Revisões pendentes">
+                    <svg class="icon"><use href="#i-bell"/></svg>
+                    <span id="topbar-review-badge" class="topbar-review-badge" aria-hidden="true"></span>
+                </button>
+                <button id="topbar-settings-btn" type="button" data-view="definicoes" class="sj-icon-btn topbar-settings" aria-label="Definições" title="Definições">
+                    <svg class="icon"><use href="#i-settings"/></svg>
+                </button>
                 <div class="sj-daynav">
                     <button id="day-prev" type="button" aria-label="Dia anterior">
                         <svg class="icon"><use href="#i-chevron-left"/></svg>
@@ -510,6 +531,18 @@
                             </div>
                         </aside>
                     </div>
+
+                    <!-- Resumo académico em faixa horizontal logo abaixo do workspace. -->
+                    <section class="dash-academic-card" aria-labelledby="dash-academic-title">
+                        <div class="dash-card-head">
+                            <svg class="icon"><use href="#i-grad"/></svg>
+                            <h3 id="dash-academic-title">Resumo académico</h3>
+                            <button type="button" class="dash-link" data-go-view="exames">Abrir exames</button>
+                        </div>
+                        <div id="dash-academic" class="dash-summary-list">
+                            <p class="dash-mini">A carregar…</p>
+                        </div>
+                    </section>
                 </section>
 
                 <!-- Coluna de apoio -->
@@ -597,17 +630,6 @@
                         </div>
                     </section>
 
-                    <!-- E. Resumo académico -->
-                    <section class="dash-card" aria-labelledby="dash-academic-title">
-                        <div class="dash-card-head">
-                            <svg class="icon"><use href="#i-grad"/></svg>
-                            <h3 id="dash-academic-title">Resumo académico</h3>
-                            <button type="button" class="dash-link" data-go-view="exames">Abrir exames</button>
-                        </div>
-                        <div id="dash-academic" class="dash-summary-list">
-                            <p class="dash-mini">A carregar…</p>
-                        </div>
-                    </section>
                 </div>
             </div>
         </div>
@@ -656,6 +678,10 @@
                     <span class="chip" id="stat-hero-total">0 h registadas</span>
                 </div>
             </header>
+
+            <section id="weekly-review" class="weekly-review-panel" aria-live="polite">
+                <p class="weekly-review-muted">A preparar a revisão semanal…</p>
+            </section>
 
             <div class="stat-grid">
                 <section class="glass stat-card">
@@ -1353,31 +1379,33 @@
         <!-- ══ Vista: Exames Nacionais (Study Center) ══ -->
         <section id="view-exames" data-panel="exames" hidden class="ex-shell flex flex-col gap-4 rounded-2xl border p-4 sm:p-5">
             <nav class="ex-tabs-nav" role="tablist" aria-label="Secções de Exames Nacionais">
-                <button type="button" data-exame-tab="visao" role="tab" aria-selected="true" class="ex-tab">Visão geral</button>
-                <button type="button" data-exame-tab="plano" role="tab" aria-selected="false" class="ex-tab">Plano de estudo <span data-exame-badge="plano" class="ex-badge-count" hidden></span></button>
-                <button type="button" data-exame-tab="topicos" role="tab" aria-selected="false" class="ex-tab">Tópicos <span data-exame-badge="topicos" class="ex-badge-count" hidden></span></button>
-                <button type="button" data-exame-tab="materiais" role="tab" aria-selected="false" class="ex-tab">Materiais <span data-exame-badge="materiais" class="ex-badge-count" hidden></span></button>
-                <button type="button" data-exame-tab="revisao" role="tab" aria-selected="false" class="ex-tab">Revisão <span data-exame-badge="revisao" class="ex-badge-count" hidden></span></button>
-                <button type="button" data-exame-tab="duvidas" role="tab" aria-selected="false" class="ex-tab">Dúvidas e erros <span data-exame-badge="duvidas" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="overview" role="tab" aria-selected="true" class="ex-tab">Overview</button>
+                <button type="button" data-exame-tab="syllabus" role="tab" aria-selected="false" class="ex-tab">Syllabus <span data-exame-badge="syllabus" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="plan" role="tab" aria-selected="false" class="ex-tab">Study Plan <span data-exame-badge="plan" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="revisions" role="tab" aria-selected="false" class="ex-tab">Revisions <span data-exame-badge="revisions" class="ex-badge-count" hidden></span></button>
+                <button type="button" data-exame-tab="practice" role="tab" aria-selected="false" class="ex-tab">Practice</button>
+                <button type="button" data-exame-tab="analytics" role="tab" aria-selected="false" class="ex-tab">Analytics</button>
             </nav>
 
-            <div id="exames-panel-visao" data-exame-panel="visao" role="tabpanel" class="ex-panel">
+            <div id="exames-panel-visao" data-exame-panel="overview" role="tabpanel" class="ex-panel">
                 <div id="exames-overview" class="ex-stack"></div>
             </div>
-            <div id="exames-panel-plano" data-exame-panel="plano" role="tabpanel" class="ex-panel" hidden>
+            <div id="exames-panel-plano" data-exame-panel="plan" role="tabpanel" class="ex-panel" hidden>
                 <div id="exames-plano" class="ex-stack"></div>
             </div>
-            <div id="exames-panel-topicos" data-exame-panel="topicos" role="tabpanel" class="ex-panel" hidden>
+            <div id="exames-panel-topicos" data-exame-panel="syllabus" role="tabpanel" class="ex-panel" hidden>
                 <div id="exames-topicos" class="ex-stack"></div>
             </div>
-            <div id="exames-panel-materiais" data-exame-panel="materiais" role="tabpanel" class="ex-panel" hidden>
-                <div id="exames-materiais" class="ex-stack"></div>
-            </div>
-            <div id="exames-panel-revisao" data-exame-panel="revisao" role="tabpanel" class="ex-panel" hidden>
+            <div id="exames-panel-revisao" data-exame-panel="revisions" role="tabpanel" class="ex-panel" hidden>
                 <div id="exames-revisao" class="ex-stack"></div>
             </div>
-            <div id="exames-panel-duvidas" data-exame-panel="duvidas" role="tabpanel" class="ex-panel" hidden>
+            <div id="exames-panel-pratica" data-exame-panel="practice" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-pratica-controls" class="ex-stack"></div>
+                <div id="exames-materiais" class="ex-stack"></div>
                 <div id="exames-duvidas-erros" class="ex-stack"></div>
+            </div>
+            <div id="exames-panel-analytics" data-exame-panel="analytics" role="tabpanel" class="ex-panel" hidden>
+                <div id="exames-analytics" class="ex-stack"></div>
             </div>
         </section>
 
@@ -1512,41 +1540,38 @@
     <!-- Footer / Tab Bar Mobile -->
     <footer class="legacy-mobile-nav">
         <nav aria-label="Navegação móvel" class="mobile-tab-scroll">
-            <button type="button" data-view="painel" class="nav-mobile nav-mobile-active" title="Painel">
-                <svg class="icon"><use href="#i-panel"/></svg><span>Painel</span>
+            <button type="button" data-view="painel" class="nav-mobile nav-mobile-active" title="Overview">
+                <svg class="icon"><use href="#i-panel"/></svg><span>Overview</span>
             </button>
-            <button type="button" data-view="calendario" class="nav-mobile" title="Calendário">
-                <svg class="icon"><use href="#i-calendar"/></svg><span>Agenda</span>
+            <button type="button" data-view="calendario" class="nav-mobile" title="Planner">
+                <svg class="icon"><use href="#i-calendar"/></svg><span>Planner</span>
             </button>
-            <button type="button" data-view="estatisticas" class="nav-mobile" title="Estatísticas">
-                <svg class="icon"><use href="#i-chart"/></svg><span>Dados</span>
+            <button type="button" data-view="revisao" class="nav-mobile" title="Learning">
+                <svg class="icon"><use href="#i-layers"/></svg><span>Learning</span>
             </button>
-            <button type="button" data-view="revisao" class="nav-mobile" title="Revisão">
-                <svg class="icon"><use href="#i-layers"/></svg><span>Revisão</span>
-            </button>
-            <button type="button" data-view="estudar" class="nav-mobile" title="Concentração">
-                <svg class="icon"><use href="#i-tomato"/></svg><span>Foco</span>
-            </button>
-            <button type="button" data-view="pdfs" class="nav-mobile" title="Biblioteca">
-                <svg class="icon"><use href="#i-file-text"/></svg><span>Biblioteca</span>
-            </button>
-            <button type="button" data-view="caderno" class="nav-mobile" title="Caderno">
-                <svg class="icon"><use href="#i-camera"/></svg><span>Caderno</span>
-            </button>
-            <button type="button" data-view="semanal" class="nav-mobile" title="Planeamento">
-                <svg class="icon"><use href="#i-week"/></svg><span>Plano</span>
-            </button>
-            <button type="button" data-view="exames" class="nav-mobile" title="Exames">
+            <button type="button" data-view="exames" class="nav-mobile" title="Exam Center">
                 <svg class="icon"><use href="#i-grad"/></svg><span>Exames</span>
             </button>
-            <button type="button" data-view="disciplinas" class="nav-mobile" title="Disciplinas">
-                <svg class="icon"><use href="#i-subjects"/></svg><span>Matérias</span>
-            </button>
-            <button type="button" data-view="definicoes" class="nav-mobile" title="Definições">
-                <svg class="icon"><use href="#i-settings"/></svg><span>Definir</span>
+            <button type="button" id="mobile-more-btn" class="nav-mobile" aria-haspopup="dialog" title="Mais secções">
+                <svg class="icon"><use href="#i-list"/></svg><span>Mais</span>
             </button>
         </nav>
     </footer>
+
+    <dialog id="mobile-more-dialog" class="m-auto w-[min(24rem,92vw)] rounded-xl border border-line bg-surface p-4 text-fg shadow-card backdrop:bg-black/60">
+        <div class="mb-3 flex items-center justify-between"><h2 class="text-sm font-semibold">Mais secções</h2><button id="mobile-more-close" type="button" class="icon-btn" aria-label="Fechar">×</button></div>
+        <div class="grid gap-2">
+            <button type="button" data-view="semanal" class="btn-soft text-left">Planner · Horário semanal</button>
+            <button type="button" data-view="disciplinas" class="btn-soft text-left">Learning · Disciplinas</button>
+            <button type="button" data-view="estudar" class="btn-soft text-left">Learning · Focus Mode</button>
+            <button type="button" data-view="pdfs" class="btn-soft text-left">Resources · Library</button>
+            <button type="button" data-view="caderno" class="btn-soft text-left">Resources · Caderno</button>
+            <button type="button" data-view="whiteboard" class="btn-soft text-left">Resources · Quadro</button>
+            <button type="button" data-view="estatisticas" class="btn-soft text-left">Insights · Analytics</button>
+            <button type="button" data-view="estatisticas" data-nav-key="weekly-review" class="btn-soft text-left">Insights · Weekly Review</button>
+            <button type="button" data-view="definicoes" class="btn-soft text-left">Settings</button>
+        </div>
+    </dialog>
 
     <!-- Evento Semanal -->
     <dialog id="week-form"
@@ -1848,9 +1873,12 @@
     <script src="src/study-workspace.js?v=10"></script>
     <script src="src/notas.js?v=10"></script>
     <script src="src/caderno.js?v=10"></script>
-    <script src="src/exames.js?v=10"></script>
+    <script src="src/exam-engine.js?v=1"></script>
+    <script>window.__examCatalogReady = fetch('data/static/exams.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null);</script>
+    <script src="src/exames.js?v=11"></script>
+    <script src="src/weekly-review.js?v=1"></script>
     <script src="src/dashboard.js?v=10"></script>
     <script src="src/revisao.js?v=10"></script>
-    <script src="src/app.js?v=10"></script>
+    <script src="src/app.js?v=11"></script>
 </body>
 </html>

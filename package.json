@@ -7,7 +7,9 @@
     "start": "node serve.js",
     "build": "tailwindcss -i src/input.css -o app.css",
     "dev": "tailwindcss -i src/input.css -o app.css --watch",
-    "check": "node --check serve.js && node --check src/app.js && node --check src/vault.js && node --check src/pdfs.js && node --check src/weekly.js && node --check src/github-sync.js && node --check src/conta-sync.js && node --check src/exames.js && node --check src/notas.js && node --check src/imagens.js"
+    "test": "node --test test/",
+    "syllabus": "node scripts/build-syllabus.js",
+    "check": "node --check serve.js && node --check db/store.js && node --check lib/sync-merge.js && node --check scripts/build-syllabus.js && node --check src/app.js && node --check src/vault.js && node --check src/pdfs.js && node --check src/weekly.js && node --check src/github-sync.js && node --check src/conta-sync.js && node --check src/exames.js && node --check src/exam-engine.js && node --check src/weekly-review.js && node --check src/notas.js && node --check src/imagens.js"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +17,10 @@
   "type": "commonjs",
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
+    "pg-mem": "^3.0.14",
     "tailwindcss": "^4.3.3"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
   }
 }

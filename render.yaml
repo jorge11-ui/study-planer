@@ -1,11 +1,10 @@
-# StudyJournal no Render — sync privado com a conta única.
+# StudyJournal no Render — PostgreSQL para dados persistentes.
 #
 # 1. No dashboard do Render: New → Blueprint → aponta para este repo.
-# 2. Define SYNC_USER e SYNC_PASS no dashboard para proteger os dados
-#    e sincronizar apenas os teus dispositivos autenticados.
-# 3. O plano free tem disco efémero: um restart pode apagar o sync
-#    (data/sync.json). Para manter os dados, configura armazenamento
-#    persistente no Render antes de usar isto com dados importantes.
+# 2. Define SYNC_USER e SYNC_PASS no dashboard (obrigatórios; a app falha
+#    no arranque sem autenticação para dados pessoais).
+# 3. Cria uma base PostgreSQL no Render e associa a variável DATABASE_URL.
+#    O serviço falha no arranque se o Render não tiver DATABASE_URL.
 
 services:
   - type: web
@@ -20,9 +19,5 @@ services:
         sync: false
       - key: SYNC_PASS
         sync: false
-    # Descomenta o disco (e usa plano Starter ou superior) para o sync
-    # sobreviver a restarts/redeploys. Sem isto, o free apaga data/.
-    # disk:
-    #   name: study-data
-    #   mountPath: /opt/render/project/src/data
-    #   sizeGB: 1
+      - key: DATABASE_URL
+        sync: false

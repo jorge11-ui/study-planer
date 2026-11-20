@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-11.4",
+  "targetExamYear": 2027,
+  "sourceExamYear": 2026,
+  "generatedAt": "2026-11-20T19:57:10.181Z",
+  "nodeCount": 287,
+  "activeNodeCount": 287,
+  "draftNodeCount": 0,
+  "exams": [
+    {
+      "id": "disc-mat",
+      "status": "active"
+    },
+    {
+      "id": "disc-fqa",
+      "status": "active"
+    },
+    {
+      "id": "disc-bio",
+      "status": "active"
+    },
+    {
+      "id": "disc-pt",
+      "status": "active"
+    }
+  ]
+}

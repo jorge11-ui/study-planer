@@ -168,6 +168,7 @@ window.ContaSync = (() => {
         user = '';
         persistirCredenciais();
         pararAuto();
+        if (window.GitHubSync?.configurado?.()) window.GitHubSync.iniciarAutoSync?.();
         return motivo;
     }
 
@@ -234,7 +235,7 @@ window.ContaSync = (() => {
         token = t;
         user = '';
         try {
-            const { status } = await api('/api/sync');
+            const { status } = await api('/api/data');
             if (status === 401 || status === 403) {
                 token = '';
                 persistirCredenciais();
@@ -296,7 +297,7 @@ window.ContaSync = (() => {
     }
 
     async function fazerPull() {
-        const { status, data } = await api('/api/sync');
+        const { status, data } = await api('/api/data');
         if (status === 401) {
             limparSessao();
             throw new Error('Sessão expirada — entra de novo na conta.');
@@ -343,7 +344,7 @@ window.ContaSync = (() => {
 
     async function fazerPush() {
         let enviado = coletar();
-        let r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: enviado } });
+        let r = await api('/api/data', { method: 'PUT', body: { baseRev: lerRev(), data: enviado } });
 
         if (r.status === 401) {
             limparSessao();
@@ -362,7 +363,7 @@ window.ContaSync = (() => {
                 notificar('pull-done', { rev: lerRev(), conflito: true });
                 if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
                 enviado = coletar();
-                r = await api('/api/sync', { method: 'PUT', body: { baseRev: revServidor, forcar: true, data: enviado } });
+                r = await api('/api/data', { method: 'PUT', body: { baseRev: revServidor, forcar: true, data: enviado } });
                 if (r.status === 409) {
                     throw new Error('Servidor incompatível — atualiza a app nos dois aparelhos.');
                 }
@@ -373,7 +374,7 @@ window.ContaSync = (() => {
                 notificar('pull-done', { rev: lerRev(), conflito: true });
                 if (typeof window.recarregarAposSync === 'function') window.recarregarAposSync();
                 enviado = coletar();
-                r = await api('/api/sync', { method: 'PUT', body: { baseRev: lerRev(), data: enviado } });
+                r = await api('/api/data', { method: 'PUT', body: { baseRev: lerRev(), data: enviado } });
                 if (r.status === 401) {
                     limparSessao();
                     throw new Error('Sessão expirada — entra de novo na conta.');
@@ -473,8 +474,8 @@ window.ContaSync = (() => {
         clearTimeout(eventosReabrir);
         eventosReabrir = null;
         const alvo = token
-            ? `/api/sync/eventos?token=${encodeURIComponent(token)}`
-            : '/api/sync/eventos';
+            ? `/api/data/events?token=${encodeURIComponent(token)}`
+            : '/api/data/events';
         try {
             eventos = new EventSource(alvo);
         } catch {
@@ -504,6 +505,9 @@ window.ContaSync = (() => {
 
     function iniciarAuto() {
         if (!token && !aberto) return;
+        // A conta StudyJournal é a única via de sync ativa quando ligada.
+        // Suspende o Gist para evitar dois servidores a disputar o mesmo estado.
+        window.GitHubSync?.pararAutoSync?.();
         if (!timer) {
             timer = setInterval(() => pullAuto().catch(() => {}), POLL_MS);
             // Pull imediato ao arrancar: sem isto a primeira atualização do

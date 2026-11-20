@@ -206,6 +206,14 @@ window.Revisao = (() => {
             badge.textContent = vencidas ? String(vencidas) : '';
             badge.classList.toggle('hidden', vencidas === 0);
         }
+        const topbarBadge = $('topbar-review-badge');
+        if (topbarBadge) {
+            topbarBadge.textContent = vencidas ? String(vencidas) : '';
+            topbarBadge.classList.toggle('hidden', vencidas === 0);
+            const button = $('topbar-reviews-btn');
+            button?.setAttribute('aria-label', vencidas ? `${vencidas} revisões pendentes` : 'Revisões pendentes');
+            button?.setAttribute('title', vencidas ? `${vencidas} revisões pendentes` : 'Revisões pendentes');
+        }
     }
 
     function renderSugestoes() {

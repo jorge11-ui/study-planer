@@ -1,2 +1,14 @@
 node_modules/
-data/
+.env
+.env.*
+!.env.example
+cert.pem
+key.pem
+*.log
+.DS_Store
+
+# Dados de utilizador (sync, sessões, PDFs) nunca entram no git.
+# Só o catálogo estático versionado é exceção.
+data/*
+!data/static/
+!data/static/**

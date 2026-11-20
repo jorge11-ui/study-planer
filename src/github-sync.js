@@ -592,6 +592,9 @@ window.GitHubSync = (() => {
     }
 
     async function sync(pullFirst = true) {
+        // Não manter dois documentos centrais concorrentes: a conta StudyJournal
+        // prevalece e esta instância fica disponível só quando a conta não está ativa.
+        if (window.ContaSync?.configurado?.()) return { ok: false, reason: 'central_sync_active' };
         if ((!configurado() && !hasWriteAccess()) || aSyncando) return { ok: false, reason: 'not_configured_or_syncing' };
         aSyncando = true;
         notificar('sync-start');
@@ -679,7 +682,13 @@ window.GitHubSync = (() => {
     }
 
     carregarConfig();
-    if (hasWriteAccess() || isPublicReadOnly()) iniciarAutoSync();
+    if (hasWriteAccess() || isPublicReadOnly()) {
+        // ContaSync é carregado imediatamente depois deste módulo; adiar a
+        // primeira leitura evita concorrência ao iniciar um browser autenticado.
+        setTimeout(() => {
+            if (!window.ContaSync?.configurado?.()) iniciarAutoSync();
+        }, 0);
+    }
 
     window.addEventListener('online', () => sync());
     window.addEventListener('focus', () => sync());

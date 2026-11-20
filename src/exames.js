@@ -5,7 +5,7 @@
 (function () {
 'use strict';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const STORE_KEY = 'study-journal-exames-center-v2';
 
 // Legacy keys
@@ -16,7 +16,10 @@ const DUVIDAS_KEY = 'study-journal-exames-duvidas';
 const EXAME_TAB_KEY = 'study-journal-exames-tab';
 const EXAME_DATA_KEY = 'study-journal-exames-data-alvo';
 
-const TABS = ['visao', 'plano', 'topicos', 'materiais', 'revisao', 'duvidas'];
+const TABS = ['overview', 'syllabus', 'plan', 'revisions', 'practice', 'analytics'];
+let catalog = window.__examCatalog || null;
+let catalogLoaded = !window.__examCatalogReady;
+if (window.__examCatalogReady) window.__examCatalogReady.then((d) => { catalog = d || catalog; catalogLoaded = true; });
 
 function exRead(key, fallback) {
   try { const raw = localStorage.getItem(key); return raw === null ? fallback : JSON.parse(raw); } catch { return fallback; }
@@ -54,9 +57,9 @@ function lerDataAlvoLegacy() {
 }
 
 const DISC_DEFAULT = [
-  { id: 'disc-pt', nome: 'Português', cor: '#E0A458' },
   { id: 'disc-mat', nome: 'Matemática A', cor: '#7AA7D9' },
-  { id: 'disc-fqa', nome: 'FQA', cor: '#6FBF8E' },
+  { id: 'disc-fqa', nome: 'Física e Química A', cor: '#6FBF8E' },
+  { id: 'disc-bio', nome: 'Biologia e Geologia', cor: '#C18AE0' },
 ];
 function discNomeToId(nome) {
   if (/portugu/i.test(nome||'')) return 'disc-pt';
@@ -68,8 +71,10 @@ function discNomeToId(nome) {
 
 let state = null;
 let ui = {
-  tab: 'visao',
-  topicQuery: '', topicFilterDisc: 'all', topicFilterEstado: 'all',
+  tab: 'overview',
+  planRange: 'daily',
+  collapsedSyllabusDisciplines: new Set(),
+  topicQuery: '', topicFilterDisc: 'all', topicFilterEstado: 'all', topicFilterPriority: 'all',
   matQuery: '', matFilterDisc: 'all', matFilterTipo: 'all', matFilterTag: '',
   revQuery: '', revFilterDisc: 'all', revFilterEstado: 'all',
   duvQuery: '', duvFilterDisc: 'all', duvFilterEstado: 'all',
@@ -77,14 +82,18 @@ let ui = {
 };
 
 function defaultState() {
-  const data = lerDataAlvoLegacy();
   return {
     schemaVersion: SCHEMA_VERSION,
-    exams: DISC_DEFAULT.map(d => ({ id: d.id, nome: d.nome, cor: d.cor, dataExame: data })),
+    exams: DISC_DEFAULT.map(d => ({ ...d, dataExame: '', weeklyMinutes: 300, goal: 80 })),
     topics: [], // flat nodes: {id, disciplinaId, parentId|null, tipo:'dominio'|'subdominio'|'topico', titulo, ...topic fields}
     materials: [],
     sessions: [],
     issues: [],
+    practice: [],
+    reviews: [],
+    planHistory: [],
+    activePlan: null,
+    settings: { minutesPerDay: 90, sessionMinutes: 45, studyDays: [1,2,3,4,5,6,0] },
     ui: { lastTopicId: null },
   };
 }
@@ -99,9 +108,75 @@ function normalizeState(s) {
   out.materials = Array.isArray(out.materials) ? out.materials : [];
   out.sessions = Array.isArray(out.sessions) ? out.sessions : [];
   out.issues = Array.isArray(out.issues) ? out.issues : [];
+  out.practice = Array.isArray(out.practice) ? out.practice : [];
+  out.reviews = Array.isArray(out.reviews) ? out.reviews : [];
+  out.planHistory = Array.isArray(out.planHistory) ? out.planHistory : [];
+  out.settings = { ...d.settings, ...(out.settings || {}) };
+  if (!('activePlan' in out)) out.activePlan = null;
   out.ui = { ...(d.ui||{}), ...(out.ui||{}) };
   // ensure geral exists for misc
   if (!out.exams.some(e => e.id === 'disc-geral')) out.exams.push({ id:'disc-geral', nome:'Geral', cor:'#8A8A8A', dataExame:'' });
+  return out;
+}
+
+const CATALOG_PERSONAL_FIELDS = ['estado','masteryPct','masteryState','contentCompleted','confianca','confidence','notasPessoais','dificuldades','ultimaAtividade','lastStudiedAt','nextReviewDate','exerciseCount','accuracyPct','accuracyTotal','accuracyCorrect','performanceHistory','learningHistory','memoryStabilityDays','estimatedDifficulty','studyMinutes','intervalIndex','intervalDays','importance','importancia','prioridade','difficulty','difficultyTags','materialIds','exercicioIds','userTitle','blockedBy','updatedAt','createdAt'];
+function syllabusTitleKey(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function mergeCatalogState(source) {
+  if (!catalog || !Array.isArray(catalog.nodes)) return source;
+  const catalogNodes = [...catalog.nodes, ...(catalog.draftNodes || [])];
+  const out = normalizeState(source);
+  const existing = new Map(out.topics.map(t => [t.id, t]));
+  const oldByTitle = new Map();
+  out.topics.filter(t => t.source && (t.kind === 'topic' || t.tipo === 'topico')).forEach(t => {
+    const key = `${t.disciplinaId || t.examId}:${syllabusTitleKey(t.titulo || t.title)}`;
+    oldByTitle.set(key, oldByTitle.has(key) ? null : t);
+  });
+  const migratedIds = new Set();
+  const topicIdMap = new Map();
+  const seeded = catalogNodes.map(n => {
+    const key = `${n.examId}:${syllabusTitleKey(n.title)}`;
+    const match = n.kind === 'topic' ? oldByTitle.get(key) : null;
+    const old = existing.get(n.id) || match || null;
+    if (old) {
+      migratedIds.add(old.id);
+      if (old.id !== n.id) topicIdMap.set(old.id, n.id);
+    }
+    const item = {
+      id: n.id, disciplinaId: n.examId, parentId: n.parentId, tipo: n.kind === 'topic' ? 'topico' : n.kind === 'domain' ? 'dominio' : n.kind === 'theme' ? 'tema' : 'subtema',
+      kind: n.kind, titulo: n.title, descricao: n.description || '', importancia: n.importance || 3, prioridade: n.importance || 3, difficulty: n.difficulty || 3,
+      source: n.source, needsValidation: !!n.needsValidation, catalogStatus: n.status || 'active', catalogVersion: catalog.version,
+      estado: 'nao_iniciado', masteryPct: 0, confianca: 3, confidence: 3, notasPessoais: '', dificuldades: '',
+      materialIds: [], exercicioIds: [], exerciseCount: 0, studyMinutes: 0, accuracyPct: null,
+    };
+    if (old) CATALOG_PERSONAL_FIELDS.forEach(k => { if (old[k] !== undefined) item[k] = old[k]; });
+    if (item.userTitle) item.titulo = item.userTitle;
+    item.ultimaAtividade = Number(item.ultimaAtividade) || 0;
+    return item;
+  });
+  const seededIds = new Set(seeded.map(t => t.id));
+  out.topics = [...seeded, ...out.topics.filter(t => !seededIds.has(t.id) && !migratedIds.has(t.id)).map(t => t.source ? { ...t, archived: true } : t)];
+  if (topicIdMap.size) {
+    ['materials', 'sessions', 'issues', 'practice', 'reviews'].forEach(collection => {
+      out[collection].forEach(item => { if (topicIdMap.has(item.topicId)) item.topicId = topicIdMap.get(item.topicId); });
+    });
+    seeded.forEach(t => { if (Array.isArray(t.blockedBy)) t.blockedBy = t.blockedBy.map(id => topicIdMap.get(id) || id); });
+    const remapPlan = plan => {
+      if (!plan) return;
+      const days = [plan.daily, ...(plan.week || []), ...(plan.month || [])].filter(Boolean);
+      days.forEach(day => (day.items || []).forEach(item => { if (topicIdMap.has(item.topicId)) item.topicId = topicIdMap.get(item.topicId); }));
+    };
+    remapPlan(out.activePlan);
+    out.planHistory.forEach(remapPlan);
+  }
+  const oldExams = new Map(out.exams.map(e => [e.id, e]));
+  const defaults = (catalog.exams || []).map(e => {
+    const old = oldExams.get(e.id) || {};
+    return { id: e.id, nome: e.name, cor: e.color, examCode: e.examCode, sourceUrls: e.sourceUrls, status:e.status||'active', needsValidation:!!e.needsValidation, dataExame: old.dataExame || '', weeklyMinutes: old.weeklyMinutes || 300, goal: old.goal || 80, ...old };
+  });
+  out.exams = [...defaults, ...out.exams.filter(e => !defaults.some(d => d.id === e.id))];
+  out.catalogVersion = catalog.version;
   return out;
 }
 
@@ -213,7 +288,7 @@ function loadState() {
    apagados ficam em tombstones durante 30 dias. Assim adicionar num
    aparelho e editar no outro não perde nada, e apagar propaga. */
 const APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
-const COLECOES = ['exams', 'topics', 'materials', 'sessions', 'issues'];
+const COLECOES = ['exams', 'topics', 'materials', 'sessions', 'issues', 'practice', 'reviews', 'planHistory'];
 
 function carimboItem(x) {
   if (!x || typeof x !== 'object') return 0;
@@ -267,18 +342,12 @@ function fundirEstado(local, remoto) {
   const l = normalizeState(local);
   const r = normalizeState(remoto);
   const apagados = normalizarApagados({
-    exams: [...(l.apagados && l.apagados.exams || []), ...(r.apagados && r.apagados.exams || [])],
-    topics: [...(l.apagados && l.apagados.topics || []), ...(r.apagados && r.apagados.topics || [])],
-    materials: [...(l.apagados && l.apagados.materials || []), ...(r.apagados && r.apagados.materials || [])],
-    sessions: [...(l.apagados && l.apagados.sessions || []), ...(r.apagados && r.apagados.sessions || [])],
-    issues: [...(l.apagados && l.apagados.issues || []), ...(r.apagados && r.apagados.issues || [])],
+    ...Object.fromEntries(COLECOES.map(tipo=>[tipo,[...(l.apagados?.[tipo]||[]),...(r.apagados?.[tipo]||[])]])),
   });
   const out = normalizeState({ ...l });
-  out.exams = juntarLista(l.exams, r.exams, apagados.exams);
-  out.topics = juntarLista(l.topics, r.topics, apagados.topics);
-  out.materials = juntarLista(l.materials, r.materials, apagados.materials);
-  out.sessions = juntarLista(l.sessions, r.sessions, apagados.sessions);
-  out.issues = juntarLista(l.issues, r.issues, apagados.issues);
+  COLECOES.forEach(tipo=>{ out[tipo]=juntarLista(l[tipo],r[tipo],apagados[tipo]); });
+  out.settings = (Number(r.updatedAt)||0) > (Number(l.updatedAt)||0) ? r.settings : l.settings;
+  out.activePlan = (Number(r.activePlan?.generatedAt)||0) > (Number(l.activePlan?.generatedAt)||0) ? r.activePlan : l.activePlan;
   out.apagados = apagados;
   out.updatedAt = Math.max(Number(l.updatedAt) || 0, Number(r.updatedAt) || 0);
   return out;
@@ -291,8 +360,8 @@ function fundirRemoto(remoto) {
   if (!remoto || typeof remoto !== 'object') return false;
   const local = loadState();
   const fundido = fundirEstado(local, remoto);
-  const antes = JSON.stringify([local.exams, local.topics, local.materials, local.sessions, local.issues]);
-  const depois = JSON.stringify([fundido.exams, fundido.topics, fundido.materials, fundido.sessions, fundido.issues]);
+  const antes = JSON.stringify([local.exams, local.topics, local.materials, local.sessions, local.issues,local.practice,local.reviews,local.planHistory,local.activePlan]);
+  const depois = JSON.stringify([fundido.exams, fundido.topics, fundido.materials, fundido.sessions, fundido.issues,fundido.practice,fundido.reviews,fundido.planHistory,fundido.activePlan]);
   state = fundido;
   if (antes !== depois) {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* segue */ }
@@ -304,15 +373,16 @@ function saveState() {
   state.updatedAt = Date.now();
   exWrite(STORE_KEY, state);
   renderAll();
+  window.dispatchEvent(new CustomEvent('studyjournal:exam-plan-updated'));
 }
 
 function getExam(id){ return state.exams.find(e=>e.id===id); }
 function getTopic(id){ return state.topics.find(t=>t.id===id); }
 function topicLabel(id){ const t=getTopic(id); return t? t.titulo : ''; }
 function discLabel(id){ const e=getExam(id); return e? e.nome : 'Geral'; }
-function allTopicsFlat(){ return state.topics.filter(t=>t.tipo==='topico'); }
+function allTopicsFlat(){ return state.topics.filter(t=>(t.tipo==='topico' || t.kind==='topic') && !t.archived); }
 
-function topicStatusLabel(st){ return ({nao_iniciado:'Não iniciado', em_progresso:'Em progresso', concluido:'Concluído', precisa_revisao:'Precisa de revisão'})[st]||st; }
+function topicStatusLabel(st){ return ({nao_iniciado:'Não iniciado', em_progresso:'Em estudo', concluido:'Concluído', precisa_revisao:'A rever'})[st]||st; }
 function topicStatusClass(st){ return ({nao_iniciado:'ex-badge-muted', em_progresso:'ex-badge-warn', concluido:'ex-badge-ok', precisa_revisao:'ex-badge-rev'})[st]||'ex-badge-muted'; }
 function issueStatusLabel(st){ return ({por_resolver:'Por resolver', em_analise:'Em análise', resolvido:'Resolvido', precisa_revisao:'Precisa de revisão'})[st]||st; }
 function issueStatusClass(st){ return ({por_resolver:'ex-badge-err', em_analise:'ex-badge-warn', resolvido:'ex-badge-ok', precisa_revisao:'ex-badge-rev'})[st]||'ex-badge-muted'; }
@@ -321,15 +391,103 @@ function progressOverall() {
   const tops = allTopicsFlat();
   if (!tops.length) return { pct:0, done:0, total:0, pending:0 };
   const done = tops.filter(t=>t.estado==='concluido').length;
+  const started = tops.filter(t=>t.estado!=='nao_iniciado').length;
+  const mastery = Math.round(tops.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/tops.length);
   const pending = tops.length - done;
-  return { pct: Math.round((done/tops.length)*100), done, total: tops.length, pending };
+  return { pct: Math.round((started/tops.length)*100), mastery, studied: started, done, total: tops.length, pending };
+}
+
+function generateStudyPlan(keepHistory = true) {
+  if (!window.ExamEngine) return null;
+  if (keepHistory && state.activePlan) state.planHistory.unshift(state.activePlan);
+  const next = window.ExamEngine.generate(allTopicsFlat(), state.exams, state.settings, todayKey());
+  state.activePlan = next;
+  state.planHistory = state.planHistory.slice(0, 180);
+  saveState();
+  return next;
+}
+function marcarSemanaNoHorario() {
+  if (!state.activePlan?.week || !window.Weekly?.importarPlanoExames) return miniToast('O Horário semanal não está disponível.', 'warn');
+  const monday = state.activePlan.week[0]?.date;
+  const entries = state.activePlan.week.flatMap(day => day.items || []);
+  const completed = state.sessions.filter(s=>s.concluida && s.planItemId).map(s=>s.planItemId);
+  const result = window.Weekly.importarPlanoExames(entries, { monday, planId:state.activePlan.id, completedPlanItemIds:completed });
+  miniToast(`${result.placed.length} sessão(ões) colocadas no Horário${result.skipped.length ? ` · ${result.skipped.length} sem espaço` : ''}.`);
+}
+function plannedEntry(entry) {
+  const labels = { new: 'New Learning', revision: 'Revision', practice: 'Practice' };
+  const topic = getTopic(entry.topicId);
+  return `<article class="ex-plan-entry">
+    <div class="ex-plan-entry-head"><span class="ex-plan-type">${labels[entry.activity]||entry.activity}</span><span class="ex-priority">${entry.priority}/100</span><span class="ex-muted-sm">${esc(discLabel(entry.disciplinaId))} · ${entry.durationMin} min</span></div>
+    <strong>${esc(topic?.titulo||'Tópico removido')}</strong>
+    <p>${esc(entry.objective)}</p><small>${esc(entry.reason)}</small>
+    <button type="button" class="ex-btn ex-btn-sm ex-btn-primary" data-plan-start="${esc(entry.id)}">Começar sessão</button>
+  </article>`;
+}
+function ensureCurrentPlan() {
+  if (!state.activePlan || state.activePlan.today !== todayKey()) state.activePlan = window.ExamEngine?.generate(allTopicsFlat(), state.exams, state.settings, todayKey()) || null;
+}
+async function startPlannedSession(entryId) {
+  const entry = state.activePlan?.[ui.planRange === 'week' ? 'week' : 'daily']?.items?.find(x=>x.id===entryId)
+    || state.activePlan?.week?.flatMap(x=>x.items).find(x=>x.id===entryId)
+    || state.activePlan?.month?.flatMap(x=>x.items).find(x=>x.id===entryId);
+  if (!entry) return;
+  let session = state.sessions.find(s=>s.planItemId===entry.id);
+  if (!session) {
+    session = { id:uid('sess'), planItemId:entry.id, disciplinaId:entry.disciplinaId, topicId:entry.topicId, data:entry.date, duracaoMin:entry.durationMin, activity:entry.activity, objetivo:entry.objective, notas:'', concluida:false, createdAt:Date.now(), updatedAt:Date.now(), calendarTaskId:null, calendarDate:entry.date };
+    state.sessions.unshift(session);
+    if (typeof persistirTarefasDia === 'function') {
+      try {
+        const tasks = typeof read === 'function' ? read(`study-journal-tasks-${entry.date}`, []) : [];
+        const calId = `${Date.now()}-exam-${Math.random().toString(36).slice(2,7)}`;
+        tasks.push({ id:calId, text:`${entry.activity==='revision'?'Rever':entry.activity==='practice'?'Exercícios:':'Estudar:'} ${topicLabel(entry.topicId)}`, subject:discLabel(entry.disciplinaId), category:'aula', done:false, origemExames:{ type:'session', sessionId:session.id } });
+        await persistirTarefasDia(entry.date, tasks); session.calendarTaskId=calId;
+      } catch { /* sessão mantém-se no Study Center mesmo se o calendário falhar */ }
+    }
+    saveState();
+  }
+  openSessionCompletion(session);
+}
+function openSessionCompletion(session) {
+  const topic=getTopic(session.topicId); if(!topic) return miniToast('O tópico associado já não existe.','warn');
+  const dlg=document.createElement('dialog'); dlg.className='m-auto w-[min(42rem,94vw)] ex-dialog';
+  dlg.innerHTML=`<form class="ex-dialog-inner">
+    <div class="ex-dialog-head"><div><h3>Registar sessão</h3><p>${esc(discLabel(session.disciplinaId))} · ${esc(topic.titulo)}</p></div><button type="button" class="ex-btn ex-btn-sm" data-close>Fechar</button></div>
+    <div class="ex-dialog-body ex-form-stack"><div class="ex-form-grid-2">
+      <label class="ex-label">Minutos<input name="duration" type="number" min="1" value="${Number(session.duracaoMin)||45}" class="ex-input" required></label>
+      <label class="ex-label">Dificuldade sentida (1–5)<input name="difficulty" type="number" min="1" max="5" value="${Number(topic.difficulty)||3}" class="ex-input"></label>
+      <label class="ex-label">Exercícios resolvidos<input name="count" type="number" min="0" value="0" class="ex-input"></label>
+      <label class="ex-label">Respostas corretas<input name="correct" type="number" min="0" value="0" class="ex-input"></label>
+      <label class="ex-label">Confiança (1–5)<input name="confidence" type="number" min="1" max="5" value="${Number(topic.confianca)||3}" class="ex-input"></label>
+      <label class="ex-label">Autonomia (1–5)<input name="autonomy" type="number" min="1" max="5" value="3" class="ex-input"></label>
+    </div><label class="ex-label">Dificuldades / notas<textarea name="notes" class="ex-input" rows="3">${esc(topic.dificuldades||'')}</textarea></label></div>
+    <div class="ex-dialog-foot"><button type="button" class="ex-btn" data-close>Cancelar</button><button class="ex-btn ex-btn-primary" type="submit">Concluir e atualizar domínio</button></div>
+  </form>`;
+  document.body.append(dlg); const close=()=>{dlg.close();dlg.remove();};
+  dlg.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',close));
+  dlg.querySelector('form').addEventListener('submit',async e=>{
+    e.preventDefault(); const fd=new FormData(e.currentTarget);
+    const count=Number(fd.get('count'))||0, correct=Number(fd.get('correct'))||0;
+    session.duracaoMin=Number(fd.get('duration'))||session.duracaoMin;
+    session.concluida=true; session.updatedAt=Date.now(); session.exerciseCount=count; session.correctCount=Math.min(correct,count); session.difficulty=Number(fd.get('difficulty'))||3; session.confidence=Number(fd.get('confidence'))||3;
+    session.notas=String(fd.get('notes')||'');
+    session.autonomy=Number(fd.get('autonomy'))||3;
+    window.ExamEngine.applySession(topic,{durationMin:session.duracaoMin,exerciseCount:count,correctCount:correct,difficulty:session.difficulty,confidence:session.confidence,autonomy:session.autonomy,activity:session.activity,difficultyNotes:session.notas},todayKey());
+    topic.dificuldades=session.notas; topic.updatedAt=Date.now();
+    if(session.activity==='revision') state.reviews.unshift({id:uid('review'),topicId:topic.id,disciplinaId:topic.disciplinaId,date:todayKey(),masteryPct:topic.masteryPct,accuracyPct:count?Math.round(100*Math.min(correct,count)/count):null,nextReviewDate:topic.nextReviewDate,createdAt:Date.now()});
+    if(count){
+      state.practice.unshift({id:uid('exercise'),topicId:topic.id,disciplinaId:topic.disciplinaId,kind:'session',date:todayKey(),count,correct:Math.min(correct,count),accuracyPct:Math.round(100*Math.min(correct,count)/count),difficulty:session.difficulty,createdAt:Date.now()});
+      if(correct<count) state.issues.unshift({id:uid('iss'),tipo:'exercicio_dificil',disciplinaId:topic.disciplinaId,topicId:topic.id,titulo:`${count-correct} erro(s) em sessão`,descricao:`${correct}/${count} corretas. ${session.notas}`,resolucao:'',estado:'precisa_revisao',createdAt:Date.now(),updatedAt:Date.now()});
+    }
+    creditarSessaoNosTotais(session); close(); generateStudyPlan(true); refrescarEstatisticas(); miniToast('Sessão registada; domínio, revisão e plano semanal atualizados.');
+  }); dlg.showModal();
 }
 
 // ---------- DOM helpers ----------
 function $(sel, root=document){ return root.querySelector(sel); }
 function $all(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
 function setTab(name){
-  ui.tab = TABS.includes(name)?name:'visao';
+  ui.tab = TABS.includes(name)?name:'overview';
   try { localStorage.setItem(EXAME_TAB_KEY, ui.tab); } catch {}
   $all('[data-exame-tab]').forEach(b=>b.setAttribute('aria-selected', String(b.dataset.exameTab===ui.tab)));
   $all('[data-exame-panel]').forEach(p=>{ p.hidden = p.dataset.examePanel !== ui.tab; });
@@ -347,38 +505,58 @@ function daysUntil(dateStr){
 }
 function renderOverview(){
   const wrap = $('#exames-overview'); if(!wrap) return;
+  ensureCurrentPlan();
   const prog = progressOverall();
   const mats = state.materials.length;
-  const revs = state.issues.filter(i=>i.estado!=='resolvido').length + state.sessions.filter(s=>!s.concluida).length;
+  const revs = window.ExamEngine ? window.ExamEngine.pendingReviews(allTopicsFlat()).length : 0;
   const lastTopic = getTopic(state.ui.lastTopicId) || allTopicsFlat().sort((a,b)=>(b.ultimaAtividade||0)-(a.ultimaAtividade||0))[0];
   const examsHtml = state.exams.filter(e=>e.id!=='disc-geral').map(e=>{
     const d = daysUntil(e.dataExame);
     const label = d==null ? 'Sem data' : (d>0 ? `${d} dias` : 'Hoje/Passado');
+    const course = allTopicsFlat().filter(t=>t.disciplinaId===e.id);
+    const studied = course.filter(t=>t.estado!=='nao_iniciado').length;
+    const coursePct = course.length ? Math.round(studied/course.length*100) : 0;
     return `<div class="ex-card ex-count-card">
-      <div class="ex-count-name" style="--ex-accent:${e.cor||'#7AA7D9'}">${esc(e.nome)}</div>
+      <div class="ex-count-name" style="--ex-accent:${e.cor||'#7AA7D9'}"><input class="ex-inline-title" data-exam-name="${esc(e.id)}" value="${esc(e.nome)}" aria-label="Nome do exame"></div>
       <div class="ex-count-days">${esc(label)}</div>
       <div class="ex-count-date">${e.dataExame?esc(fmtDate(e.dataExame)):'Definir data'}</div>
       <input type="date" class="ex-input ex-date-input" data-exam-date="${esc(e.id)}" value="${esc(e.dataExame||'')}" aria-label="Data de ${esc(e.nome)}">
+      <div class="ex-exam-config"><label>Objetivo % <input type="number" min="0" max="100" data-exam-goal="${esc(e.id)}" value="${Number(e.goal)||80}"></label><label>Min/semana <input type="number" min="0" max="1680" step="30" data-exam-time="${esc(e.id)}" value="${Number(e.weeklyMinutes)||300}"></label></div>
+      <div class="ex-muted-sm">Matéria estudada ${coursePct}% · domínio médio ${course.length?Math.round(course.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/course.length):0}%</div><div class="ex-bar"><div style="width:${coursePct}%"></div></div>
     </div>`;
+  }).join('');
+  const daily = state.activePlan?.daily?.items || [];
+  const attention = allTopicsFlat().map(t=>({t,s:window.ExamEngine.scoreTopic(t,{today:todayKey(),examDate:getExam(t.disciplinaId)?.dataExame})})).sort((a,b)=>b.s.score-a.s.score).slice(0,4);
+  const dailyHtml = daily.length ? daily.slice(0,4).map(x=>plannedEntry(x)).join('') : '<div class="ex-empty">Sem tópicos recomendados. Ajusta o tempo disponível ou verifica os filtros da matéria.</div>';
+  const attentionHtml = attention.map(({t,s})=>`<div class="ex-attention-row"><div><strong>${esc(t.titulo)}</strong><small>${esc(discLabel(t.disciplinaId))} · ${s.score}/100</small></div><span>${esc(s.reasons[0]||'Consolidação recomendada')}</span></div>`).join('');
+  const bySubject = state.exams.filter(e=>e.id!=='disc-geral').map(e=>{
+    const ts=allTopicsFlat().filter(t=>t.disciplinaId===e.id); const pct=ts.length?Math.round(ts.filter(t=>t.estado!=='nao_iniciado').length/ts.length*100):0;
+    return `<div class="ex-subject-progress"><div><span>${esc(e.nome)}</span><strong>Estudado ${pct}% · Domínio ${ts.length?Math.round(ts.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/ts.length):0}%</strong></div><div class="ex-bar"><div style="width:${pct}%;background:${esc(e.cor||'#8994a8')}"></div></div></div>`;
   }).join('');
 
   wrap.innerHTML = `
     <div class="ex-hero">
       <div>
         <h2 class="ex-title">Exames Nacionais</h2>
-        <p class="ex-sub">Centro de organização e preparação para os exames nacionais.</p>
+        <p class="ex-sub">Planeamento adaptativo com base no teu domínio, revisões e resultados.</p>
       </div>
+      <button type="button" class="ex-btn" data-generate-plan>Gerar novamente</button>
     </div>
 
     <div class="ex-grid-countdowns">${examsHtml || '<p class="ex-muted">Sem exames configurados.</p>'}</div>
 
     <div class="ex-grid-stats">
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Progresso geral</span><strong>${prog.pct}%</strong><div class="ex-bar"><div style="width:${prog.pct}%"></div></div></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Tópicos concluídos</span><strong>${prog.done}</strong><span class="ex-muted-sm">de ${prog.total}</span></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Tópicos pendentes</span><strong>${prog.pending}</strong><span class="ex-muted-sm">por concluir</span></div>
+      <div class="ex-card ex-stat"><span class="ex-stat-label">Matéria estudada</span><strong>${prog.pct}%</strong><div class="ex-bar"><div style="width:${prog.pct}%"></div></div></div>
+      <div class="ex-card ex-stat"><span class="ex-stat-label">Domínio estimado</span><strong>${prog.mastery}%</strong><span class="ex-muted-sm">estimativa independente de conclusão</span></div>
+      <div class="ex-card ex-stat"><span class="ex-stat-label">Conteúdos iniciados</span><strong>${prog.studied}</strong><span class="ex-muted-sm">de ${prog.total}</span></div>
       <div class="ex-card ex-stat"><span class="ex-stat-label">Materiais</span><strong>${mats}</strong><span class="ex-muted-sm">guardados</span></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Revisões / pendentes</span><strong>${revs}</strong><span class="ex-muted-sm">itens a tratar</span></div>
+      <div class="ex-card ex-stat"><span class="ex-stat-label">Revisões atrasadas</span><strong>${revs}</strong><span class="ex-muted-sm">para rever hoje</span></div>
     </div>
+
+    <div class="ex-overview-grid"><section class="ex-card"><div class="ex-section-head"><h3>Plano de hoje</h3><button type="button" class="ex-btn ex-btn-sm" data-open-tab="plan">Plano completo</button></div><div class="ex-plan-list">${dailyHtml}</div></section>
+    <section class="ex-card"><div class="ex-section-head"><h3>Próximos tópicos recomendados</h3></div><div class="ex-attention-list">${attentionHtml}</div></section></div>
+    <div class="ex-overview-grid"><section class="ex-card"><div class="ex-section-head"><h3>Progresso por disciplina</h3></div>${bySubject}</section>
+    <section class="ex-card"><div class="ex-section-head"><h3>Objetivos da semana</h3></div><p class="ex-muted">${state.activePlan?.week?.flatMap(d=>d.items).length||0} sessões planeadas · ${state.activePlan?.week?.reduce((n,d)=>n+d.totalMinutes,0)||0} minutos estimados</p><p class="ex-muted">Revê os conteúdos marcados e regista resultados para ajustar o plano automaticamente.</p></section></div>
 
     <div class="ex-card ex-continue">
       <div class="ex-section-head"><h3>Continuar a estudar</h3></div>
@@ -401,10 +579,16 @@ function renderOverview(){
       saveState(); miniToast('Data do exame atualizada.');
     });
   });
+  $all('[data-exam-name]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examName);if(e){e.nome=inp.value.trim()||e.nome;e.updatedAt=Date.now();saveState();}}));
+  $all('[data-exam-goal]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examGoal);if(e){e.goal=clamp(Number(inp.value)||0,0,100);e.updatedAt=Date.now();saveState();}}));
+  $all('[data-exam-time]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examTime);if(e){e.weeklyMinutes=clamp(Number(inp.value)||0,0,1680);e.updatedAt=Date.now();saveState();}}));
+  wrap.querySelector('[data-generate-plan]')?.addEventListener('click',()=>generateStudyPlan(true));
+  wrap.querySelector('[data-open-tab]')?.addEventListener('click',()=>setTab('plan'));
+  $all('[data-plan-start]',wrap).forEach(b=>b.addEventListener('click',()=>startPlannedSession(b.dataset.planStart)));
   $all('[data-go-topic]', wrap).forEach(b=>{
     b.addEventListener('click', ()=>{
       const id = b.dataset.goTopic; state.ui.lastTopicId = id; exWrite(STORE_KEY, state);
-      setTab('topicos');
+      setTab('syllabus');
       setTimeout(()=>{ const el = document.querySelector(`[data-topic-id="${CSS.escape(id)}"]`); el?.scrollIntoView({behavior:'smooth', block:'center'}); }, 50);
     });
   });
@@ -414,7 +598,7 @@ function renderOverview(){
 const TOPIC_VIEW_KEY = 'study-journal-exames-topico-vista';
 
 function lerVistaTopicos() {
-  try { return localStorage.getItem(TOPIC_VIEW_KEY) === 'lista' ? 'lista' : 'quadro'; } catch { return 'quadro'; }
+  try { return localStorage.getItem(TOPIC_VIEW_KEY) === 'quadro' ? 'quadro' : 'lista'; } catch { return 'lista'; }
 }
 function guardarVistaTopicos(vista) {
   try { localStorage.setItem(TOPIC_VIEW_KEY, vista === 'lista' ? 'lista' : 'quadro'); } catch { /* segue */ }
@@ -634,44 +818,43 @@ function renderTopics(){
 
   const tops = allTopicsFlat().filter(t=>{
     if(ui.topicFilterDisc!=='all' && t.disciplinaId!==ui.topicFilterDisc) return false;
-    if(vista==='lista' && ui.topicFilterEstado!=='all' && t.estado!==ui.topicFilterEstado) return false;
+    if(ui.topicFilterEstado!=='all' && t.estado!==ui.topicFilterEstado) return false;
+    if(ui.topicFilterPriority==='high' && Number(t.importancia||t.prioridade||3)<4) return false;
+    if(ui.topicFilterPriority==='due' && !(t.nextReviewDate && t.nextReviewDate<=todayKey())) return false;
     if(q){
-      const hay = `${t.titulo} ${t.notasPessoais||''} ${discLabel(t.disciplinaId)}`.toLowerCase();
+      const hay = `${t.titulo} ${t.descricao||''} ${t.notasPessoais||''} ${t.dificuldades||''} ${discLabel(t.disciplinaId)}`.toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
   });
 
-  // group by disc > dom > sub
-  const discs = state.exams.filter(e=> ui.topicFilterDisc==='all' ? e.id!=='disc-geral' || tops.some(t=>t.disciplinaId===e.id) : e.id===ui.topicFilterDisc);
+  const visible = new Set(tops.map(t=>t.id));
+  function treeNode(node, depth=0){
+    const kids = state.topics.filter(t=>t.parentId===node.id && !t.archived);
+    const visibleKids = kids.filter(k=>k.kind==='topic'||k.tipo==='topico' ? visible.has(k.id) : hasVisible(k));
+    if((node.kind==='topic'||node.tipo==='topico')) return visible.has(node.id) ? topicRow(node) : '';
+    if(!visibleKids.length && (q || ui.topicFilterEstado!=='all' || ui.topicFilterPriority!=='all')) return '';
+    if(!kids.length) return '';
+    return `<details class="ex-curriculum-group" ${depth<2?'open':''}><summary><span>${esc(node.titulo)}</span><small>${visibleKids.length} ${visibleKids.length===1?'tópico':'itens'}</small></summary><div class="ex-curriculum-children">${visibleKids.map(k=>treeNode(k,depth+1)).join('')}</div></details>`;
+  }
+  function hasVisible(node){ return state.topics.some(t=>t.parentId===node.id && !t.archived && ((t.kind==='topic'||t.tipo==='topico') ? visible.has(t.id) : hasVisible(t))); }
+  const discs = state.exams.filter(e=> ui.topicFilterDisc==='all' ? e.id!=='disc-geral' && state.topics.some(t=>t.disciplinaId===e.id&&!t.archived) : e.id===ui.topicFilterDisc);
   let treeHtml = '';
   discs.forEach(d=>{
-    const doms = state.topics.filter(t=>t.tipo==='dominio' && t.disciplinaId===d.id);
-    let domHtml = '';
-    doms.forEach(dom=>{
-      const subs = state.topics.filter(t=>t.tipo==='subdominio' && t.parentId===dom.id);
-      let subHtml = '';
-      subs.forEach(sub=>{
-        const items = tops.filter(t=>t.parentId===sub.id);
-        if(!items.length && (q || ui.topicFilterEstado!=='all')) return;
-        const itemsHtml = items.map(t=>topicRow(t)).join('') || `<div class="ex-empty">Sem tópicos neste subdomínio.</div>`;
-        subHtml += `<div class="ex-subgroup"><div class="ex-subgroup-title">${esc(sub.titulo)}</div><div class="ex-topic-list">${itemsHtml}</div></div>`;
-      });
-      if(!subHtml && (q || ui.topicFilterEstado!=='all')) return;
-      domHtml += `<div class="ex-domain"><div class="ex-domain-title">${esc(dom.titulo)}</div>${subHtml || '<div class="ex-empty">Sem subdomínios/tópicos.</div>'}</div>`;
-    });
-    if(!domHtml && (q || ui.topicFilterEstado!=='all')) return;
-    treeHtml += `<section class="ex-card ex-disc-block"><header class="ex-disc-head"><span class="ex-disc-dot" style="background:${d.cor||'#7AA7D9'}"></span><h3>${esc(d.nome)}</h3></header>${domHtml || '<div class="ex-empty">Sem tópicos. Adiciona abaixo.</div>'}</section>`;
+    const roots = state.topics.filter(t=>t.disciplinaId===d.id && !t.parentId && !t.archived);
+    const html = roots.map(n=>treeNode(n)).filter(Boolean).join('');
+    const collapsed = ui.collapsedSyllabusDisciplines.has(d.id);
+    treeHtml += `<section class="ex-card ex-disc-block"><header class="ex-disc-head"><span class="ex-disc-dot" style="background:${d.cor||'#7AA7D9'}"></span><h3>${esc(d.nome)}</h3><span class="ex-source-tag">${tops.filter(t=>t.disciplinaId===d.id).length} tópicos</span><button type="button" class="ex-btn ex-btn-sm ex-disc-collapse" data-disc-collapse="${esc(d.id)}" aria-expanded="${!collapsed}">${collapsed?'Ver mais':'Ver menos'}</button></header><div class="ex-disc-content" ${collapsed?'hidden':''}>${html || '<div class="ex-empty">Sem tópicos para os filtros atuais.</div>'}</div></section>`;
   });
   if(!treeHtml) treeHtml = `<div class="ex-card ex-empty">Sem tópicos para os filtros atuais.</div>`;
 
   wrap.innerHTML = `
     <div class="ex-card ex-form-card">
-      <div class="ex-section-head"><h3>Adicionar disciplina / tópico</h3></div>
+      <div class="ex-section-head"><h3>Adicionar tópico personalizado</h3></div>
       <form id="ex-topic-form" class="ex-form-grid ex-form-topics">
         <select id="ex-topic-disc" class="ex-input">${discFormOpts}</select>
         <input id="ex-topic-dom" class="ex-input" placeholder="Domínio" value="Geral">
-        <input id="ex-topic-sub" class="ex-input" placeholder="Subdomínio" value="Geral">
+        <input id="ex-topic-sub" class="ex-input" placeholder="Tema" value="Geral">
         <input id="ex-topic-title" class="ex-input" placeholder="Tópico" required>
         <select id="ex-topic-estado" class="ex-input">
           <option value="nao_iniciado">Não iniciado</option>
@@ -680,11 +863,6 @@ function renderTopics(){
           <option value="precisa_revisao">Precisa de revisão</option>
         </select>
         <button type="submit" class="ex-btn ex-btn-primary">Adicionar</button>
-      </form>
-      <form id="ex-disc-form" class="ex-inline-form">
-        <input id="ex-disc-nome" class="ex-input" placeholder="Nova disciplina/exame" />
-        <input id="ex-disc-data" type="date" class="ex-input" />
-        <button type="submit" class="ex-btn">Adicionar disciplina</button>
       </form>
     </div>
 
@@ -698,15 +876,14 @@ function renderTopics(){
         <option value="concluido" ${ui.topicFilterEstado==='concluido'?'selected':''}>Concluído</option>
         <option value="precisa_revisao" ${ui.topicFilterEstado==='precisa_revisao'?'selected':''}>Precisa de revisão</option>
       </select>` : ''}
+      <select id="ex-topic-fpriority" class="ex-input"><option value="all">Todas as prioridades</option><option value="high" ${ui.topicFilterPriority==='high'?'selected':''}>Prioridade alta</option><option value="due" ${ui.topicFilterPriority==='due'?'selected':''}>Revisão pendente</option></select>
       <div class="ex-view-toggle" role="group" aria-label="Vista dos tópicos">
         <button type="button" data-topic-view="quadro" aria-pressed="${vista === 'quadro'}">Quadro</button>
         <button type="button" data-topic-view="lista" aria-pressed="${vista === 'lista'}">Lista</button>
       </div>
     </div>
 
-    ${vista === 'quadro'
-      ? boardTopicsHtml(tops)
-      : `<div class="ex-topics-tree">${treeHtml}</div>`}
+    ${vista === 'quadro' ? boardTopicsHtml(tops) : `<div class="ex-topics-tree">${treeHtml}</div>`}
   `;
 
   $('#ex-topic-form')?.addEventListener('submit', e=>{
@@ -718,25 +895,22 @@ function renderTopics(){
     const estado = $('#ex-topic-estado').value || 'nao_iniciado';
     if(!titulo) return miniToast('Escreve o tópico.', 'warn');
     const { sub: subNode } = ensureDomainSub(disciplinaId, dom, sub);
-    state.topics.push({ id: uid('top'), disciplinaId, parentId: subNode.id, tipo:'topico', titulo, estado, confianca:3, notasPessoais:'', materialIds:[], exercicioIds:[], ultimaAtividade: Date.now() });
+    state.topics.push({ id: uid('top'), disciplinaId, parentId: subNode.id, tipo:'topico', kind:'topic', titulo, descricao:'', importance:3, prioridade:3, difficulty:3, estado, masteryPct:0, confianca:3, notasPessoais:'', dificuldades:'', materialIds:[], exercicioIds:[], exerciseCount:0, studyMinutes:0, accuracyPct:null, ultimaAtividade: Date.now() });
     saveState(); miniToast('Tópico adicionado.');
-  });
-  $('#ex-disc-form')?.addEventListener('submit', e=>{
-    e.preventDefault();
-    const nome = ($('#ex-disc-nome').value||'').trim();
-    const data = $('#ex-disc-data').value || '';
-    if(!nome) return miniToast('Indica o nome da disciplina.', 'warn');
-    const id = 'disc-' + uid('x');
-    state.exams.unshift({ id, nome, cor:'#8CB4E2', dataExame:data });
-    ensureDomainSub(id,'Geral','Geral');
-    saveState(); miniToast('Disciplina adicionada.');
   });
   $('#ex-topic-q')?.addEventListener('input', e=>{ ui.topicQuery = e.target.value; renderTopics(); });
   $('#ex-topic-fdisc')?.addEventListener('change', e=>{ ui.topicFilterDisc = e.target.value; renderTopics(); });
   $('#ex-topic-festado')?.addEventListener('change', e=>{ ui.topicFilterEstado = e.target.value; renderTopics(); });
+  $('#ex-topic-fpriority')?.addEventListener('change', e=>{ ui.topicFilterPriority = e.target.value; renderTopics(); });
   $all('[data-topic-view]', wrap).forEach(b=>b.addEventListener('click', ()=>{
     if(b.dataset.topicView === vista) return;
     guardarVistaTopicos(b.dataset.topicView);
+    renderTopics();
+  }));
+  $all('[data-disc-collapse]', wrap).forEach(b=>b.addEventListener('click', ()=>{
+    const id = b.dataset.discCollapse;
+    if (ui.collapsedSyllabusDisciplines.has(id)) ui.collapsedSyllabusDisciplines.delete(id);
+    else ui.collapsedSyllabusDisciplines.add(id);
     renderTopics();
   }));
 
@@ -752,10 +926,15 @@ function topicRow(t){
       <div class="ex-topic-title">${esc(t.titulo)}</div>
       <div class="ex-topic-meta">
         <span class="ex-badge ${topicStatusClass(t.estado)}">${esc(topicStatusLabel(t.estado))}</span>
-        <span class="ex-muted-sm">Confiança: ${esc(String(t.confianca||3))}/5</span>
+        <span class="ex-muted-sm">Domínio ${Number(t.masteryPct)||0}%</span>
+        <span class="ex-muted-sm">Prioridade ${Number(t.importancia||t.prioridade||3)}/5</span>
+        ${t.nextReviewDate?`<span class="ex-muted-sm">Rever ${esc(fmtDate(t.nextReviewDate))}</span>`:''}
         ${mats.length?`<span class="ex-muted-sm">${mats.length} materiais</span>`:''}
         ${exs.length?`<span class="ex-muted-sm">${exs.length} exercícios</span>`:''}
       </div>
+      <div class="ex-mastery-track"><span style="width:${clamp(Number(t.masteryPct)||0,0,100)}%"></span></div>
+      ${t.descricao?`<div class="ex-topic-description">${esc(t.descricao)}</div>`:''}
+      ${t.dificuldades?`<div class="ex-topic-difficulty">Dificuldade: ${esc(t.dificuldades)}</div>`:''}
       ${t.notasPessoais ? `<div class="ex-topic-notes">${esc(t.notasPessoais)}</div>` : ''}
     </div>
     <div class="ex-topic-actions">
@@ -765,6 +944,7 @@ function topicRow(t){
       <select class="ex-input ex-input-sm" data-topic-conf="${esc(t.id)}" aria-label="Confiança">
         ${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(t.confianca||3)===n?'selected':''}>Conf. ${n}</option>`).join('')}
       </select>
+      <label class="ex-mastery-input">Domínio <input type="number" min="0" max="100" value="${clamp(Number(t.masteryPct)||0,0,100)}" data-topic-mastery="${esc(t.id)}" aria-label="Domínio de 0 a 100 por cento">%</label>
       <button type="button" class="ex-btn ex-btn-sm" data-topic-edit="${esc(t.id)}"><svg class="icon h-3.5 w-3.5" aria-hidden="true"><use href="#i-pencil"/></svg><span>Editar</span></button>
       <button type="button" class="ex-btn ex-btn-sm" data-topic-study="${esc(t.id)}">Estudar</button>
       <button type="button" class="ex-btn ex-btn-sm ex-btn-danger" data-topic-del="${esc(t.id)}" aria-label="Apagar tópico">Apagar</button>
@@ -778,9 +958,12 @@ function bindTopicActions(root){
   $all('[data-topic-conf]', root).forEach(sel=>sel.addEventListener('change', ()=>{
     const t=getTopic(sel.dataset.topicConf); if(!t) return; t.confianca=Number(sel.value||3); t.ultimaAtividade=Date.now(); state.ui.lastTopicId=t.id; saveState();
   }));
+  $all('[data-topic-mastery]', root).forEach(inp=>inp.addEventListener('change', ()=>{
+    const t=getTopic(inp.dataset.topicMastery); if(!t) return; t.masteryPct=clamp(Number(inp.value)||0,0,100); t.updatedAt=Date.now(); saveState();
+  }));
   $all('[data-topic-edit]', root).forEach(b=>b.addEventListener('click', ()=> openTopicDialog(b.dataset.topicEdit)));
   $all('[data-topic-study]', root).forEach(b=>b.addEventListener('click', ()=>{
-    const id=b.dataset.topicStudy; state.ui.lastTopicId=id; exWrite(STORE_KEY,state); setTab('plano');
+    const id=b.dataset.topicStudy; state.ui.lastTopicId=id; exWrite(STORE_KEY,state); setTab('plan');
   }));
   $all('[data-topic-del]', root).forEach(b=>b.addEventListener('click', ()=>{
     const id=b.dataset.topicDel; const t=getTopic(id); if(!t) return;
@@ -795,17 +978,26 @@ function bindTopicActions(root){
 }
 function openTopicDialog(id){
   const t=getTopic(id); if(!t) return;
+  const prerequisites = allTopicsFlat().filter(x=>x.id!==t.id && (x.kind==='topic'||x.tipo==='topico'));
+  const prereqHtml = prerequisites.map(x=>`<option value="${esc(x.id)}" ${(t.blockedBy||t.prerequisiteIds||[]).includes(x.id)?'selected':''}>${esc(discLabel(x.disciplinaId))} · ${esc(x.titulo)}</option>`).join('');
   const dlg = document.createElement('dialog');
   dlg.className = 'm-auto w-[min(38rem,94vw)] ex-dialog';
   dlg.innerHTML = `<form method="dialog" class="ex-dialog-inner">
     <div class="ex-dialog-head"><h3>Editar tópico</h3><button type="button" class="ex-btn ex-btn-sm" data-close>Fechar</button></div>
     <div class="ex-dialog-body ex-form-stack">
-      <label class="ex-label">Título<input id="td-title" class="ex-input" value="${esc(t.titulo)}"></label>
+      <label class="ex-label">Nome<input id="td-title" class="ex-input" value="${esc(t.titulo)}"></label>
+      <label class="ex-label">Descrição<textarea id="td-description" class="ex-input" rows="2">${esc(t.descricao||'')}</textarea></label>
       <div class="ex-form-grid-2">
         <label class="ex-label">Estado<select id="td-estado" class="ex-input">${['nao_iniciado','em_progresso','concluido','precisa_revisao'].map(s=>`<option value="${s}" ${t.estado===s?'selected':''}>${topicStatusLabel(s)}</option>`).join('')}</select></label>
-        <label class="ex-label">Confiança<select id="td-conf" class="ex-input">${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(t.confianca||3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
+        <label class="ex-label">Domínio (%)<input id="td-mastery" type="number" min="0" max="100" class="ex-input" value="${clamp(Number(t.masteryPct)||0,0,100)}"></label>
+        <label class="ex-label">Prioridade (1–5)<input id="td-priority" type="number" min="1" max="5" class="ex-input" value="${clamp(Number(t.importancia||t.prioridade||3),1,5)}"></label>
+        <label class="ex-label">Dificuldade (1–5)<input id="td-difficulty" type="number" min="1" max="5" class="ex-input" value="${clamp(Number(t.difficulty||3),1,5)}"></label>
+        <label class="ex-label">Confiança (1–5)<input id="td-conf" type="number" min="1" max="5" class="ex-input" value="${clamp(Number(t.confianca||3),1,5)}"></label>
       </div>
-      <label class="ex-label">Notas pessoais<textarea id="td-notas" class="ex-input" rows="4">${esc(t.notasPessoais||'')}</textarea></label>
+      <label class="ex-label">Dificuldades identificadas<textarea id="td-difficulty-notes" class="ex-input" rows="2">${esc(t.dificuldades||'')}</textarea></label>
+      <label class="ex-label">Pré-requisitos (o plano desbloqueia estes tópicos quando o domínio atingir 60%)<select id="td-prereqs" class="ex-input" multiple size="5">${prereqHtml}</select></label>
+      <label class="ex-label">Notas pessoais<textarea id="td-notas" class="ex-input" rows="3">${esc(t.notasPessoais||'')}</textarea></label>
+      ${t.needsValidation?'<p class="ex-source-tag">Conteúdo inicial baseado nas tuas notas; validação contra a Informação-Prova de 2027 pendente.</p>':''}
     </div>
     <div class="ex-dialog-foot"><button type="button" class="ex-btn" data-close>Cancelar</button><button type="submit" class="ex-btn ex-btn-primary">Guardar</button></div>
   </form>`;
@@ -816,8 +1008,15 @@ function openTopicDialog(id){
   dlg.querySelector('form').addEventListener('submit', e=>{
     e.preventDefault();
     t.titulo = ($('#td-title',dlg).value||'').trim() || t.titulo;
+    if(t.source) t.userTitle=t.titulo;
+    t.descricao = ($('#td-description',dlg).value||'').trim();
     t.estado = $('#td-estado',dlg).value;
     t.confianca = Number($('#td-conf',dlg).value||3);
+    t.masteryPct = clamp(Number($('#td-mastery',dlg).value)||0,0,100);
+    t.importancia = t.prioridade = clamp(Number($('#td-priority',dlg).value)||3,1,5);
+    t.difficulty = clamp(Number($('#td-difficulty',dlg).value)||3,1,5);
+    t.dificuldades = ($('#td-difficulty-notes',dlg).value||'').trim();
+    t.blockedBy = [...$('#td-prereqs',dlg).selectedOptions].map(o=>o.value);
     t.notasPessoais = ($('#td-notas',dlg).value||'').trim();
     t.ultimaAtividade = Date.now(); state.ui.lastTopicId = t.id;
     close(); saveState(); miniToast('Tópico atualizado.');
@@ -927,8 +1126,38 @@ function isErroTipo(t){ return ['erro_teste','erro_exame','exercicio_dificil','d
 function isRevisaoTipo(t){ return ['conceito','formula','resolucao'].includes(t); }
 function issueTypeLabel(t){ return ({conceito:'Conceito', formula:'Fórmula', duvida:'Dúvida', exercicio_dificil:'Exercício difícil', erro_teste:'Erro em teste', erro_exame:'Erro em exame', resolucao:'Resolução/Explicação'})[t]||t; }
 
+function renderPractice(){
+  const root=$('#exames-pratica-controls'); if(!root) return;
+  const discForm=state.exams.filter(e=>e.id!=='disc-geral').map(e=>`<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
+  const topicForm=allTopicsFlat().map(t=>`<option value="${esc(t.id)}">${esc(discLabel(t.disciplinaId))} · ${esc(t.titulo)}</option>`).join('');
+  const recent=[...state.practice].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,20);
+  root.innerHTML=`<section class="ex-card"><div class="ex-section-head"><div><h3>Registar prática</h3><span class="ex-muted-sm">Exercícios, exames nacionais e simulados.</span></div></div>
+    <form id="practice-form" class="ex-form-grid ex-form-issues">
+      <select name="kind" class="ex-input"><option value="exercise">Exercícios</option><option value="national_exam">Exame nacional</option><option value="mock_exam">Simulado</option></select>
+      <select name="topicId" class="ex-input" required>${topicForm}</select>
+      <input name="title" class="ex-input" placeholder="Nome / ano / fase (opcional)">
+      <input name="count" type="number" min="0" class="ex-input" placeholder="Exercícios" required>
+      <input name="correct" type="number" min="0" class="ex-input" placeholder="Respostas corretas" required>
+      <input name="minutes" type="number" min="0" class="ex-input" placeholder="Minutos" value="0">
+      <input name="difficulty" type="number" min="1" max="5" class="ex-input" placeholder="Dificuldade 1–5" value="3">
+      <textarea name="errors" class="ex-input ex-span-2" rows="2" placeholder="Erros ou dúvidas que queres acompanhar"></textarea>
+      <button class="ex-btn ex-btn-primary" type="submit">Guardar resultado</button>
+    </form></section>
+    <section class="ex-card"><div class="ex-section-head"><h3>Histórico de desempenho</h3><span class="ex-muted-sm">${state.practice.length} registos</span></div><div class="ex-list">${recent.map(p=>`<div class="ex-row"><div class="ex-row-main"><strong>${esc(p.title||({exercise:'Exercícios',national_exam:'Exame nacional',mock_exam:'Simulado',session:'Sessão'})[p.kind]||p.kind)} · ${esc(topicLabel(p.topicId))}</strong><div class="ex-row-meta"><span>${esc(discLabel(p.disciplinaId))}</span><span>${esc(fmtDate(p.date))}</span><span>${p.correct}/${p.count} corretas · ${p.accuracyPct}%</span><span>${p.minutes||0} min</span></div></div></div>`).join('')||'<div class="ex-empty">Ainda não há resultados registados.</div>'}</div></section>`;
+  root.querySelector('#practice-form')?.addEventListener('submit',e=>{
+    e.preventDefault();const fd=new FormData(e.currentTarget);const topic=getTopic(String(fd.get('topicId')));if(!topic)return;
+    const count=Math.max(0,Number(fd.get('count'))||0),correct=clamp(Number(fd.get('correct'))||0,0,count),minutes=Math.max(0,Number(fd.get('minutes'))||0),difficulty=clamp(Number(fd.get('difficulty'))||3,1,5);
+    const item={id:uid('practice'),kind:String(fd.get('kind')),topicId:topic.id,disciplinaId:topic.disciplinaId,title:String(fd.get('title')||''),date:todayKey(),count,correct,accuracyPct:count?Math.round(correct/count*100):0,minutes,difficulty,errors:String(fd.get('errors')||''),createdAt:Date.now()};
+    state.practice.unshift(item);window.ExamEngine.applySession(topic,{durationMin:minutes,exerciseCount:count,correctCount:correct,difficulty,confidence:topic.confidence||3,difficultyNotes:item.errors,activity:'practice'},todayKey());
+    if(item.errors.trim()||correct<count)state.issues.unshift({id:uid('iss'),tipo:item.kind==='national_exam'?'erro_exame':'exercicio_dificil',disciplinaId:topic.disciplinaId,topicId:topic.id,titulo:item.title||`${count-correct} erro(s) em prática`,descricao:item.errors||`${correct}/${count} corretas`,resolucao:'',estado:'precisa_revisao',createdAt:Date.now(),updatedAt:Date.now()});
+    generateStudyPlan(true);miniToast('Resultado guardado; domínio, prioridade, revisão e plano atualizados.');
+  });
+}
+
 function renderRevisao(){
   const wrap = $('#exames-revisao'); if(!wrap) return;
+  const pending = window.ExamEngine?.pendingReviews(allTopicsFlat()) || [];
+  const pendingHtml = `<section class="ex-card"><div class="ex-section-head"><div><h3>Revisões pendentes hoje</h3><span class="ex-muted-sm">Intervalos adaptativos: 1, 3, 7, 14 e 30+ dias.</span></div><span class="ex-badge-count">${pending.length}</span></div><div class="ex-list">${pending.length?pending.map(({topic,daysLate,score})=>`<div class="ex-row"><div class="ex-row-main"><strong>${esc(topic.titulo)}</strong><div class="ex-row-meta"><span>${esc(discLabel(topic.disciplinaId))}</span><span>Domínio ${Number(topic.masteryPct)||0}%</span><span>${daysLate?`${daysLate} dia(s) de atraso`:'Hoje'}</span><span>Prioridade ${score}/100</span></div></div><button type="button" class="ex-btn ex-btn-primary" data-review-topic="${esc(topic.id)}">Rever e registar</button></div>`).join(''):'<div class="ex-empty">Sem revisões vencidas. Continua a registar os resultados das sessões.</div>'}</div></section>`;
   const discOpts = state.exams.map(e=>`<option value="${esc(e.id)}" ${ui.revFilterDisc===e.id?'selected':''}>${esc(e.nome)}</option>`).join('');
   const discForm = state.exams.map(e=>`<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
   const topForm = allTopicsFlat().map(t=>`<option value="${esc(t.id)}">${esc(discLabel(t.disciplinaId))} · ${esc(t.titulo)}</option>`).join('');
@@ -942,7 +1171,7 @@ function renderRevisao(){
     return true;
   }).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
 
-  wrap.innerHTML = `
+  wrap.innerHTML = `${pendingHtml}
     <div class="ex-card ex-form-card">
       <div class="ex-section-head"><h3>Guardar para revisão</h3></div>
       <form id="ex-rev-form" class="ex-form-grid ex-form-issues">
@@ -971,6 +1200,11 @@ function renderRevisao(){
     e.preventDefault();
     addIssueFromForm('rev');
   });
+  $all('[data-review-topic]',wrap).forEach(b=>b.addEventListener('click',()=>{
+    const t=getTopic(b.dataset.reviewTopic); if(!t)return;
+    const s={id:uid('sess'),disciplinaId:t.disciplinaId,topicId:t.id,data:todayKey(),duracaoMin:20,activity:'revision',concluida:false,createdAt:Date.now(),updatedAt:Date.now()};
+    state.sessions.unshift(s); saveState(); openSessionCompletion(s);
+  }));
   bindIssueFiltersAndActions(wrap,'rev', renderRevisao);
 }
 
@@ -1114,6 +1348,22 @@ function startOfWeek(d){
 function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 function renderPlano(){
   const wrap = $('#exames-plano'); if(!wrap) return;
+  ensureCurrentPlan();
+  const plan = state.activePlan;
+  const dailyPlan = plan?.daily?.items || [];
+  const weeklyPlan = plan?.week || [];
+  const monthPlan = plan?.month || [];
+  const prerequisiteAudit = plan?.prerequisiteValidation;
+  const prerequisiteWarning = prerequisiteAudit && !prerequisiteAudit.valid
+    ? `<div class="ex-empty">Atenção: há relações de pré-requisito inválidas (${prerequisiteAudit.invalid.length}) ou ciclos (${prerequisiteAudit.cycles.length}). Confirma as dependências nos tópicos antes de avançar.</div>` : '';
+  const generatedDaily = dailyPlan.map(plannedEntry).join('') || '<div class="ex-empty">Sem recomendações para hoje.</div>';
+  const generatedWeek = weeklyPlan.map(day=>`<section class="ex-plan-day"><header><strong>${esc(fmtDate(day.date))}</strong><span>${day.totalMinutes} min</span></header><div>${day.items.length?day.items.map(plannedEntry).join(''):'<span class="ex-muted-sm">Dia livre / reserva</span>'}</div></section>`).join('');
+  const monthSummary = (plan?.monthSummary || []).filter(x=>x.examId!=='disc-geral').map(x=>`<div class="ex-roadmap-subject"><strong>${esc(discLabel(x.examId))}</strong><span>${x.topics} sessões · ${x.minutes} min</span></div>`).join('');
+  const monthMilestones = Array.from({length:4},(_,i)=>{
+    const chunk=monthPlan.slice(Math.floor(i*monthPlan.length/4),Math.floor((i+1)*monthPlan.length/4));
+    const count=chunk.flatMap(d=>d.items).length;
+    return `<div class="ex-roadmap-milestone"><span>Semana ${i+1}</span><strong>${count} sessões planeadas</strong><small>${chunk.flatMap(d=>d.items).reduce((n,x)=>n+x.durationMin,0)} min · progresso esperado: ${Math.min(100,Math.round(100*(i+1)/4))}% do plano mensal</small></div>`;
+  }).join('');
   const discForm = state.exams.map(e=>`<option value="${esc(e.id)}">${esc(e.nome)}</option>`).join('');
   const topForm = allTopicsFlat().map(t=>`<option value="${esc(t.id)}">${esc(discLabel(t.disciplinaId))} · ${esc(t.titulo)}</option>`).join('');
   const now = new Date(); const weekStart = addDays(startOfWeek(now), ui.planoWeekOffset*7);
@@ -1131,6 +1381,14 @@ function renderPlano(){
   }).join('')}</div>`;
 
   wrap.innerHTML = `
+    <div class="ex-card ex-planner-config"><div class="ex-section-head"><div><h3>Motor de planeamento</h3><span class="ex-muted-sm">Pontua domínio, importância, revisão, dificuldade, exercícios e proximidade do exame.</span></div><div class="flex gap-2"><button type="button" class="ex-btn" data-plan-mark-week>Marcar semana no Horário</button><button type="button" class="ex-btn ex-btn-primary" data-plan-generate>Gerar plano personalizado</button></div></div>
+      ${prerequisiteWarning}
+      <div class="ex-form-grid-2"><label class="ex-label">Tempo disponível por dia (min)<input id="plan-minutes-day" type="number" min="20" max="720" step="15" class="ex-input" value="${Number(state.settings.minutesPerDay)||90}"></label><label class="ex-label">Duração preferida por sessão (min)<input id="plan-session-minutes" type="number" min="15" max="120" step="5" class="ex-input" value="${Number(state.settings.sessionMinutes)||45}"></label></div>
+      <div class="ex-plan-range-tabs"><button type="button" data-plan-range="daily" aria-pressed="${ui.planRange==='daily'}">Daily</button><button type="button" data-plan-range="weekly" aria-pressed="${ui.planRange==='weekly'}">Weekly</button><button type="button" data-plan-range="monthly" aria-pressed="${ui.planRange==='monthly'}">Monthly</button></div>
+      <div class="ex-section-head"><h3>${ui.planRange==='daily'?'Plano de hoje':ui.planRange==='weekly'?'Plano da semana':'Roteiro mensal'}</h3><span class="ex-muted-sm">Gerado ${plan?new Date(plan.generatedAt).toLocaleString('pt-PT'):'—'}</span></div>
+      ${ui.planRange==='daily'?`<div class="ex-plan-list">${generatedDaily}</div>`:ui.planRange==='weekly'?`<div class="ex-week-roadmap">${generatedWeek}</div>`:`<div class="ex-roadmap-grid"><div>${monthSummary}<p class="ex-muted-sm">${monthPlan.flatMap(d=>d.items).length} sessões · ${monthPlan.reduce((n,d)=>n+d.totalMinutes,0)} minutos previstos</p></div><div>${monthMilestones}</div></div>`}
+      <details class="ex-plan-history"><summary>Histórico de planos gerados (${state.planHistory.length})</summary><div>${state.planHistory.slice(0,12).map(p=>`<div class="ex-history-row"><span>${esc(p.today||'')} · ${new Date(p.generatedAt||Date.now()).toLocaleString('pt-PT')}</span><span>${p.daily?.items?.length||0} sessões hoje · ${p.week?.flatMap(d=>d.items||[]).length||0} na semana</span></div>`).join('')||'<span class="ex-muted-sm">Ainda sem histórico anterior.</span>'}</div></details>
+    </div>
     <div class="ex-card ex-form-card">
       <div class="ex-section-head"><h3>Planear sessão de estudo</h3></div>
       <form id="ex-sess-form" class="ex-form-grid ex-form-sess">
@@ -1170,7 +1428,7 @@ function renderPlano(){
     const notas = ($('#ex-sess-notes').value||'').trim();
     const integrar = $('#ex-sess-cal').checked;
     if(!data) return miniToast('Indica a data.', 'warn');
-    const sess = { id: uid('sess'), disciplinaId, topicId, data, duracaoMin, notas, concluida:false, createdAt: Date.now(), updatedAt: Date.now(), calendarTaskId:null, calendarDate:data };
+    const sess = { id: uid('sess'), disciplinaId, topicId, data, duracaoMin, notas, activity:'new', concluida:false, createdAt: Date.now(), updatedAt: Date.now(), calendarTaskId:null, calendarDate:data };
     state.sessions.unshift(sess);
     if(topicId){ const t=getTopic(topicId); if(t){ t.ultimaAtividade=Date.now(); state.ui.lastTopicId=t.id; } }
     if(integrar && typeof persistirTarefasDia === 'function'){
@@ -1186,6 +1444,13 @@ function renderPlano(){
     }
     saveState(); miniToast('Sessão planeada.');
   });
+
+  $('#plan-minutes-day')?.addEventListener('change',e=>{state.settings.minutesPerDay=clamp(Number(e.target.value)||90,20,720);saveState();});
+  $('#plan-session-minutes')?.addEventListener('change',e=>{state.settings.sessionMinutes=clamp(Number(e.target.value)||45,15,120);saveState();});
+  wrap.querySelector('[data-plan-generate]')?.addEventListener('click',()=>generateStudyPlan(true));
+  wrap.querySelector('[data-plan-mark-week]')?.addEventListener('click',marcarSemanaNoHorario);
+  $all('[data-plan-range]',wrap).forEach(b=>b.addEventListener('click',()=>{ui.planRange=b.dataset.planRange;renderPlano();}));
+  $all('[data-plan-start]',wrap).forEach(b=>b.addEventListener('click',()=>startPlannedSession(b.dataset.planStart)));
 
   $all('[data-plano-view]').forEach(b=>b.addEventListener('click', ()=>{ ui.planoView=b.dataset.planoView; renderPlano(); }));
   $all('[data-week-delta]').forEach(b=>b.addEventListener('click', ()=>{ ui.planoWeekOffset += Number(b.dataset.weekDelta||0); renderPlano(); }));
@@ -1269,6 +1534,7 @@ function reconciliarSessoesConcluidas() {
 function bindSessionActions(root){
   $all('[data-sess-done]').forEach(b=>b.addEventListener('click', async ()=>{
     const s = state.sessions.find(x=>x.id===b.dataset.sessDone); if(!s) return;
+    if(!s.concluida) { openSessionCompletion(s); return; }
     s.concluida = !s.concluida;
     s.updatedAt = Date.now();
     if(s.concluida) creditarSessaoNosTotais(s);
@@ -1305,14 +1571,38 @@ function bindSessionActions(root){
 function renderBadges(){
   const prog = progressOverall();
   const mats = state.materials.length;
-  const revs = state.issues.filter(i=>i.estado!=='resolvido').length;
+  const revs = window.ExamEngine?.pendingReviews(allTopicsFlat()).length || 0;
   const errs = state.issues.filter(i=>['erro_teste','erro_exame','exercicio_dificil','duvida'].includes(i.tipo) && i.estado!=='resolvido').length;
   const set = (name, val)=>{ const b=document.querySelector(`[data-exame-badge="${name}"]`); if(!b) return; if(!val){b.hidden=true;} else {b.hidden=false; b.textContent=String(val);} };
-  set('plano', state.sessions.filter(s=>!s.concluida).length || '');
-  set('topicos', prog.pending || '');
-  set('materiais', mats || '');
-  set('revisao', revs || '');
-  set('duvidas', errs || '');
+  set('plan', state.sessions.filter(s=>!s.concluida).length || '');
+  set('syllabus', prog.pending || '');
+  set('revisions', revs || '');
+}
+
+function renderAnalytics(){
+  const wrap=$('#exames-analytics');if(!wrap)return;
+  const topics=allTopicsFlat();const pending=window.ExamEngine?.pendingReviews(topics)||[];
+  const sessions=state.sessions.filter(s=>s.concluida);
+  const practice=state.practice;
+  const totalExercises=practice.reduce((n,p)=>n+(Number(p.count)||0),0);
+  const totalCorrect=practice.reduce((n,p)=>n+(Number(p.correct)||0),0);
+  const totalMinutes=sessions.reduce((n,s)=>n+(Number(s.duracaoMin)||0),0)+practice.reduce((n,p)=>n+(Number(p.minutes)||0),0);
+  const subjectRows=state.exams.filter(e=>e.id!=='disc-geral').map(e=>{
+    const ts=topics.filter(t=>t.disciplinaId===e.id);const studied=ts.filter(t=>t.estado!=='nao_iniciado').length;const mastery=ts.length?Math.round(ts.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/ts.length):0;
+    const mins=sessions.filter(s=>s.disciplinaId===e.id).reduce((n,s)=>n+(Number(s.duracaoMin)||0),0)+practice.filter(p=>p.disciplinaId===e.id).reduce((n,p)=>n+(Number(p.minutes)||0),0);
+    const rows=practice.filter(p=>p.disciplinaId===e.id);const attempts=rows.reduce((n,p)=>n+(Number(p.count)||0),0);const correct=rows.reduce((n,p)=>n+(Number(p.correct)||0),0);
+    const pct=ts.length?Math.round(studied/ts.length*100):0;
+    return `<div class="ex-analytics-subject"><h3>${esc(e.nome)}</h3><div class="ex-analytics-metrics"><span>Matéria estudada <b>${pct}%</b></span><span>Domínio médio <b>${mastery}%</b></span><span>Tempo <b>${Math.round(mins/60*10)/10} h</b></span><span>Exercícios <b>${attempts}</b></span><span>Acerto <b>${attempts?Math.round(correct/attempts*100):0}%</b></span></div><div class="ex-analytics-bars"><div><label>Estudado</label><div class="ex-bar"><div style="width:${pct}%"></div></div></div><div><label>Domínio</label><div class="ex-bar"><div style="width:${mastery}%;background:#82b5a0"></div></div></div></div></div>`;
+  }).join('');
+  const today=todayKey();const days=Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(13-i));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
+  const trend=days.map(d=>{const mins=sessions.filter(s=>s.data===d).reduce((n,s)=>n+(Number(s.duracaoMin)||0),0)+practice.filter(p=>p.date===d).reduce((n,p)=>n+(Number(p.minutes)||0),0);return {date:d,mins};});const maxTrend=Math.max(30,...trend.map(x=>x.mins));
+  const weak=topics.slice().sort((a,b)=>Number(a.masteryPct||0)-Number(b.masteryPct||0)).slice(0,6);
+  const planned=state.activePlan?.daily?.items?.length||0;const actual=sessions.filter(s=>s.data===today).length;
+  wrap.innerHTML=`<div class="ex-grid-stats"><div class="ex-card ex-stat"><span class="ex-stat-label">Tempo registado</span><strong>${Math.floor(totalMinutes/60)}h ${totalMinutes%60}m</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Exercícios</span><strong>${totalExercises}</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Taxa de acerto</span><strong>${totalExercises?Math.round(totalCorrect/totalExercises*100):0}%</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Revisões atrasadas</span><strong>${pending.length}</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Plano de hoje</span><strong>${actual}/${planned}</strong><span class="ex-muted-sm">sessões concluídas / previstas</span></div></div>
+    <div class="ex-card"><div class="ex-section-head"><h3>Progresso por disciplina</h3><span class="ex-muted-sm">Estudado e domínio aparecem separados</span></div><div class="ex-analytics-grid">${subjectRows}</div></div>
+    <div class="ex-overview-grid"><section class="ex-card"><div class="ex-section-head"><h3>Tempo de estudo · últimos 14 dias</h3></div><div class="ex-trend-chart" role="img" aria-label="Minutos estudados por dia durante os últimos 14 dias">${trend.map(x=>`<div class="ex-trend-col" title="${x.date}: ${x.mins} min"><span style="height:${Math.max(3,Math.round(x.mins/maxTrend*100))}%"></span><small>${x.date.slice(8)}</small></div>`).join('')}</div></section>
+    <section class="ex-card"><div class="ex-section-head"><h3>Conteúdos que precisam de atenção</h3></div><div class="ex-list">${weak.map(t=>`<div class="ex-attention-row"><div><strong>${esc(t.titulo)}</strong><small>${esc(discLabel(t.disciplinaId))} · domínio ${Number(t.masteryPct)||0}%</small></div><span>${Number(t.exerciseCount)||0} exercícios · ${Number(t.accuracyPct)||0}% acerto</span></div>`).join('')}</div></section></div>
+    <div class="ex-card"><div class="ex-section-head"><h3>Histórico de sessões</h3><span class="ex-muted-sm">${sessions.length} concluídas</span></div><div class="ex-list">${sessions.slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,12).map(s=>`<div class="ex-row"><strong>${esc(topicLabel(s.topicId)||'Sessão')}</strong><span class="ex-muted-sm">${esc(discLabel(s.disciplinaId))} · ${esc(fmtDate(s.data))} · ${s.duracaoMin} min · ${esc(s.activity||'study')}</span></div>`).join('')||'<div class="ex-empty">Conclui sessões para começar a ver a evolução.</div>'}</div></div>`;
 }
 
 function renderAll(){
@@ -1323,17 +1613,29 @@ function renderAll(){
   renderMateriais();
   renderRevisao();
   renderDuvidasErros();
+  renderPractice();
+  renderAnalytics();
   renderBadges();
 }
 
 function lerTabGuardada(){
-  try { const v=localStorage.getItem(EXAME_TAB_KEY); return TABS.includes(v)?v:'visao'; } catch { return 'visao'; }
+  try { const v=localStorage.getItem(EXAME_TAB_KEY); return TABS.includes(v)?v:'overview'; } catch { return 'overview'; }
 }
 
 let ouvinteSyncRegistado = false;
 
 function ligar(){
-  state = loadState();
+  if (!catalogLoaded) {
+    window.__examCatalogReady.then(d=>{catalog=d||catalog; ligar();});
+    return;
+  }
+  const storedRaw=localStorage.getItem(STORE_KEY);
+  state = mergeCatalogState(loadState());
+  if (storedRaw !== JSON.stringify(state)) exWrite(STORE_KEY,state);
+  if (!state.activePlan || state.activePlan.today !== todayKey()) {
+    state.activePlan = window.ExamEngine?.generate(allTopicsFlat(),state.exams,state.settings,todayKey()) || null;
+    exWrite(STORE_KEY,state);
+  }
   reconciliarSessoesConcluidas();
   // O sync aplica o documento em fundirRemoto(); aqui só se redesenha.
   // Um único ouvinte (ligar() corre também em escreverTudo/import).
@@ -1403,6 +1705,10 @@ window.Exames = {
     }
     ligar();
   },
+  getTodayPlan(){ return state?.activePlan?.daily?.items || []; },
+  startPlanSession(id){ return startPlannedSession(id); },
+  completePlanItem(id){ return startPlannedSession(id); },
+  getPendingReviews(){ return window.ExamEngine?.pendingReviews(allTopicsFlat()) || []; },
 };
 
 })();

@@ -15,6 +15,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { createStore } = require('./db/store');
+const { dadosSyncValidos, fundirSyncData } = require('./lib/sync-merge');
 
 const PORT = Number(process.env.PORT) || 4321;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -83,10 +85,25 @@ const VAULT_BASE = findVaultBase();
 const vaultFolder = () => (VAULT_BASE ? path.join(VAULT_BASE, FOLDER) : null);
 
 function json(res, status, data) {
+    if (res.headersSent) {
+        try { res.end(); } catch { /* já fechado */ }
+        return;
+    }
     res.writeHead(status, {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
     }).end(JSON.stringify(data));
+}
+
+/* Resposta de erro que nunca rebenta com "headers already sent". */
+function erroInterno(res) {
+    if (res.headersSent) {
+        try { res.end(); } catch { /* já fechado */ }
+        return;
+    }
+    json(res, 500, { ok: false, reason: 'erro' });
 }
 
 function readBody(req, limite = MAX_BODY) {
@@ -110,9 +127,7 @@ function readBody(req, limite = MAX_BODY) {
 }
 
 async function api(req, res, url) {
-    if (contaAtiva && !SYNC_ABERTO && !sessaoValida(tokenDaSessao(req))) {
-        return json(res, 401, { ok: false, reason: 'sessao' });
-    }
+    if (!autorizarDados(req, res)) return;
 
     const route = url.pathname.slice('/api/vault'.length);
 
@@ -207,13 +222,17 @@ const SYNC_PASS_HASH = SYNC_USER && process.env.SYNC_PASS
     ? crypto.createHash('sha256').update(String(process.env.SYNC_PASS), 'utf8').digest()
     : null;
 const contaAtiva = Boolean(SYNC_USER && SYNC_PASS_HASH);
-// SYNC_OPEN=1: o /api/sync aceita toda a gente sem login — quem tem o link
-// fica logo sincronizado. O link passa a dar acesso TOTAL: só ligar para
-// partilhar com pessoas de confiança. A gestão (conta, links) continua
-// a exigir login.
-const SYNC_ABERTO = process.env.SYNC_OPEN === '1';
+// Dados pessoais já não podem ser sincronizados anonimamente.
+const SYNC_ABERTO = false;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+const pgStore = createStore(process.env.DATABASE_URL);
+if (process.env.RENDER && !process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL é obrigatório no Render para persistir os dados.');
+}
+if (process.env.RENDER && (!SYNC_USER || !process.env.SYNC_PASS)) {
+    throw new Error('SYNC_USER e SYNC_PASS são obrigatórios no Render para proteger os dados pessoais.');
+}
 const SYNC_FILE = path.join(DATA_DIR, 'sync.json');
 const SESSOES_FILE = path.join(DATA_DIR, 'sessoes.json');
 const SESSAO_MS = 180 * 24 * 60 * 60 * 1000;
@@ -252,10 +271,29 @@ try {
     console.log(`  ! Não foi possível preparar ${DATA_DIR}: ${error.message}`);
 }
 
-function guardarSync() {
-    const tmp = `${SYNC_FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(syncDoc), { mode: 0o600 });
-    fs.renameSync(tmp, SYNC_FILE);
+function escreverJsonAtomico(ficheiro, valor) {
+    const tmp = `${ficheiro}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(valor), { mode: 0o600 });
+    fs.renameSync(tmp, ficheiro);
+}
+
+/* A escrita é atómica no ficheiro e serializada na base de dados. A fila
+   evita que dois PUT concorrentes calculem a mesma revisão de base. */
+function persistirSync(doc) {
+    if (pgStore) return pgStore.putState(doc);
+    try {
+        escreverJsonAtomico(SYNC_FILE, doc);
+        return Promise.resolve();
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+let filaSync = Promise.resolve();
+function comFilaSync(fn) {
+    const atual = filaSync.then(fn, fn);
+    filaSync = atual.catch(() => { /* a próxima escrita continua */ });
+    return atual;
 }
 
 /* ── Push instantâneo por SSE ────────────────────────────────
@@ -272,8 +310,14 @@ function transmitirSync() {
     }
 }
 
-function guardarSessoes() {
-    fs.writeFileSync(SESSOES_FILE, JSON.stringify(sessoes), { mode: 0o600 });
+async function guardarSessao(token) {
+    if (pgStore) return pgStore.putSession(token, sessoes[token]);
+    escreverJsonAtomico(SESSOES_FILE, sessoes);
+}
+
+async function apagarSessao(token) {
+    if (pgStore) return pgStore.deleteSession(token);
+    escreverJsonAtomico(SESSOES_FILE, sessoes);
 }
 
 function hashIguais(a, b) {
@@ -286,6 +330,23 @@ function tokenDaSessao(req) {
     return m ? m[1].trim() : '';
 }
 
+function pedidoLoopback(req) {
+    if (process.env.RENDER) return false;
+    const ip = String(req.socket?.remoteAddress || '');
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+function autorizarDados(req, res) {
+    if (contaAtiva) {
+        if (sessaoValida(tokenDaSessao(req))) return true;
+        json(res, 401, { ok: false, reason: 'sessao' });
+        return false;
+    }
+    if (pedidoLoopback(req)) return true;
+    json(res, 503, { ok: false, reason: 'sem-conta' });
+    return false;
+}
+
 function sessaoValida(token) {
     const s = sessoes[token];
     if (!s) return false;
@@ -293,7 +354,7 @@ function sessaoValida(token) {
     if (s.partilha) return true;
     if (Date.now() - Number(s.criadoEm || 0) > SESSAO_MS) {
         delete sessoes[token];
-        try { guardarSessoes(); } catch { /* segue */ }
+        apagarSessao(token).catch(() => { /* segue */ });
         return false;
     }
     return true;
@@ -359,8 +420,9 @@ async function apiConta(req, res, url) {
         const token = crypto.randomBytes(48).toString('hex');
         sessoes[token] = { criadoEm: Date.now() };
         try {
-            guardarSessoes();
+            await guardarSessao(token);
         } catch {
+            delete sessoes[token];
             return json(res, 500, { ok: false, reason: 'erro' });
         }
         json(res, 200, { ok: true, token });
@@ -371,7 +433,7 @@ async function apiConta(req, res, url) {
         const token = tokenDaSessao(req);
         if (token && sessoes[token]) {
             delete sessoes[token];
-            try { guardarSessoes(); } catch { /* segue */ }
+            try { await apagarSessao(token); } catch { /* segue */ }
         }
         json(res, 200, { ok: true });
         return;
@@ -396,8 +458,9 @@ async function apiConta(req, res, url) {
         const novo = `sh_${crypto.randomBytes(32).toString('hex')}`;
         sessoes[novo] = { criadoEm: Date.now(), partilha: true, nome };
         try {
-            guardarSessoes();
+            await guardarSessao(novo);
         } catch {
+            delete sessoes[novo];
             return json(res, 500, { ok: false, reason: 'erro' });
         }
         json(res, 200, { ok: true, token: novo, nome });
@@ -434,7 +497,7 @@ async function apiConta(req, res, url) {
         const chave = Object.keys(sessoes).find((t) => t.startsWith(id) && sessoes[t] && sessoes[t].partilha);
         if (chave) {
             delete sessoes[chave];
-            try { guardarSessoes(); } catch { /* segue */ }
+            try { await apagarSessao(chave); } catch { /* segue */ }
         }
         json(res, 200, { ok: true });
         return;
@@ -443,114 +506,8 @@ async function apiConta(req, res, url) {
     json(res, 404, { ok: false, reason: 'rota' });
 }
 
-function dadosSyncValidos(data) {
-    return data && typeof data === 'object' && !Array.isArray(data)
-        && data.days && typeof data.days === 'object' && !Array.isArray(data.days);
-}
-
-function numMinSync(n) {
-    const x = Number(n);
-    return Number.isFinite(x) && x > 0 ? x : 0;
-}
-
-/* Fusão do documento de sync.
-   Regra geral: cada secção enviada substitui a guardada — EXCETO:
-   - sessões do Estudar: base por máximo, slots por máximo em cada
-     compartimento de aparelho (monotónico; push desatualizado nunca
-     apaga minutos de outro aparelho);
-   - galeria de PDFs: união por id menos os apagados (tombstones), para
-     um wipe ou um cliente desatualizado nunca esvaziarem a galeria. */
-const PDF_APAGADO_MS = 30 * 24 * 60 * 60 * 1000;
-
-function fundirColecaoSync(guardado, recebido, nomeLista, nomeApagados) {
-    const mapa = new Map();
-    if (Array.isArray(guardado[nomeLista])) guardado[nomeLista].forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
-    if (Array.isArray(recebido[nomeLista])) recebido[nomeLista].forEach((d) => { if (d && d.id) mapa.set(d.id, d); });
-    const ap = new Map();
-    if (Array.isArray(guardado[nomeApagados])) {
-        guardado[nomeApagados].forEach((e) => { if (e && typeof e.id === 'string') ap.set(e.id, Number(e.ts) || 0); });
-    }
-    if (Array.isArray(recebido[nomeApagados])) {
-        recebido[nomeApagados].forEach((e) => {
-            if (e && typeof e.id === 'string') {
-                const ts = Number(e.ts) || 0;
-                if (!ap.has(e.id) || ts > ap.get(e.id)) ap.set(e.id, ts);
-            }
-        });
-    }
-    const agora = Date.now();
-    const vivos = [...ap.entries()].filter(([, ts]) => agora - ts < PDF_APAGADO_MS);
-    vivos.forEach(([id]) => mapa.delete(id));
-    return {
-        lista: [...mapa.values()],
-        apagados: vivos.map(([id, ts]) => ({ id, ts })).slice(-200),
-    };
-}
-
-function fundirSyncData(guardado, recebido) {
-    const out = { ...guardado, ...recebido };
-
-    if (Array.isArray(recebido.pdfs) || Array.isArray(recebido.pdfsApagados)) {
-        const f = fundirColecaoSync(guardado, recebido, 'pdfs', 'pdfsApagados');
-        out.pdfs = f.lista;
-        out.pdfsApagados = f.apagados;
-    }
-
-    if (Array.isArray(recebido.caderno) || Array.isArray(recebido.cadernoApagados)) {
-        const f = fundirColecaoSync(guardado, recebido, 'caderno', 'cadernoApagados');
-        out.caderno = f.lista;
-        out.cadernoApagados = f.apagados;
-    }
-
-    if (recebido.sessoesBase && typeof recebido.sessoesBase === 'object'
-        && guardado.sessoesBase && typeof guardado.sessoesBase === 'object') {
-        const base = {};
-        new Set([...Object.keys(guardado.sessoesBase), ...Object.keys(recebido.sessoesBase)]).forEach((dia) => {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return;
-            const gb = guardado.sessoesBase[dia];
-            const rb = recebido.sessoesBase[dia];
-            if ((!gb || typeof gb !== 'object') && (!rb || typeof rb !== 'object')) return;
-            const materias = new Set([...Object.keys(gb || {}), ...Object.keys(rb || {})]);
-            const outDia = {};
-            materias.forEach((m) => {
-                const v = Math.max(numMinSync(gb && gb[m]), numMinSync(rb && rb[m]));
-                if (v > 0) outDia[m] = v;
-            });
-            if (Object.keys(outDia).length) base[dia] = outDia;
-        });
-        out.sessoesBase = base;
-        if (!recebido.sessoes || typeof recebido.sessoes !== 'object') out.sessoes = base;
-    }
-
-    if (recebido.sessoesSlots && typeof recebido.sessoesSlots === 'object'
-        && guardado.sessoesSlots && typeof guardado.sessoesSlots === 'object') {
-        const slots = JSON.parse(JSON.stringify(guardado.sessoesSlots));
-        Object.entries(recebido.sessoesSlots).forEach(([dia, materias]) => {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !materias || typeof materias !== 'object') return;
-            if (!slots[dia] || typeof slots[dia] !== 'object') slots[dia] = {};
-            Object.entries(materias).forEach(([materia, aparelhos]) => {
-                if (typeof materia !== 'string' || !materia || !aparelhos || typeof aparelhos !== 'object') return;
-                if (!slots[dia][materia] || typeof slots[dia][materia] !== 'object') slots[dia][materia] = {};
-                Object.entries(aparelhos).forEach(([dev, min]) => {
-                    if (typeof dev !== 'string' || !dev) return;
-                    slots[dia][materia][dev] = Math.max(numMinSync(slots[dia][materia][dev]), numMinSync(min));
-                });
-            });
-        });
-        out.sessoesSlots = slots;
-    }
-
-    return out;
-}
-
 async function apiSync(req, res) {
-    if (!contaAtiva && !SYNC_ABERTO) return json(res, 503, { ok: false, reason: 'sem-conta' });
-
-    const token = tokenDaSessao(req);
-    // Em modo aberto, pedidos sem token entram na mesma (anónimos).
-    if (!SYNC_ABERTO || token) {
-        if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
-    }
+    if (!autorizarDados(req, res)) return;
 
     if (req.method === 'GET') {
         json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid, data: syncDoc.data });
@@ -564,26 +521,47 @@ async function apiSync(req, res) {
         if (!Number.isInteger(baseRev) || baseRev < 0 || !dadosSyncValidos(body.data)) {
             return json(res, 400, { ok: false, reason: 'conteudo' });
         }
-        if (baseRev !== syncDoc.rev && body.forcar !== true) {
-            return json(res, 409, {
-                ok: false, reason: 'conflito',
-                rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid, data: syncDoc.data,
-            });
-        }
         // forcar=true: o cliente detetou que o servidor recuou (wipe/
         // redeploy com disco efémero) e repõe o estado completo dele.
         // Fusão por secção (ver fundirSyncData): um cliente antigo que não
         // conhece campos novos (ex.: sessoesBase) não os apaga ao fazer push,
         // e um push desatualizado nunca apaga minutos de outro aparelho.
-        syncDoc = { rev: syncDoc.rev + 1, updatedAt: new Date().toISOString(), gid: syncDoc.gid, data: fundirSyncData(syncDoc.data, body.data) };
+        let resultado;
         try {
-            guardarSync();
+            resultado = await comFilaSync(async () => {
+                if (baseRev !== syncDoc.rev && body.forcar !== true) {
+                    return {
+                        conflito: true,
+                        rev: syncDoc.rev,
+                        updatedAt: syncDoc.updatedAt,
+                        gid: syncDoc.gid,
+                        data: syncDoc.data,
+                    };
+                }
+                const proximo = {
+                    rev: syncDoc.rev + 1,
+                    updatedAt: new Date().toISOString(),
+                    gid: syncDoc.gid,
+                    data: fundirSyncData(syncDoc.data, body.data),
+                };
+                // Só avança a memória depois de a persistência ter sucesso.
+                await persistirSync(proximo);
+                syncDoc = proximo;
+                return { ok: true, doc: proximo };
+            });
         } catch {
             return json(res, 500, { ok: false, reason: 'erro' });
         }
+        if (resultado.conflito) {
+            return json(res, 409, {
+                ok: false, reason: 'conflito',
+                rev: resultado.rev, updatedAt: resultado.updatedAt,
+                gid: resultado.gid, data: resultado.data,
+            });
+        }
         // Avisa já os outros aparelhos (pull imediato no cliente).
         transmitirSync();
-        json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid });
+        json(res, 200, { ok: true, rev: resultado.doc.rev, updatedAt: resultado.doc.updatedAt, gid: resultado.doc.gid });
         return;
     }
 
@@ -592,13 +570,10 @@ async function apiSync(req, res) {
 
 /* Canal de eventos: o cliente puxa assim que a revisão muda. */
 function apiSyncEventos(req, res, url) {
-    if (!contaAtiva && !SYNC_ABERTO) return json(res, 503, { ok: false, reason: 'sem-conta' });
-
     // EventSource não permite cabeçalhos: o token pode vir no query.
     const token = tokenDaSessao(req) || url.searchParams.get('token') || '';
-    if (!SYNC_ABERTO || token) {
-        if (!sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
-    }
+    if (contaAtiva && !sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
+    if (!contaAtiva && !pedidoLoopback(req)) return json(res, 503, { ok: false, reason: 'sem-conta' });
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -636,6 +611,7 @@ function apiSyncEventos(req, res, url) {
 const FICHEIROS_DIR = path.join(DATA_DIR, 'ficheiros');
 const FICHEIROS_MAX_BYTES = 30 * 1024 * 1024;
 const FICHEIRO_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const FICHEIROS_MIMES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 
 try {
     fs.mkdirSync(FICHEIROS_DIR, { recursive: true });
@@ -647,15 +623,41 @@ function caminhoFicheiro(id) {
     return path.join(FICHEIROS_DIR, id);
 }
 
-async function apiFicheiros(req, res, url) {
-    if (contaAtiva && !SYNC_ABERTO && !sessaoValida(tokenDaSessao(req))) {
-        return json(res, 401, { ok: false, reason: 'sessao' });
+function nomeCabecalho(nome) {
+    return String(nome || 'ficheiro.pdf').replace(/[\r\n"]/g, '').slice(0, 200) || 'ficheiro.pdf';
+}
+
+/* Lê os bytes tanto do PostgreSQL como do disco legado. */
+async function lerFicheiroGuardado(id) {
+    if (pgStore) {
+        const row = await pgStore.getFile(id);
+        if (!row) return null;
+        return { meta: row.metadata || {}, bytes: row.content };
     }
+    let meta = { nome: 'ficheiro.pdf', tipo: 'application/pdf' };
+    try {
+        meta = { ...meta, ...JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8')) };
+    } catch { /* segue com o genérico */ }
+    try {
+        return { meta, bytes: fs.readFileSync(caminhoFicheiro(id)) };
+    } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+}
+
+async function apiFicheiros(req, res, url) {
+    if (!autorizarDados(req, res)) return;
 
     if (req.method === 'GET' && url.pathname === '/api/ficheiros') {
         // Lista leve (sem bytes) para os aparelhos verificarem o que o
         // servidor tem e reporem o que faltar após um wipe do disco efémero.
         let lista = [];
+        if (pgStore) {
+            lista = (await pgStore.listFiles()).map((f) => ({ id: f.id, nome: f.metadata?.nome || 'ficheiro.pdf', tipo: f.metadata?.tipo || 'application/pdf', tamanho: Number(f.tamanho) || 0 }));
+            json(res, 200, { ok: true, ficheiros: lista });
+            return;
+        }
         try {
             lista = fs.readdirSync(FICHEIROS_DIR)
                 .filter((f) => FICHEIRO_ID.test(f) && !f.endsWith('.meta.json'))
@@ -682,7 +684,9 @@ async function apiFicheiros(req, res, url) {
         if (!body) return;
         const id = String(body.id ?? '');
         const nome = String(body.nome ?? 'ficheiro.pdf').slice(0, 200);
-        const tipo = String(body.tipo ?? 'application/pdf').slice(0, 100);
+        const tipoInformado = String(body.tipo ?? 'application/pdf').slice(0, 100).toLowerCase();
+        if (!FICHEIROS_MIMES.has(tipoInformado)) return json(res, 415, { ok: false, reason: 'tipo-nao-suportado' });
+        const tipo = tipoInformado;
         const dados = String(body.dados ?? '');
         if (!FICHEIRO_ID.test(id) || !dados) {
             return json(res, 400, { ok: false, reason: 'conteudo' });
@@ -697,8 +701,11 @@ async function apiFicheiros(req, res, url) {
             return json(res, 413, { ok: false, reason: 'demasiado-grande' });
         }
         try {
-            fs.writeFileSync(caminhoFicheiro(id), bytes, { mode: 0o600 });
-            fs.writeFileSync(`${caminhoFicheiro(id)}.meta.json`, JSON.stringify({ nome, tipo, tamanho: bytes.length }), { mode: 0o600 });
+            if (pgStore) await pgStore.putFile(id, { nome, tipo, tamanho: bytes.length }, bytes);
+            else {
+                fs.writeFileSync(caminhoFicheiro(id), bytes, { mode: 0o600 });
+                fs.writeFileSync(`${caminhoFicheiro(id)}.meta.json`, JSON.stringify({ nome, tipo, tamanho: bytes.length }), { mode: 0o600 });
+            }
         } catch {
             return json(res, 500, { ok: false, reason: 'erro' });
         }
@@ -712,29 +719,26 @@ async function apiFicheiros(req, res, url) {
     if (!FICHEIRO_ID.test(id)) return json(res, 400, { ok: false, reason: 'nome' });
 
     if (req.method === 'GET') {
-        let meta = { nome: 'ficheiro.pdf', tipo: 'application/pdf' };
-        try {
-            meta = { ...meta, ...JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8')) };
-        } catch { /* segue com o genérico */ }
-        let bytes;
-        try {
-            bytes = fs.readFileSync(caminhoFicheiro(id));
-        } catch (error) {
-            if (error.code === 'ENOENT') return json(res, 404, { ok: false, reason: 'ausente' });
-            return json(res, 500, { ok: false, reason: 'erro' });
-        }
+        const guardado = await lerFicheiroGuardado(id);
+        if (!guardado) return json(res, 404, { ok: false, reason: 'ausente' });
+        const meta = guardado.meta || {};
+        const bytes = guardado.bytes;
         res.writeHead(200, {
             'content-type': String(meta.tipo || 'application/pdf'),
             'content-length': bytes.length,
-            'content-disposition': `inline; filename="${String(meta.nome || 'ficheiro.pdf').replace(/"/g, '')}"`,
+            'content-disposition': `attachment; filename="${nomeCabecalho(meta.nome)}"`,
             'cache-control': 'private, max-age=86400',
+            'x-content-type-options': 'nosniff',
         }).end(bytes);
         return;
     }
 
     if (req.method === 'DELETE') {
-        try { fs.unlinkSync(caminhoFicheiro(id)); } catch { /* já não existe */ }
-        try { fs.unlinkSync(`${caminhoFicheiro(id)}.meta.json`); } catch { /* já não existe */ }
+        if (pgStore) await pgStore.deleteFile(id);
+        else {
+            try { fs.unlinkSync(caminhoFicheiro(id)); } catch { /* já não existe */ }
+            try { fs.unlinkSync(`${caminhoFicheiro(id)}.meta.json`); } catch { /* já não existe */ }
+        }
         json(res, 200, { ok: true, id });
         return;
     }
@@ -745,12 +749,10 @@ async function apiFicheiros(req, res, url) {
 /* ── LLM local (Ollama) ──────────────────────────────
    Proxy restrito: só estado, chat e transcrever. Nunca expõe o Ollama
    todo (evita ler/apagar modelos pela rede). Sem Ollama a correr, 503
-   com motivo claro para a UI explicar. Por omissão exige sessão; em
-   modo SYNC_OPEN, só com OLLAMA_PUBLIC=1 (senão qualquer visitante
-   gastava a GPU do dono). */
+   com motivo claro para a UI explicar. Em produção exige sessão; sem
+   conta só está disponível pela interface loopback de desenvolvimento. */
 
 const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
-const OLLAMA_PUBLICO = process.env.OLLAMA_PUBLIC === '1';
 const LLM_CHAT_PADRAO = process.env.LLM_CHAT || 'qwen3';
 const LLM_VISAO_PADRAO = process.env.LLM_VISAO || 'qwen2.5vl';
 const LLM_MAX_TEXTO = 8000;
@@ -761,7 +763,7 @@ const LLM_MAX_IMAGEM = 20 * 1024 * 1024;
 function llmAutorizado(req) {
     const token = tokenDaSessao(req);
     if (token && sessaoValida(token)) return true;
-    return SYNC_ABERTO && OLLAMA_PUBLICO;
+    return pedidoLoopback(req);
 }
 
 async function ollamaModelos() {
@@ -784,6 +786,7 @@ async function ollamaModelos() {
 
 async function apiLlm(req, res, url) {
     if (url.pathname === '/api/llm/estado' && req.method === 'GET') {
+        if (!llmAutorizado(req)) return json(res, contaAtiva ? 401 : 503, { ok: false, reason: contaAtiva ? 'sessao' : 'sem-conta' });
         const modelos = await ollamaModelos();
         json(res, 200, { ok: true, ollama: modelos !== null, modelos: modelos || [] });
         return;
@@ -876,7 +879,9 @@ async function apiLlm(req, res, url) {
         let b64 = String(body.dados || '');
         if (!b64 && body.id && FICHEIRO_ID.test(String(body.id))) {
             try {
-                b64 = fs.readFileSync(caminhoFicheiro(String(body.id))).toString('base64');
+                const guardado = await lerFicheiroGuardado(String(body.id));
+                if (!guardado) return json(res, 404, { ok: false, reason: 'ausente' });
+                b64 = guardado.bytes.toString('base64');
             } catch {
                 return json(res, 404, { ok: false, reason: 'ausente' });
             }
@@ -931,10 +936,36 @@ async function apiLlm(req, res, url) {
     json(res, 404, { ok: false, reason: 'rota' });
 }
 
+/* Só estes caminhos são públicos. Sem isto, /serve.js, /.git/config,
+   /key.pem e /data/sync.json (dados pessoais) ficavam acessíveis. */
+const PUBLIC_FILES = new Set([
+    'index.html', 'app.css', 'layout.css', 'design.css',
+    'manifest.webmanifest', 'sw.js', 'favicon.ico', 'robots.txt',
+]);
+const PUBLIC_DIRS = ['src/', 'vendor/', 'icons/', 'data/static/'];
+
+function caminhoPublico(relative) {
+    if (!relative || relative.includes('\0')) return false;
+    const partes = relative.split('/');
+    if (partes.some((p) => !p || p === '..' || p === '.' || p.startsWith('.'))) return false;
+    if (PUBLIC_FILES.has(relative)) return true;
+    return PUBLIC_DIRS.some((dir) => relative.startsWith(dir));
+}
+
 function serveStatic(req, res, url) {
-    const pathname = decodeURIComponent(url.pathname);
+    let pathname;
+    try {
+        pathname = decodeURIComponent(url.pathname);
+    } catch {
+        res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('400 Bad Request');
+        return;
+    }
     const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
-    const file = path.join(ROOT, relative);
+    if (!caminhoPublico(relative)) {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('404 Not Found');
+        return;
+    }
+    const file = path.join(ROOT, ...relative.split('/'));
 
     // Impede sair da raiz do projeto
     if (!file.startsWith(ROOT + path.sep)) {
@@ -951,24 +982,32 @@ function serveStatic(req, res, url) {
         res.writeHead(200, {
             'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream',
             'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
+            'referrer-policy': 'no-referrer',
         }).end(data);
     });
 }
 
 async function handle(req, res) {
-    const url = new URL(req.url, 'http://localhost');
+    let url;
+    try {
+        url = new URL(req.url, 'http://localhost');
+    } catch {
+        json(res, 400, { ok: false, reason: 'pedido' });
+        return;
+    }
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${url.pathname}`);
 
     if (url.pathname === '/api/conta' || url.pathname.startsWith('/api/conta/')) {
         try {
             await apiConta(req, res, url);
         } catch {
-            json(res, 500, { ok: false, reason: 'erro' });
+            erroInterno(res);
         }
         return;
     }
 
-    if (url.pathname === '/api/sync/eventos') {
+    if (url.pathname === '/api/sync/eventos' || url.pathname === '/api/data/events') {
         try {
             apiSyncEventos(req, res, url);
         } catch {
@@ -977,11 +1016,11 @@ async function handle(req, res) {
         return;
     }
 
-    if (url.pathname === '/api/sync') {
+    if (url.pathname === '/api/sync' || url.pathname === '/api/data') {
         try {
             await apiSync(req, res);
         } catch {
-            json(res, 500, { ok: false, reason: 'erro' });
+            erroInterno(res);
         }
         return;
     }
@@ -990,7 +1029,7 @@ async function handle(req, res) {
         try {
             await apiFicheiros(req, res, url);
         } catch {
-            json(res, 500, { ok: false, reason: 'erro' });
+            erroInterno(res);
         }
         return;
     }
@@ -999,7 +1038,7 @@ async function handle(req, res) {
         try {
             await apiLlm(req, res, url);
         } catch {
-            json(res, 500, { ok: false, reason: 'erro' });
+            erroInterno(res);
         }
         return;
     }
@@ -1008,7 +1047,7 @@ async function handle(req, res) {
         try {
             await api(req, res, url);
         } catch {
-            json(res, 500, { ok: false, reason: 'erro' });
+            erroInterno(res);
         }
         return;
     }
@@ -1027,9 +1066,52 @@ const server = secure
     ? https.createServer({ cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }, handle)
     : http.createServer(handle);
 
-server.listen(PORT, HOST, () => {
+async function iniciarServidor() {
+    let armazenamento = 'ficheiro local';
+    if (pgStore) {
+        armazenamento = 'PostgreSQL';
+        let staticExams = null;
+        try {
+            staticExams = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/static/exams.json'), 'utf8'));
+        } catch (error) {
+            console.error(`  ! Catálogo curricular indisponível (${error.message}); arranco sem seed.`);
+        }
+        const seed = await pgStore.init(staticExams);
+        if (seed && (seed.exams || seed.nodes)) {
+            console.log(`  Catálogo: ${seed.exams} exames ativos, ${seed.nodes} tópicos semeados.`);
+        }
+        const estado = await pgStore.getState();
+        if (estado && typeof estado.rev === 'number' && estado.data && typeof estado.data === 'object') {
+            // Documento antigo pode não ter gid ou days: normaliza sem perder dados.
+            syncDoc = {
+                rev: estado.rev,
+                updatedAt: estado.updatedAt ?? null,
+                gid: estado.gid || crypto.randomBytes(8).toString('hex'),
+                data: estado.data,
+            };
+            if (!syncDoc.data.days || typeof syncDoc.data.days !== 'object' || Array.isArray(syncDoc.data.days)) {
+                syncDoc.data.days = {};
+            }
+        } else {
+            await pgStore.putState(syncDoc);
+        }
+        sessoes = await pgStore.getSessions();
+        let legados = [];
+        try {
+            legados = fs.readdirSync(FICHEIROS_DIR).filter((f) => FICHEIRO_ID.test(f) && !f.endsWith('.meta.json'));
+        } catch { /* diretório ainda não existe */ }
+        for (const id of legados) {
+            if (await pgStore.getFile(id)) continue;
+            try {
+                const metadata = JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8'));
+                await pgStore.putFile(id, metadata, fs.readFileSync(caminhoFicheiro(id)));
+            } catch { /* mantém os ficheiros legados intactos */ }
+        }
+    }
+    server.listen(PORT, HOST, () => {
     const scheme = secure ? 'https' : 'http';
     console.log(`StudyJournal em ${scheme}://${HOST}:${PORT}`);
+    console.log(`  Dados: ${armazenamento}${pgStore ? ` (rev ${syncDoc.rev})` : ` — ${DATA_DIR}`}`);
 
     if (!secure) {
         console.log('  ! Sem cert.pem/key.pem — arrancou em HTTP.');
@@ -1042,10 +1124,8 @@ server.listen(PORT, HOST, () => {
     } else {
         console.log('  Conta: por configurar — define SYNC_USER e SYNC_PASS para sync entre aparelhos.');
     }
-    if (SYNC_ABERTO) {
-        console.log('  Partilha: ABERTA (SYNC_OPEN=1) — quem tem o link sincroniza sem login.');
-    }
-    console.log(`  LLM: ${OLLAMA_PUBLICO ? 'aberto' : 'só com sessão'} via ${OLLAMA_URL}`);
+    console.log(`  Dados pessoais: ${contaAtiva ? 'protegidos por sessão' : 'modo local loopback'}`);
+    console.log(`  LLM: ${contaAtiva ? 'só com sessão' : 'modo local loopback'} via ${OLLAMA_URL}`);
 
     if (HOST === '0.0.0.0') {
         for (const list of Object.values(os.networkInterfaces())) {
@@ -1056,5 +1136,28 @@ server.listen(PORT, HOST, () => {
             }
         }
     }
+    });
+}
+
+iniciarServidor().catch((error) => {
+    console.error(`Falha ao inicializar armazenamento PostgreSQL: ${error.message}`);
+    if (pgStore) pgStore.close().catch(() => {});
+    process.exitCode = 1;
+});
+
+function encerrarSinal() {
+    server.close(() => {
+        if (pgStore) pgStore.close().finally(() => process.exit(0));
+        else process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 5000).unref();
+}
+process.once('SIGTERM', encerrarSinal);
+process.once('SIGINT', encerrarSinal);
+
+/* Um erro assíncrono isolado não deve deitar o servidor abaixo (o
+   Render reiniciava e o cliente via a sincronização falhar em ciclo). */
+process.on('unhandledRejection', (erro) => {
+    console.error(`  ! Promessa rejeitada sem tratamento: ${erro && erro.message ? erro.message : erro}`);
 });
 

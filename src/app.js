@@ -801,16 +801,64 @@ function dayKey(date) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+const SELECTED_DATE_MODE_KEY = 'study-journal-selected-date-mode';
+
 function selectDate(date) {
     selected = startOfDay(date);
-    localStorage.setItem('study-journal-selected-date', dayKey(selected));
+    const key = dayKey(selected);
+    localStorage.setItem('study-journal-selected-date', key);
+    localStorage.setItem(SELECTED_DATE_MODE_KEY, key === dayKey(today) ? 'today' : 'custom');
 }
 
-const today = startOfDay(new Date());
+let today = startOfDay(new Date());
 let selected = today;
+let localDayTimer = null;
 let tasks = [];
 let currentView = 'painel';
 let lastVaultState = 'desligado';
+
+function atualizarDiaLocal() {
+    const agora = startOfDay(new Date());
+    if (dayKey(agora) === dayKey(today)) return false;
+
+    const ontem = new Date(today);
+    ontem.setDate(ontem.getDate() - 1);
+    const seguiaHoje = localStorage.getItem(SELECTED_DATE_MODE_KEY) !== 'custom'
+        || dayKey(selected) === dayKey(today)
+        || dayKey(selected) === dayKey(ontem);
+    // Commit while the editor still points at yesterday, preserving that note
+    // under its original date before switching the active day.
+    commitNotes();
+    today = agora;
+    if (seguiaHoje) selectDate(today);
+    calCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    if (heatmapCursor.getTime() >= new Date(today.getFullYear(), today.getMonth(), 1).getTime()) {
+        heatmapCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    }
+
+    loadDay().then(() => {
+        try { window.SJDash?.render?.(); } catch { /* vista indisponível */ }
+        if (currentView === 'calendario') renderCalendar();
+        if (currentView === 'estudar') renderEstudarView();
+        if (currentView === 'painel') {
+            StudyStats.renderHeatmap();
+            StudyStats.renderReviewQueue();
+        }
+        if (currentView === 'exames') window.Exames?.ligar?.();
+        if (currentView === 'semanal') window.Weekly?.ligar?.();
+    }).catch(() => {});
+    return true;
+}
+
+function agendarMudancaDoDia() {
+    clearTimeout(localDayTimer);
+    const agora = new Date();
+    const amanha = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1);
+    localDayTimer = setTimeout(() => {
+        atualizarDiaLocal();
+        agendarMudancaDoDia();
+    }, Math.max(1000, amanha.getTime() - agora.getTime() + 250));
+}
 
 /* ── Persistência local ────────────────────────────────── */
 
@@ -2395,8 +2443,10 @@ const VIEW_LABELS = {
 const WEEKDAYS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
 
 /* Todas as vistas num único ficheiro, trocadas pela navegação lateral. */
-function showView(view) {
+function showView(view, navSelection = view) {
     currentView = view;
+    const mobileMore = document.getElementById('mobile-more-dialog');
+    if (mobileMore?.open) mobileMore.close();
     write('study-journal-view', view);
 
     document.querySelectorAll('[data-panel]').forEach((panel) => {
@@ -2404,7 +2454,7 @@ function showView(view) {
     });
 
     document.querySelectorAll('[data-view]').forEach((button) => {
-        const active = button.dataset.view === view;
+        const active = (button.dataset.navKey || button.dataset.view) === navSelection;
         const rail = button.closest('#nav-rail') !== null;
         const activeClass = rail ? 'nav-item-active' : 'nav-mobile-active';
 
@@ -2430,6 +2480,7 @@ function showView(view) {
         renderEstudarView();
         StudyStats.renderHeatmap();
         if (window.SJDash) window.SJDash.renderStats();
+        renderWeeklyReview();
     }
     if (view === 'revisao') {
         StudyStats.renderReviewQueue();
@@ -2446,6 +2497,29 @@ function showView(view) {
 
     document.title = `${VIEW_LABELS[view]} · StudyJournal`;
     window.scrollTo({ top: 0 });
+}
+
+function renderWeeklyReview() {
+    if (!window.StudyWeeklyReview) return;
+    const tasks = [];
+    try {
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const k = localStorage.key(i) || '';
+            const match = /^study-journal-tasks-(\d{4}-\d{2}-\d{2})$/.exec(k);
+            if (!match) continue;
+            const lista = JSON.parse(localStorage.getItem(k) || '[]');
+            if (Array.isArray(lista)) lista.forEach(task => tasks.push({ date: match[1], task }));
+        }
+    } catch { /* apresenta os registos disponíveis */ }
+    const exams = window.Exames?.lerTudo?.() || { topics: [], reviews: [], exams: [] };
+    const report = window.StudyWeeklyReview.generate({
+        sessionsByDay: window.StudySessions?.ler?.() || {},
+        tasks,
+        topics: exams.topics || [],
+        reviews: exams.reviews || [],
+        exams: exams.exams || [],
+    });
+    window.StudyWeeklyReview.render(report, document.getElementById('weekly-review'));
 }
 
 /* ── Calendário ───────────────────────────────────────── */
@@ -2848,7 +2922,7 @@ function createCalendarTaskElement(task, key, date, opts = {}) {
 
     el.addEventListener('click', (e) => {
         e.stopPropagation();
-        showDayTasksDialog(date, key);
+        showCalendarTaskEditor(key, task.id, date);
     });
 
     return el;
@@ -2999,6 +3073,97 @@ function showDayTasksDialog(date, key) {
     dlg.showModal();
 }
 
+function showCalendarTaskEditor(key, taskId, date) {
+    const tasks = read(`study-journal-tasks-${key}`, []);
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return showDayTasksDialog(date, key);
+
+    const dlg = document.createElement('dialog');
+    dlg.className = 'm-auto w-[min(30rem,94vw)] max-w-none glass-strong rounded-2xl border border-line bg-surface p-0 text-fg shadow-pop';
+    dlg.innerHTML = `
+        <form class="flex flex-col" novalidate>
+            <div class="flex items-center gap-3 border-b border-line px-5 py-4">
+                <div class="min-w-0 flex-1">
+                    <p class="text-xs capitalize text-muted">${escapeHtml(date.toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</p>
+                    <h3 class="mt-1 text-base font-semibold">Editar evento</h3>
+                </div>
+                <button type="button" class="icon-btn" data-close aria-label="Fechar">
+                    <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <div class="grid gap-4 p-5">
+                <label class="flex flex-col gap-1.5 text-sm font-medium text-muted" for="cal-event-edit-title">
+                    Evento
+                    <input id="cal-event-edit-title" type="text" class="field w-full text-sm text-fg" maxlength="240" required>
+                </label>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="flex flex-col gap-1.5 text-sm font-medium text-muted" for="cal-event-edit-subject">
+                        Disciplina
+                        <select id="cal-event-edit-subject" class="field w-full text-sm text-fg">
+                            <option>Geral</option><option>Matemática A</option><option>FQA</option><option>Biologia</option><option>Português</option><option>Aplicações Informáticas (A.I.)</option><option>Hobbies</option>
+                        </select>
+                    </label>
+                    <label class="flex flex-col gap-1.5 text-sm font-medium text-muted" for="cal-event-edit-category">
+                        Categoria
+                        <select id="cal-event-edit-category" class="field w-full text-sm text-fg">
+                            <option value="teste">Testes</option><option value="trabalho">Trabalhos</option><option value="aula">Aulas</option><option value="apresentacao">Apresentações</option><option value="pessoal">Pessoais</option>
+                        </select>
+                    </label>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-muted" for="cal-event-edit-done">
+                    <input id="cal-event-edit-done" type="checkbox" class="h-4 w-4 accent-brand">
+                    Evento concluído
+                </label>
+            </div>
+            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-5 py-4">
+                <button type="button" class="btn-soft text-sm" data-close>Cancelar</button>
+                <button type="submit" class="btn-primary text-sm">Guardar alterações</button>
+            </div>
+        </form>`;
+    document.body.append(dlg);
+
+    const titleInput = dlg.querySelector('#cal-event-edit-title');
+    const subjectSelect = dlg.querySelector('#cal-event-edit-subject');
+    const categorySelect = dlg.querySelector('#cal-event-edit-category');
+    const doneInput = dlg.querySelector('#cal-event-edit-done');
+    titleInput.value = task.text || '';
+    if (task.subject && ![...subjectSelect.options].some((option) => option.value === task.subject)) {
+        const option = document.createElement('option');
+        option.value = task.subject;
+        option.textContent = task.subject;
+        subjectSelect.append(option);
+    }
+    subjectSelect.value = task.subject || 'Geral';
+    categorySelect.value = categoriaDaTarefa(task);
+    doneInput.checked = !!task.done;
+
+    const close = () => { if (dlg.open) dlg.close(); dlg.remove(); };
+    dlg.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', close));
+    dlg.addEventListener('click', (event) => { if (event.target === dlg) close(); });
+    dlg.addEventListener('close', () => dlg.remove(), { once: true });
+    dlg.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const text = titleInput.value.trim();
+        if (!text) { titleInput.focus(); return; }
+        const currentTasks = read(`study-journal-tasks-${key}`, []);
+        const current = currentTasks.find((item) => item.id === taskId);
+        if (!current) return close();
+        Object.assign(current, {
+            text,
+            subject: subjectSelect.value,
+            category: categorySelect.value,
+            done: doneInput.checked,
+        });
+        await persistirTarefasDia(key, currentTasks);
+        close();
+        if (currentView === 'calendario') renderCalendar();
+    });
+
+    dlg.showModal();
+    titleInput.focus();
+    titleInput.select();
+}
+
 function createDayTasksDialog(date, key) {
     const dlg = document.createElement('dialog');
     dlg.id = 'day-tasks-dlg';
@@ -3046,6 +3211,9 @@ function createDayTasksDialog(date, key) {
     `;
     document.body.append(dlg);
     bindDayTasksDialog(dlg);
+    dlg.querySelector('#day-tasks-date').textContent = date.toLocaleDateString('pt-PT', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+    });
     dlg.showModal();
     dlg.querySelector('#day-tasks-title').focus();
 }
@@ -3766,8 +3934,17 @@ function limparDemo() {
 
 function bind() {
     document.querySelectorAll('[data-view]').forEach((button) => {
-        button.addEventListener('click', () => showView(button.dataset.view));
+        button.addEventListener('click', () => {
+            const navSelection = button.dataset.navKey || button.dataset.view;
+            showView(button.dataset.view, navSelection);
+            if (navSelection === 'weekly-review') {
+                requestAnimationFrame(() => document.getElementById('weekly-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+            }
+        });
     });
+    const mobileMore = document.getElementById('mobile-more-dialog');
+    document.getElementById('mobile-more-btn')?.addEventListener('click', () => mobileMore?.showModal());
+    document.getElementById('mobile-more-close')?.addEventListener('click', () => mobileMore?.close());
 
     els.dayPrev.addEventListener('click', () => shiftDay(-1));
     els.dayNext.addEventListener('click', () => shiftDay(1));
@@ -3985,8 +4162,14 @@ function bind() {
 
     function atualizarUIEstados() {
         const cfg = GitHubSync.configurado();
-        if (githubNotConfigured) githubNotConfigured.hidden = cfg;
-        if (githubConfigured) githubConfigured.hidden = !cfg;
+        const central = window.ContaSync?.configurado?.() || false;
+        if (githubNotConfigured) githubNotConfigured.hidden = cfg || central;
+        if (githubConfigured) githubConfigured.hidden = !cfg && !central;
+        if (central && githubStatus) githubStatus.textContent = cfg
+            ? 'Sync da conta StudyJournal ativa; sincronização GitHub suspensa.'
+            : 'Sync da conta StudyJournal ativa.';
+        if (githubSyncNow) githubSyncNow.hidden = central;
+        if (githubDisconnect) githubDisconnect.hidden = !cfg;
         if (cfg) {
             if (githubToken) githubToken.value = GitHubSync.getToken();
             if (githubGist) githubGist.value = GitHubSync.getGistId();
@@ -4000,6 +4183,10 @@ function bind() {
 
     if (githubSave) {
         githubSave.addEventListener('click', async () => {
+            if (window.ContaSync?.configurado?.()) {
+                toast('A conta StudyJournal já é a fonte central. Termina sessão antes de ativar o Gist.', 'warn');
+                return;
+            }
             const token = githubToken?.value?.trim();
             const gistId = githubGist?.value?.trim() || null;
             if (!token) {
@@ -4019,6 +4206,11 @@ function bind() {
 
     if (githubSyncNow) {
         githubSyncNow.addEventListener('click', async () => {
+            if (window.ContaSync?.configurado?.()) {
+                toast('A sincronização GitHub está suspensa enquanto a conta StudyJournal está ligada.', 'info');
+                atualizarUIEstados();
+                return;
+            }
             const res = await GitHubSync.sync(true);
             if (res.ok) {
                 toast('Sincronizado.', 'success');
@@ -4283,6 +4475,7 @@ function bind() {
             }
             if (tipo === 'sync-done' || tipo === 'push-done' || tipo === 'pull-done') {
                 atualizarUIConta();
+                atualizarUIEstados();
                 if (contaStatus && currentView === 'definicoes') {
                     if (tipo === 'pull-done' && detalhes.notasAdiadas) {
                         contaStatus.textContent = 'Sincronizado (notas atualizam ao sair da caixa)';
@@ -4330,6 +4523,10 @@ function bind() {
     });
     window.addEventListener('focus', () => {
         if (sessionTimer.running) tickSessionTimer();
+        atualizarDiaLocal();
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') atualizarDiaLocal();
     });
 }
 
@@ -4338,7 +4535,8 @@ async function init() {
     bind();
     restoreSessionState();
     const dataGuardada = localStorage.getItem('study-journal-selected-date');
-    if (dataGuardada) {
+    const modoData = localStorage.getItem(SELECTED_DATE_MODE_KEY);
+    if (dataGuardada && modoData === 'custom') {
         const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dataGuardada);
         if (match) {
             const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
@@ -4348,6 +4546,10 @@ async function init() {
             const date = new Date(dataGuardada);
             if (Number.isFinite(date.getTime())) selected = startOfDay(date);
         }
+    } else {
+        // Older builds persisted yesterday as the default selection. Treat
+        // that as following today; historical browsing is explicitly marked.
+        selectDate(today);
     }
     const vistaGuardada = read('study-journal-view', 'painel');
     showView(VIEW_LABELS[vistaGuardada] ? vistaGuardada : 'painel');
@@ -4357,6 +4559,7 @@ async function init() {
 
     startVaultSync();
     syncDayFromVault();
+    agendarMudancaDoDia();
 
     // Check for public read-only mode (GitHub Gist)
     if (window.GitHubSync && window.GitHubSync.isPublicReadOnly && window.GitHubSync.isPublicReadOnly()) {
