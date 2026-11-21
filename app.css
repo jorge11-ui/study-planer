@@ -3186,16 +3186,23 @@
   }
 }
 .pdf-viewer-max {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   width: 100vw;
   max-width: 100vw;
   height: 100vh;
-  max-height: 100vh;
+  height: 100dvh;
+  max-height: none;
   margin: 0;
   border: 0;
   border-radius: 0;
 }
 .pdf-viewer-max #pdf-viewer-frame {
-  height: calc(100vh - 3.1rem);
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
 }
 body > header.sticky {
   background: rgba(10, 10, 18, 0.7);
