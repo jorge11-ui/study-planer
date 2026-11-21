@@ -115,7 +115,7 @@ after(async () => {
 });
 
 test('servidor: ficheiros públicos continuam a ser servidos', async () => {
-  for (const caminho of ['/', '/index.html', '/app.css', '/src/app.js', '/src/exam-engine.js', '/data/static/exams.json', '/manifest.webmanifest']) {
+  for (const caminho of ['/', '/index.html', '/app.css', '/design.css', '/src/app.js', '/src/exam-engine.js', '/data/static/exams.json', '/manifest.webmanifest']) {
     const r = await fetch(`${servidor.baseUrl}${caminho}`);
     assert.equal(r.status, 200, caminho);
   }

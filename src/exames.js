@@ -507,7 +507,6 @@ function renderOverview(){
   const wrap = $('#exames-overview'); if(!wrap) return;
   ensureCurrentPlan();
   const prog = progressOverall();
-  const mats = state.materials.length;
   const revs = window.ExamEngine ? window.ExamEngine.pendingReviews(allTopicsFlat()).length : 0;
   const lastTopic = getTopic(state.ui.lastTopicId) || allTopicsFlat().sort((a,b)=>(b.ultimaAtividade||0)-(a.ultimaAtividade||0))[0];
   const examsHtml = state.exams.filter(e=>e.id!=='disc-geral').map(e=>{
@@ -516,74 +515,45 @@ function renderOverview(){
     const course = allTopicsFlat().filter(t=>t.disciplinaId===e.id);
     const studied = course.filter(t=>t.estado!=='nao_iniciado').length;
     const coursePct = course.length ? Math.round(studied/course.length*100) : 0;
-    return `<div class="ex-card ex-count-card">
-      <div class="ex-count-name" style="--ex-accent:${e.cor||'#7AA7D9'}"><input class="ex-inline-title" data-exam-name="${esc(e.id)}" value="${esc(e.nome)}" aria-label="Nome do exame"></div>
-      <div class="ex-count-days">${esc(label)}</div>
-      <div class="ex-count-date">${e.dataExame?esc(fmtDate(e.dataExame)):'Definir data'}</div>
-      <input type="date" class="ex-input ex-date-input" data-exam-date="${esc(e.id)}" value="${esc(e.dataExame||'')}" aria-label="Data de ${esc(e.nome)}">
-      <div class="ex-exam-config"><label>Objetivo % <input type="number" min="0" max="100" data-exam-goal="${esc(e.id)}" value="${Number(e.goal)||80}"></label><label>Min/semana <input type="number" min="0" max="1680" step="30" data-exam-time="${esc(e.id)}" value="${Number(e.weeklyMinutes)||300}"></label></div>
-      <div class="ex-muted-sm">Matéria estudada ${coursePct}% · domínio médio ${course.length?Math.round(course.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/course.length):0}%</div><div class="ex-bar"><div style="width:${coursePct}%"></div></div>
-    </div>`;
+    const mastery = course.length ? Math.round(course.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/course.length) : 0;
+    return `<article class="ex-count-card" style="--ex-accent:${esc(e.cor||'#7AA7D9')}"><div class="ex-count-top"><span class="ex-count-name">${esc(e.nome)}</span><span class="ex-count-date">${e.dataExame?esc(fmtDate(e.dataExame)):'Data por definir'}</span></div><div class="ex-count-days">${esc(label)}</div><div class="ex-count-bottom"><span>Matéria <b>${coursePct}%</b></span><span>Domínio <b>${mastery}%</b></span></div><div class="ex-bar"><div style="width:${coursePct}%"></div></div></article>`;
   }).join('');
   const daily = state.activePlan?.daily?.items || [];
   const attention = allTopicsFlat().map(t=>({t,s:window.ExamEngine.scoreTopic(t,{today:todayKey(),examDate:getExam(t.disciplinaId)?.dataExame})})).sort((a,b)=>b.s.score-a.s.score).slice(0,4);
-  const dailyHtml = daily.length ? daily.slice(0,4).map(x=>plannedEntry(x)).join('') : '<div class="ex-empty">Sem tópicos recomendados. Ajusta o tempo disponível ou verifica os filtros da matéria.</div>';
-  const attentionHtml = attention.map(({t,s})=>`<div class="ex-attention-row"><div><strong>${esc(t.titulo)}</strong><small>${esc(discLabel(t.disciplinaId))} · ${s.score}/100</small></div><span>${esc(s.reasons[0]||'Consolidação recomendada')}</span></div>`).join('');
+  const focus = daily[0];
+  const dailyHtml = daily.length ? daily.slice(1,4).map(x=>`<div class="ex-focus-queue"><span>${esc(discLabel(x.disciplinaId))}</span><strong>${esc(topicLabel(x.topicId)||'Tópico')}</strong><small>${x.durationMin} min · ${esc(x.activity==='revision'?'Revisão':x.activity==='practice'?'Prática':'Aprendizagem')}</small><button type="button" class="ex-btn ex-btn-sm" data-plan-start="${esc(x.id)}">Iniciar</button></div>`).join('') : '<div class="ex-empty">Sem sessões restantes para hoje.</div>';
+  const attentionHtml = attention.map(({t,s})=>`<div class="ex-recommendation"><div class="ex-recommendation-title"><strong>${esc(t.titulo)}</strong><span>${s.score}/100</span></div><small>${esc(discLabel(t.disciplinaId))} · domínio ${Number(t.masteryPct)||0}% · ${Number(state.settings.sessionMinutes)||45} min</small><p>${esc(s.reasons[0]||'Consolidação recomendada')}</p></div>`).join('') || '<div class="ex-empty">As recomendações aparecem quando existirem tópicos no programa.</div>';
   const bySubject = state.exams.filter(e=>e.id!=='disc-geral').map(e=>{
     const ts=allTopicsFlat().filter(t=>t.disciplinaId===e.id); const pct=ts.length?Math.round(ts.filter(t=>t.estado!=='nao_iniciado').length/ts.length*100):0;
     return `<div class="ex-subject-progress"><div><span>${esc(e.nome)}</span><strong>Estudado ${pct}% · Domínio ${ts.length?Math.round(ts.reduce((n,t)=>n+(Number(t.masteryPct)||0),0)/ts.length):0}%</strong></div><div class="ex-bar"><div style="width:${pct}%;background:${esc(e.cor||'#8994a8')}"></div></div></div>`;
   }).join('');
 
+  const weekStart = (()=>{ const d=new Date(); const wd=d.getDay()||7; d.setDate(d.getDate()-wd+1); d.setHours(0,0,0,0); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
+  const weekDone=state.sessions.filter(s=>s.concluida && s.data>=weekStart);
+  const weekMinutes=weekDone.reduce((n,s)=>n+(Number(s.duracaoMin)||0),0);
+  const weeklyTarget=state.exams.filter(e=>e.id!=='disc-geral').reduce((n,e)=>n+(Number(e.weeklyMinutes)||0),0);
   wrap.innerHTML = `
-    <div class="ex-hero">
-      <div>
-        <h2 class="ex-title">Exames Nacionais</h2>
-        <p class="ex-sub">Planeamento adaptativo com base no teu domínio, revisões e resultados.</p>
-      </div>
-      <button type="button" class="ex-btn" data-generate-plan>Gerar novamente</button>
-    </div>
-
-    <div class="ex-grid-countdowns">${examsHtml || '<p class="ex-muted">Sem exames configurados.</p>'}</div>
-
-    <div class="ex-grid-stats">
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Matéria estudada</span><strong>${prog.pct}%</strong><div class="ex-bar"><div style="width:${prog.pct}%"></div></div></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Domínio estimado</span><strong>${prog.mastery}%</strong><span class="ex-muted-sm">estimativa independente de conclusão</span></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Conteúdos iniciados</span><strong>${prog.studied}</strong><span class="ex-muted-sm">de ${prog.total}</span></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Materiais</span><strong>${mats}</strong><span class="ex-muted-sm">guardados</span></div>
-      <div class="ex-card ex-stat"><span class="ex-stat-label">Revisões atrasadas</span><strong>${revs}</strong><span class="ex-muted-sm">para rever hoje</span></div>
-    </div>
-
-    <div class="ex-overview-grid"><section class="ex-card"><div class="ex-section-head"><h3>Plano de hoje</h3><button type="button" class="ex-btn ex-btn-sm" data-open-tab="plan">Plano completo</button></div><div class="ex-plan-list">${dailyHtml}</div></section>
-    <section class="ex-card"><div class="ex-section-head"><h3>Próximos tópicos recomendados</h3></div><div class="ex-attention-list">${attentionHtml}</div></section></div>
-    <div class="ex-overview-grid"><section class="ex-card"><div class="ex-section-head"><h3>Progresso por disciplina</h3></div>${bySubject}</section>
-    <section class="ex-card"><div class="ex-section-head"><h3>Objetivos da semana</h3></div><p class="ex-muted">${state.activePlan?.week?.flatMap(d=>d.items).length||0} sessões planeadas · ${state.activePlan?.week?.reduce((n,d)=>n+d.totalMinutes,0)||0} minutos estimados</p><p class="ex-muted">Revê os conteúdos marcados e regista resultados para ajustar o plano automaticamente.</p></section></div>
-
-    <div class="ex-card ex-continue">
-      <div class="ex-section-head"><h3>Continuar a estudar</h3></div>
-      ${lastTopic ? `
-        <div class="ex-continue-row">
-          <div>
-            <div class="ex-continue-title">${esc(lastTopic.titulo)}</div>
-            <div class="ex-muted-sm">${esc(discLabel(lastTopic.disciplinaId))} · <span class="ex-badge ${topicStatusClass(lastTopic.estado)}">${esc(topicStatusLabel(lastTopic.estado))}</span></div>
-          </div>
-          <button type="button" class="ex-btn ex-btn-primary" data-go-topic="${esc(lastTopic.id)}">Continuar</button>
-        </div>` : `<p class="ex-muted">Ainda sem atividade. Adiciona tópicos no separador "Tópicos" para começares.</p>`}
-    </div>
-  `;
+    <header class="ex-hero"><div><span class="ex-eyebrow">STUDY JOURNAL / EXAM CENTER</span><h2 class="ex-title">O teu espaço de preparação</h2><p class="ex-sub">Uma visão clara do progresso, das prioridades e do próximo passo.</p></div><div class="ex-hero-actions"><button type="button" class="ex-btn" data-settings-open>Configurar exames</button><button type="button" class="ex-btn ex-btn-primary" data-generate-plan>Atualizar plano</button></div></header>
+    <section class="ex-overview-section"><div class="ex-section-head"><div><span class="ex-eyebrow">CALENDÁRIO</span><h3>Contagem decrescente</h3></div><span class="ex-muted-sm">Datas e objetivos nas configurações</span></div><div class="ex-grid-countdowns">${examsHtml || '<p class="ex-muted">Sem exames configurados.</p>'}</div></section>
+    <section class="ex-overview-section ex-learning-strip"><div class="ex-section-head"><div><span class="ex-eyebrow">PROGRESSO GLOBAL</span><h3>Aprendizagem</h3></div></div><div class="ex-learning-grid"><div><strong>${prog.pct}%</strong><span>Matéria estudada</span><div class="ex-bar"><div style="width:${prog.pct}%"></div></div></div><div><strong>${prog.mastery||0}%</strong><span>Domínio estimado</span></div><div><strong>${prog.studied}<small> / ${prog.total}</small></strong><span>Tópicos iniciados</span></div><div><strong>${revs}</strong><span>Revisões pendentes</span></div></div></section>
+    <div class="ex-overview-grid ex-overview-main"><section class="ex-card ex-focus-card"><div class="ex-section-head"><div><span class="ex-eyebrow">SEGUINTE NA FILA</span><h3>Today's Focus</h3></div><button type="button" class="ex-btn ex-btn-sm" data-open-tab="plan">Ver planeador</button></div>${focus?`<div class="ex-focus-feature"><div class="ex-focus-meta"><span>${esc(discLabel(focus.disciplinaId))}</span><span>${focus.durationMin} min</span><span>Prioridade ${focus.priority}/100</span></div><h4>${esc(topicLabel(focus.topicId)||'Tópico de estudo')}</h4><p>${esc(focus.objective||'Consolidar a matéria e registar o resultado da sessão.')}</p><button type="button" class="ex-btn ex-btn-primary" data-plan-start="${esc(focus.id)}">Iniciar sessão <span aria-hidden="true">→</span></button></div><div class="ex-focus-queue-list">${dailyHtml}</div>`:'<div class="ex-empty">Sem sessões recomendadas para hoje. Atualiza o plano ou revê as configurações.</div>'}</section><section class="ex-card ex-recommendations"><div class="ex-section-head"><div><span class="ex-eyebrow">PRÓXIMOS PASSOS</span><h3>Recomendações</h3></div><button type="button" class="ex-btn ex-btn-sm" data-open-tab="syllabus">Explorar</button></div><div class="ex-attention-list">${attentionHtml}</div></section></div>
+    <div class="ex-overview-grid ex-overview-bottom"><section class="ex-card"><div class="ex-section-head"><div><span class="ex-eyebrow">ESTA SEMANA</span><h3>Weekly Progress</h3></div><button type="button" class="ex-btn ex-btn-sm" data-open-tab="plan">Planeador</button></div><div class="ex-weekly-metrics"><div><strong>${weekDone.length}</strong><span>sessões concluídas</span></div><div><strong>${Math.floor(weekMinutes/60)}h ${weekMinutes%60}m</strong><span>tempo estudado</span></div><div><strong>${Math.floor(weeklyTarget/60)}h</strong><span>objetivo semanal</span></div><div><strong>${state.activePlan?.week?.flatMap(d=>d.items||[]).length||0}</strong><span>sessões planeadas</span></div></div>${bySubject}</section><section class="ex-card ex-continue"><div class="ex-section-head"><div><span class="ex-eyebrow">RETOMAR</span><h3>Último tópico</h3></div></div>${lastTopic?`<div class="ex-continue-row"><div><div class="ex-continue-title">${esc(lastTopic.titulo)}</div><div class="ex-muted-sm">${esc(discLabel(lastTopic.disciplinaId))} · ${esc(topicStatusLabel(lastTopic.estado))}</div></div><button type="button" class="ex-btn ex-btn-primary" data-go-topic="${esc(lastTopic.id)}">Continuar</button></div>`:'<p class="ex-muted">A tua atividade recente aparecerá aqui.</p>'}</section></div>
+    <dialog class="ex-dialog ex-settings-dialog" data-exam-settings><form class="ex-dialog-inner"><div class="ex-dialog-head"><div><h3>Configurações dos exames</h3><p>Define datas, objetivos e tempo semanal por disciplina.</p></div><button type="button" class="ex-btn ex-btn-sm" data-settings-close>Fechar</button></div><div class="ex-dialog-body ex-settings-list">${state.exams.filter(e=>e.id!=='disc-geral').map(e=>`<section class="ex-settings-row"><div class="ex-count-name" style="--ex-accent:${esc(e.cor||'#7AA7D9')}">${esc(e.nome)}</div><label class="ex-label">Data do exame<input type="date" class="ex-input" data-exam-date="${esc(e.id)}" value="${esc(e.dataExame||'')}"></label><label class="ex-label">Objetivo (%)<input type="number" min="0" max="100" class="ex-input" data-exam-goal="${esc(e.id)}" value="${Number(e.goal)||80}"></label><label class="ex-label">Minutos por semana<input type="number" min="0" max="1680" step="30" class="ex-input" data-exam-time="${esc(e.id)}" value="${Number(e.weeklyMinutes)||300}"></label></section>`).join('')}</div></form></dialog>`;
 
   $all('[data-exam-date]', wrap).forEach(inp=>{
     inp.addEventListener('change', ()=>{
       const ex = getExam(inp.dataset.examDate); if(!ex) return;
       ex.dataExame = inp.value || '';
       ex.updatedAt = Date.now();
-      saveState(); miniToast('Data do exame atualizada.');
+      exWrite(STORE_KEY, state); miniToast('Data do exame atualizada. Atualiza o plano para refletir a nova data.');
     });
   });
-  $all('[data-exam-name]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examName);if(e){e.nome=inp.value.trim()||e.nome;e.updatedAt=Date.now();saveState();}}));
-  $all('[data-exam-goal]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examGoal);if(e){e.goal=clamp(Number(inp.value)||0,0,100);e.updatedAt=Date.now();saveState();}}));
-  $all('[data-exam-time]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examTime);if(e){e.weeklyMinutes=clamp(Number(inp.value)||0,0,1680);e.updatedAt=Date.now();saveState();}}));
+  wrap.querySelector('[data-settings-open]')?.addEventListener('click',()=>wrap.querySelector('[data-exam-settings]')?.showModal());
+  wrap.querySelector('[data-settings-close]')?.addEventListener('click',()=>wrap.querySelector('[data-exam-settings]')?.close());
+  $all('[data-exam-goal]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examGoal);if(e){e.goal=clamp(Number(inp.value)||0,0,100);e.updatedAt=Date.now();exWrite(STORE_KEY,state);}}));
+  $all('[data-exam-time]',wrap).forEach(inp=>inp.addEventListener('change',()=>{const e=getExam(inp.dataset.examTime);if(e){e.weeklyMinutes=clamp(Number(inp.value)||0,0,1680);e.updatedAt=Date.now();exWrite(STORE_KEY,state);}}));
   wrap.querySelector('[data-generate-plan]')?.addEventListener('click',()=>generateStudyPlan(true));
-  wrap.querySelector('[data-open-tab]')?.addEventListener('click',()=>setTab('plan'));
+  $all('[data-open-tab]',wrap).forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.openTab)));
   $all('[data-plan-start]',wrap).forEach(b=>b.addEventListener('click',()=>startPlannedSession(b.dataset.planStart)));
   $all('[data-go-topic]', wrap).forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -883,7 +853,7 @@ function renderTopics(){
       </div>
     </div>
 
-    ${vista === 'quadro' ? boardTopicsHtml(tops) : `<div class="ex-topics-tree">${treeHtml}</div>`}
+    ${vista === 'quadro' ? boardTopicsHtml(tops) : `<div class="ex-syllabus-explorer"><aside class="ex-syllabus-sidebar"><span class="ex-eyebrow">DISCIPLINAS</span><button type="button" data-syllabus-disc="all" class="${ui.topicFilterDisc==='all'?'is-active':''}">Todas <span>${allTopicsFlat().length}</span></button>${state.exams.filter(e=>e.id!=='disc-geral').map(e=>`<button type="button" data-syllabus-disc="${esc(e.id)}" class="${ui.topicFilterDisc===e.id?'is-active':''}"><i style="--ex-accent:${esc(e.cor||'#7AA7D9')}"></i>${esc(e.nome)}<span>${allTopicsFlat().filter(t=>t.disciplinaId===e.id).length}</span></button>`).join('')}</aside><div class="ex-topics-tree">${treeHtml}</div></div>`}
   `;
 
   $('#ex-topic-form')?.addEventListener('submit', e=>{
@@ -902,6 +872,7 @@ function renderTopics(){
   $('#ex-topic-fdisc')?.addEventListener('change', e=>{ ui.topicFilterDisc = e.target.value; renderTopics(); });
   $('#ex-topic-festado')?.addEventListener('change', e=>{ ui.topicFilterEstado = e.target.value; renderTopics(); });
   $('#ex-topic-fpriority')?.addEventListener('change', e=>{ ui.topicFilterPriority = e.target.value; renderTopics(); });
+  $all('[data-syllabus-disc]',wrap).forEach(b=>b.addEventListener('click',()=>{ui.topicFilterDisc=b.dataset.syllabusDisc;renderTopics();}));
   $all('[data-topic-view]', wrap).forEach(b=>b.addEventListener('click', ()=>{
     if(b.dataset.topicView === vista) return;
     guardarVistaTopicos(b.dataset.topicView);
@@ -1171,7 +1142,11 @@ function renderRevisao(){
     return true;
   }).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
 
-  wrap.innerHTML = `${pendingHtml}
+  const upcoming = allTopicsFlat().filter(t=>t.nextReviewDate && t.nextReviewDate>todayKey()).sort((a,b)=>a.nextReviewDate.localeCompare(b.nextReviewDate)).slice(0,8);
+  const reviewHistory = state.reviews.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
+  const reviewCenter = `<div class="ex-review-center-grid"><section class="ex-card"><div class="ex-section-head"><div><span class="ex-eyebrow">AGENDA</span><h3>Próximas revisões</h3></div><span class="ex-muted-sm">${upcoming.length} agendadas</span></div><div class="ex-list">${upcoming.map(t=>`<div class="ex-review-line"><strong>${esc(t.titulo)}</strong><span>${esc(discLabel(t.disciplinaId))}</span><span>${esc(fmtDate(t.nextReviewDate))}</span><b>${Number(t.masteryPct)||0}%</b></div>`).join('')||'<div class="ex-empty">Sem revisões futuras agendadas.</div>'}</div></section><section class="ex-card"><div class="ex-section-head"><div><span class="ex-eyebrow">ATIVIDADE</span><h3>Histórico recente</h3></div><span class="ex-muted-sm">${state.reviews.length} registos</span></div><div class="ex-list">${reviewHistory.map(r=>`<div class="ex-review-line"><strong>${esc(topicLabel(r.topicId)||'Revisão')}</strong><span>${esc(discLabel(r.disciplinaId))}</span><span>${esc(fmtDate(r.date))}</span><b>${r.masteryPct==null?'—':`${Number(r.masteryPct)}%`}</b></div>`).join('')||'<div class="ex-empty">Os resultados das revisões concluídas aparecerão aqui.</div>'}</div></section></div>`;
+
+  wrap.innerHTML = `<header class="ex-review-heading"><span class="ex-eyebrow">MEMÓRIA ATIVA</span><h2 class="ex-title">Review Center</h2><p class="ex-sub">Revisões adaptativas, resultados e conteúdos que precisam de atenção.</p></header>${pendingHtml}${reviewCenter}
     <div class="ex-card ex-form-card">
       <div class="ex-section-head"><h3>Guardar para revisão</h3></div>
       <form id="ex-rev-form" class="ex-form-grid ex-form-issues">
@@ -1376,8 +1351,8 @@ function renderPlano(){
     const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const daySessions = sessions.filter(s=>s.data===key);
     const isToday = key===todayKey();
-    return `<div class="ex-week-day ${isToday?'is-today':''}"><div class="ex-week-day-head">${d.toLocaleDateString('pt-PT',{weekday:'short', day:'numeric'})}</div>
-      <div class="ex-week-day-list">${daySessions.length?daySessions.map(s=>`<div class="ex-week-item ${s.concluida?'done':''}" data-session-open="${esc(s.id)}"><span>${esc(discLabel(s.disciplinaId))}</span><strong>${esc(topicLabel(s.topicId)||'Sessão')}</strong><span class="ex-muted-sm">${esc(String(s.duracaoMin||0))} min</span></div>`).join(''):'<div class="ex-empty-sm">—</div>'}</div></div>`;
+    return `<div class="ex-week-day ${isToday?'is-today':''}" data-calendar-date="${key}"><div class="ex-week-day-head">${d.toLocaleDateString('pt-PT',{weekday:'short', day:'numeric'})}</div>
+      <div class="ex-week-day-list">${daySessions.length?daySessions.map(s=>`<div class="ex-week-item ${s.concluida?'done':''}" draggable="true" data-session-drag="${esc(s.id)}" data-session-open="${esc(s.id)}"><span>${esc(discLabel(s.disciplinaId))}</span><strong>${esc(topicLabel(s.topicId)||'Sessão')}</strong><span class="ex-muted-sm">${esc(String(s.duracaoMin||0))} min</span></div>`).join(''):'<div class="ex-empty-sm">—</div>'}</div></div>`;
   }).join('')}</div>`;
 
   wrap.innerHTML = `
@@ -1454,6 +1429,21 @@ function renderPlano(){
 
   $all('[data-plano-view]').forEach(b=>b.addEventListener('click', ()=>{ ui.planoView=b.dataset.planoView; renderPlano(); }));
   $all('[data-week-delta]').forEach(b=>b.addEventListener('click', ()=>{ ui.planoWeekOffset += Number(b.dataset.weekDelta||0); renderPlano(); }));
+  let draggedSessionId = '';
+  $all('[data-session-drag]',wrap).forEach(el=>el.addEventListener('dragstart',e=>{draggedSessionId=el.dataset.sessionDrag;e.dataTransfer?.setData('text/plain',draggedSessionId);if(e.dataTransfer)e.dataTransfer.effectAllowed='move';}));
+  $all('[data-calendar-date]',wrap).forEach(day=>{
+    day.addEventListener('dragover',e=>{e.preventDefault();day.classList.add('is-drop-target');});
+    day.addEventListener('dragleave',()=>day.classList.remove('is-drop-target'));
+    day.addEventListener('drop',async e=>{
+      e.preventDefault();day.classList.remove('is-drop-target');const id=e.dataTransfer?.getData('text/plain')||draggedSessionId;const s=state.sessions.find(x=>x.id===id);if(!s||s.data===day.dataset.calendarDate)return;
+      const oldDate=s.calendarDate||s.data;if(s.concluida)descreditarSessaoDosTotais(s);s.data=day.dataset.calendarDate; s.calendarDate=s.data; s.updatedAt=Date.now();if(s.concluida)creditarSessaoNosTotais(s);
+      if(s.calendarTaskId&&typeof persistirTarefasDia==='function'&&typeof read==='function')try{
+        const oldTasks=read(`study-journal-tasks-${oldDate}`,[]).filter(t=>t.id!==s.calendarTaskId);await persistirTarefasDia(oldDate,oldTasks);
+        const newTasks=read(`study-journal-tasks-${s.data}`,[]);newTasks.push({id:s.calendarTaskId,text:`${s.activity==='revision'?'Rever':s.activity==='practice'?'Exercícios:':'Estudar:'} ${topicLabel(s.topicId)||discLabel(s.disciplinaId)}`,subject:discLabel(s.disciplinaId),category:'aula',done:!!s.concluida,origemExames:{type:'session',sessionId:s.id}});await persistirTarefasDia(s.data,newTasks);
+      }catch{}
+      saveState(); refrescarEstatisticas(); miniToast('Sessão reorganizada.');
+    });
+  });
   bindSessionActions(wrap);
 }
 
@@ -1592,16 +1582,19 @@ function renderAnalytics(){
     const mins=sessions.filter(s=>s.disciplinaId===e.id).reduce((n,s)=>n+(Number(s.duracaoMin)||0),0)+practice.filter(p=>p.disciplinaId===e.id).reduce((n,p)=>n+(Number(p.minutes)||0),0);
     const rows=practice.filter(p=>p.disciplinaId===e.id);const attempts=rows.reduce((n,p)=>n+(Number(p.count)||0),0);const correct=rows.reduce((n,p)=>n+(Number(p.correct)||0),0);
     const pct=ts.length?Math.round(studied/ts.length*100):0;
-    return `<div class="ex-analytics-subject"><h3>${esc(e.nome)}</h3><div class="ex-analytics-metrics"><span>Matéria estudada <b>${pct}%</b></span><span>Domínio médio <b>${mastery}%</b></span><span>Tempo <b>${Math.round(mins/60*10)/10} h</b></span><span>Exercícios <b>${attempts}</b></span><span>Acerto <b>${attempts?Math.round(correct/attempts*100):0}%</b></span></div><div class="ex-analytics-bars"><div><label>Estudado</label><div class="ex-bar"><div style="width:${pct}%"></div></div></div><div><label>Domínio</label><div class="ex-bar"><div style="width:${mastery}%;background:#82b5a0"></div></div></div></div></div>`;
+    const readiness=Number(e.goal)>0?Math.min(100,Math.round(mastery/Number(e.goal)*100)):0;
+    return `<div class="ex-analytics-subject"><h3>${esc(e.nome)}</h3><div class="ex-analytics-metrics"><span>Matéria estudada <b>${pct}%</b></span><span>Domínio médio <b>${mastery}%</b></span><span>Prontidão vs. objetivo ${Number(e.goal)||80}% <b>${readiness}%</b></span><span>Tempo <b>${Math.round(mins/60*10)/10} h</b></span><span>Exercícios <b>${attempts}</b></span><span>Acerto <b>${attempts?Math.round(correct/attempts*100):0}%</b></span></div><div class="ex-analytics-bars"><div><label>Estudado</label><div class="ex-bar"><div style="width:${pct}%"></div></div></div><div><label>Domínio</label><div class="ex-bar"><div style="width:${mastery}%;background:#82b5a0"></div></div></div></div></div>`;
   }).join('');
   const today=todayKey();const days=Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(13-i));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;});
   const trend=days.map(d=>{const mins=sessions.filter(s=>s.data===d).reduce((n,s)=>n+(Number(s.duracaoMin)||0),0)+practice.filter(p=>p.date===d).reduce((n,p)=>n+(Number(p.minutes)||0),0);return {date:d,mins};});const maxTrend=Math.max(30,...trend.map(x=>x.mins));
+  const heatDays=Array.from({length:35},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(34-i));const date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;const mins=sessions.filter(s=>s.data===date).reduce((n,s)=>n+(Number(s.duracaoMin)||0),0)+practice.filter(p=>p.date===date).reduce((n,p)=>n+(Number(p.minutes)||0),0);return {date,mins};});
   const weak=topics.slice().sort((a,b)=>Number(a.masteryPct||0)-Number(b.masteryPct||0)).slice(0,6);
   const planned=state.activePlan?.daily?.items?.length||0;const actual=sessions.filter(s=>s.data===today).length;
   wrap.innerHTML=`<div class="ex-grid-stats"><div class="ex-card ex-stat"><span class="ex-stat-label">Tempo registado</span><strong>${Math.floor(totalMinutes/60)}h ${totalMinutes%60}m</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Exercícios</span><strong>${totalExercises}</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Taxa de acerto</span><strong>${totalExercises?Math.round(totalCorrect/totalExercises*100):0}%</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Revisões atrasadas</span><strong>${pending.length}</strong></div><div class="ex-card ex-stat"><span class="ex-stat-label">Plano de hoje</span><strong>${actual}/${planned}</strong><span class="ex-muted-sm">sessões concluídas / previstas</span></div></div>
     <div class="ex-card"><div class="ex-section-head"><h3>Progresso por disciplina</h3><span class="ex-muted-sm">Estudado e domínio aparecem separados</span></div><div class="ex-analytics-grid">${subjectRows}</div></div>
     <div class="ex-overview-grid"><section class="ex-card"><div class="ex-section-head"><h3>Tempo de estudo · últimos 14 dias</h3></div><div class="ex-trend-chart" role="img" aria-label="Minutos estudados por dia durante os últimos 14 dias">${trend.map(x=>`<div class="ex-trend-col" title="${x.date}: ${x.mins} min"><span style="height:${Math.max(3,Math.round(x.mins/maxTrend*100))}%"></span><small>${x.date.slice(8)}</small></div>`).join('')}</div></section>
     <section class="ex-card"><div class="ex-section-head"><h3>Conteúdos que precisam de atenção</h3></div><div class="ex-list">${weak.map(t=>`<div class="ex-attention-row"><div><strong>${esc(t.titulo)}</strong><small>${esc(discLabel(t.disciplinaId))} · domínio ${Number(t.masteryPct)||0}%</small></div><span>${Number(t.exerciseCount)||0} exercícios · ${Number(t.accuracyPct)||0}% acerto</span></div>`).join('')}</div></section></div>
+    <div class="ex-card"><div class="ex-section-head"><div><span class="ex-eyebrow">CONSISTÊNCIA</span><h3>Atividade nos últimos 35 dias</h3></div><span class="ex-muted-sm">Minutos registados por dia</span></div><div class="ex-consistency-grid" role="img" aria-label="Mapa de consistência de estudo dos últimos 35 dias">${heatDays.map(x=>`<span class="ex-consistency-cell" data-level="${x.mins===0?0:x.mins<30?1:x.mins<60?2:x.mins<120?3:4}" title="${x.date}: ${x.mins} min"></span>`).join('')}</div><div class="ex-consistency-legend"><span>Menos</span>${[0,1,2,3,4].map(n=>`<i data-level="${n}"></i>`).join('')}<span>Mais</span></div></div>
     <div class="ex-card"><div class="ex-section-head"><h3>Histórico de sessões</h3><span class="ex-muted-sm">${sessions.length} concluídas</span></div><div class="ex-list">${sessions.slice().sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,12).map(s=>`<div class="ex-row"><strong>${esc(topicLabel(s.topicId)||'Sessão')}</strong><span class="ex-muted-sm">${esc(discLabel(s.disciplinaId))} · ${esc(fmtDate(s.data))} · ${s.duracaoMin} min · ${esc(s.activity||'study')}</span></div>`).join('')||'<div class="ex-empty">Conclui sessões para começar a ver a evolução.</div>'}</div></div>`;
 }
 

@@ -17,7 +17,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2 2 2 0 0 1 2-2h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14a2 2 0 0 0-2 2 2 2 0 0 0-2-2H5.5A1.5 1.5 0 0 1 4 18.5z' fill='%23a24f36'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="app.css?v=6">
     <link rel="stylesheet" href="layout.css?v=11">
-    <link rel="stylesheet" href="design.css?v=5">
+    <link rel="stylesheet" href="design.css?v=6">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
 </head>
 <body class="min-h-screen bg-canvas font-sans text-fg antialiased">
@@ -220,6 +220,10 @@
                 <circle cx="12" cy="12" r="9"/>
                 <path d="M12 7v5l3 2"/>
             </symbol>
+            <symbol id="i-map-pin" viewBox="0 0 24 24">
+                <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/>
+                <circle cx="12" cy="10" r="3"/>
+            </symbol>
             <symbol id="i-star" viewBox="0 0 24 24">
                 <path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9L12 3Z"/>
             </symbol>
@@ -251,7 +255,7 @@
                 <button type="button" data-view="calendario" data-label="Calendário" title="Calendário" class="sj-nav-item">
                     <svg class="icon"><use href="#i-calendar"/></svg><span>Calendário</span>
                 </button>
-                <button type="button" data-view="semanal" data-label="Planeamento" title="Horário semanal" class="sj-nav-item">
+                <button type="button" data-view="semanal" data-label="Horário Semanal" title="Horário semanal" class="sj-nav-item">
                     <svg class="icon"><use href="#i-week"/></svg><span>Horário semanal</span>
                 </button>
             </div>
@@ -1286,93 +1290,248 @@
             </div>
         </dialog>
 
-        <!-- ══ Vista: Semanal ══ -->
-        <section id="view-semanal" data-panel="semanal" hidden
-            class="flex flex-col gap-4 glass rounded-2xl border border-line bg-surface p-6 shadow-card">
-            <header class="flex flex-wrap items-center justify-between gap-2.5">
-                <div class="flex items-center gap-1.5">
-                    <svg class="icon h-5 w-5 text-brand-light"><use href="#i-week"/></svg>
-                    <h2 class="text-base font-semibold">Semanal</h2>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <span id="week-number" class="mr-2 px-2 py-0.5 rounded-full bg-surface-2 text-[10px] font-medium text-muted"></span>
-                    <span id="week-label" class="text-xs text-faint"></span>
-                    <div class="ml-auto flex items-center gap-1.5">
-                        <div class="flex items-center gap-1" role="group" aria-label="Resolução da grelha">
-                            <button type="button" data-week-passo="0.25" class="pdf-filter" title="Grelha de 15 em 15 minutos">15m</button>
-                            <button type="button" data-week-passo="0.5" class="pdf-filter" title="Grelha de 30 em 30 minutos">30m</button>
-                            <button type="button" data-week-passo="1" class="pdf-filter" title="Grelha de hora a hora">60m</button>
+        <!-- ══ Vista: Horário Semanal ══ -->
+        <section id="view-semanal" data-panel="semanal" hidden class="wks-page" aria-labelledby="wks-title">
+            <header class="wks-header">
+                <div class="wks-header-top">
+                    <div class="wks-title-block">
+                        <p class="wks-kicker"><span class="wks-live-dot" aria-hidden="true"></span> Planner</p>
+                        <div class="wks-title-row">
+                            <h1 id="wks-title" class="wks-title">Horário Semanal</h1>
+                            <span id="week-number" class="wks-week-pill">Semana —</span>
                         </div>
-                        <button id="week-prev" type="button" aria-label="Semana anterior" class="icon-btn" title="Semana anterior">
-                            <svg class="icon h-4 w-4"><use href="#i-chevron-left"/></svg>
+                        <div class="wks-meta">
+                            <span class="wks-meta-item" title="Ano letivo">
+                                <svg class="icon"><use href="#i-grad"/></svg>
+                                <span>Ano letivo</span>
+                                <strong id="week-year">—</strong>
+                            </span>
+                            <span class="wks-meta-sep" aria-hidden="true"></span>
+                            <span id="week-period" class="wks-period">—</span>
+                            <span class="wks-meta-sep" aria-hidden="true"></span>
+                            <span class="wks-meta-item">
+                                <svg class="icon"><use href="#i-calendar"/></svg>
+                                <span id="week-label">—</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="wks-header-actions">
+                        <div class="wks-segment" role="group" aria-label="Vista do horário">
+                            <button type="button" id="week-view-week" class="wks-segment-btn is-active" data-week-view="semana" aria-pressed="true" title="Vista semanal">
+                                <svg class="icon"><use href="#i-week"/></svg><span>Semana</span>
+                            </button>
+                            <button type="button" id="week-view-day" class="wks-segment-btn" data-week-view="dia" aria-pressed="false" title="Vista diária">
+                                <svg class="icon"><use href="#i-calendar"/></svg><span>Dia</span>
+                            </button>
+                        </div>
+                        <button id="week-edit" type="button" class="btn-soft wks-edit-btn" aria-pressed="false" title="Ativar modo de edição">
+                            <svg class="icon h-3.5 w-3.5"><use href="#i-pencil"/></svg><span>Editar horário</span>
                         </button>
-                        <button id="week-today" type="button" aria-label="Esta semana" class="btn-ghost hidden" title="Hoje">
-                            <svg class="icon h-3.5 w-3.5"><use href="#i-calendar"/></svg>
-                            <span class="hidden sm:inline">Hoje</span>
+                        <button id="week-add" type="button" class="btn-primary wks-add-btn">
+                            <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg><span>Adicionar</span>
                         </button>
-                        <button id="week-next" type="button" aria-label="Semana seguinte" class="icon-btn" title="Semana seguinte">
-                            <svg class="icon h-4 w-4"><use href="#i-chevron-right"/></svg>
+                    </div>
+                </div>
+
+                <div class="wks-toolbar">
+                    <div class="wks-nav-group">
+                        <button id="week-prev" type="button" class="wks-nav-btn" aria-label="Semana anterior" title="Semana anterior">
+                            <svg class="icon"><use href="#i-chevron-left"/></svg>
                         </button>
-                        <button id="week-add" type="button" class="btn-primary ml-2 inline-flex items-center gap-1.5">
-                            <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
-                            <span>Adicionar</span>
+                        <button id="week-today" type="button" class="wks-today-btn" title="Ir para a semana atual">Hoje</button>
+                        <button id="week-next" type="button" class="wks-nav-btn" aria-label="Semana seguinte" title="Semana seguinte">
+                            <svg class="icon"><use href="#i-chevron-right"/></svg>
                         </button>
+                    </div>
+
+                    <div class="wks-toolbar-right">
+                        <button id="week-weekend" type="button" class="wks-chip-btn" aria-pressed="false" title="Mostrar sábado e domingo">
+                            <svg class="icon"><use href="#i-calendar"/></svg><span>Sáb · Dom</span>
+                        </button>
+                        <button id="week-settings-btn" type="button" class="wks-icon-btn" aria-expanded="false" aria-controls="week-settings-pop" title="Configurar grelha">
+                            <svg class="icon"><use href="#i-settings"/></svg>
+                        </button>
+
+                        <div id="week-settings-pop" class="wks-pop" hidden>
+                            <div class="wks-pop-head">
+                                <strong>Configurar grelha</strong>
+                                <button id="week-settings-close" type="button" class="wks-pop-close" aria-label="Fechar configuração">
+                                    <svg class="icon"><use href="#i-x"/></svg>
+                                </button>
+                            </div>
+                            <div class="wks-pop-row">
+                                <span>Intervalo</span>
+                                <div class="wks-segment wks-seg-sm" role="group" aria-label="Intervalo da grelha">
+                                    <button type="button" data-week-passo="0.25" class="wks-segment-btn" aria-pressed="false" title="Grelha de 15 em 15 minutos">15m</button>
+                                    <button type="button" data-week-passo="0.5" class="wks-segment-btn" aria-pressed="true" title="Grelha de 30 em 30 minutos">30m</button>
+                                    <button type="button" data-week-passo="1" class="wks-segment-btn" aria-pressed="false" title="Grelha de hora a hora">60m</button>
+                                </div>
+                            </div>
+                            <div class="wks-pop-row">
+                                <label for="week-start">Início</label>
+                                <select id="week-start" class="field">
+                                    <option value="5">05:00</option>
+                                    <option value="6">06:00</option>
+                                    <option value="7">07:00</option>
+                                    <option value="8">08:00</option>
+                                    <option value="9">09:00</option>
+                                    <option value="10">10:00</option>
+                                    <option value="11">11:00</option>
+                                    <option value="12">12:00</option>
+                                </select>
+                            </div>
+                            <div class="wks-pop-row">
+                                <label for="week-end">Fim</label>
+                                <select id="week-end" class="field">
+                                    <option value="13">13:00</option>
+                                    <option value="14">14:00</option>
+                                    <option value="15">15:00</option>
+                                    <option value="16">16:00</option>
+                                    <option value="17">17:00</option>
+                                    <option value="18">18:00</option>
+                                    <option value="19">19:00</option>
+                                    <option value="20">20:00</option>
+                                    <option value="21">21:00</option>
+                                    <option value="22">22:00</option>
+                                    <option value="23">23:00</option>
+                                    <option value="24">24:00</option>
+                                </select>
+                            </div>
+                            <label class="wks-switch-row">
+                                <span>Mostrar fim de semana</span>
+                                <input id="week-weekend-setting" type="checkbox">
+                            </label>
+                            <p class="wks-pop-hint">A grelha ajusta-se automaticamente à janela visível. As tuas preferências ficam guardadas neste dispositivo.</p>
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <div class="flex flex-wrap items-center gap-2 text-[11px] text-faint">
-                <span class="flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-1">
-                    <span class="w-2.5 h-2.5 rounded"></span>
-                    <span class="font-medium text-fg">Fixo</span>
-                    <span class="text-muted">(recorrente)</span>
-                </span>
-                <span class="flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/5 px-2.5 py-1">
-                    <span class="w-2.5 h-2.5 rounded-full border-2 border-brand"></span>
-                    <span class="font-medium text-fg">Dinâmico</span>
-                    <span class="text-muted">(semanal)</span>
-                </span>
-                <span class="ml-auto flex items-center gap-1.5 px-2 py-1 rounded-full bg-surface-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-brand/5"></span>
-                    <span class="text-muted">Hoje</span>
-                </span>
-                <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-surface-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-surface-3"></span>
-                    <span class="text-muted">Fim de semana</span>
-                </span>
-            </div>
+            <div class="wks-layout">
+                <div class="wks-calendar" id="wks-calendar">
+                    <div class="wks-cal-top">
+                        <div class="wks-cal-title">
+                            <span class="wks-cal-dot" aria-hidden="true"></span>
+                            <span id="week-cal-caption">Semana</span>
+                        </div>
+                        <div class="wks-cal-actions">
+                            <span class="wks-legend" aria-hidden="true">
+                                <span><i class="wks-legend-swatch"></i>Fixo</span>
+                                <span><i class="wks-legend-swatch is-dynamic"></i>Dinâmico</span>
+                            </span>
+                        </div>
+                    </div>
 
-            <div id="week-stats" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-faint"></div>
+                    <div id="week-edit-bar" class="wks-edit-bar" hidden>
+                        <svg class="icon"><use href="#i-pencil"/></svg>
+                        <span>Modo de edição: arrasta para mover, puxa a base para ajustar e clica num espaço vazio para criar.</span>
+                        <button id="week-edit-done" type="button" class="wks-edit-done">Concluir</button>
+                    </div>
 
-            <div class="overflow-x-auto" id="week-scroll">
-                <div id="week-day-pager" class="mb-2 flex gap-1 sm:hidden" role="group" aria-label="Dia visível">
-                    <button type="button" data-week-dia="1" class="pdf-filter flex-1" title="Segunda-feira">S</button>
-                    <button type="button" data-week-dia="2" class="pdf-filter flex-1" title="Terça-feira">T</button>
-                    <button type="button" data-week-dia="3" class="pdf-filter flex-1" title="Quarta-feira">Q</button>
-                    <button type="button" data-week-dia="4" class="pdf-filter flex-1" title="Quinta-feira">Q</button>
-                    <button type="button" data-week-dia="5" class="pdf-filter flex-1" title="Sexta-feira">S</button>
-                    <button type="button" data-week-dia="6" class="pdf-filter flex-1" title="Sábado">S</button>
-                    <button type="button" data-week-dia="7" class="pdf-filter flex-1" title="Domingo">D</button>
+                    <div id="week-day-picker" class="wks-day-picker" hidden role="group" aria-label="Dia visível"></div>
+
+                    <div class="wks-cal-scroll" id="week-scroll">
+                        <div class="wks-cal-inner">
+                            <div class="wks-cal-head" id="week-days-head"></div>
+                            <div class="wks-scroll-y" id="week-scroll-y">
+                                <div class="wks-grid" id="week-grid-wrap">
+                                    <div class="wks-grid-body" id="week-grid" role="grid" aria-label="Horário semanal">
+                                        <div class="wks-gutter" id="week-gutter" aria-hidden="true"></div>
+                                        <div class="wks-columns" id="week-body"></div>
+                                        <div class="wks-now" id="week-now" hidden>
+                                            <span class="wks-now-label"></span>
+                                            <span class="wks-now-dot" aria-hidden="true"></span>
+                                        </div>
+                                        <div class="wks-empty" id="week-empty" hidden>
+                                            <svg class="icon"><use href="#i-calendar"/></svg>
+                                            <span>Sem blocos nesta vista. Clica num horário para adicionar.</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="relative min-w-[1000px]" id="week-grid-wrap">
-                <table id="week-grid" class="w-full border-collapse" role="grid">
-                    <thead>
-                        <tr class="border-b border-line">
-                            <th class="sticky left-0 w-16 px-2 py-0 text-left text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface leading-none">
-                                Hora
-                            </th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface" data-day="1">Seg</th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface" data-day="2">Ter</th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface" data-day="3">Qua</th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface" data-day="4">Qui</th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface" data-day="5">Sex</th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface-2/50" data-day="6">Sáb</th>
-                            <th class="sticky left-16 w-40 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-faint bg-surface-2/50" data-day="7">Dom</th>
-                        </tr>
-                    </thead>
-                    <tbody id="week-body"></tbody>
-                </table>
-                </div>
+
+                <aside class="wks-side" aria-label="Resumo do horário">
+                    <section class="wks-side-card">
+                        <header class="wks-side-head">
+                            <h2>Resumo da semana</h2>
+                            <span id="week-side-range" class="wks-side-hint">—</span>
+                        </header>
+                        <div class="wks-summary-grid">
+                            <div class="wks-stat">
+                                <span id="week-stat-total" class="wks-stat-v">—</span>
+                                <span class="wks-stat-k">Carga</span>
+                            </div>
+                            <div class="wks-stat">
+                                <span id="week-stat-classes" class="wks-stat-v">—</span>
+                                <span class="wks-stat-k">Blocos</span>
+                            </div>
+                            <div class="wks-stat">
+                                <span id="week-stat-fixed" class="wks-stat-v">—</span>
+                                <span class="wks-stat-k">Fixos</span>
+                            </div>
+                        </div>
+                        <div class="wks-summary-bar"><span id="week-stat-bar"></span></div>
+                        <p id="week-stat-note" class="wks-summary-note">A calcular…</p>
+                    </section>
+
+                    <section class="wks-side-card">
+                        <header class="wks-side-head">
+                            <h2>Próximo</h2>
+                            <span id="week-next-when" class="wks-side-hint">—</span>
+                        </header>
+                        <div id="week-next-body" class="wks-next-body"></div>
+                    </section>
+
+                    <section class="wks-side-card">
+                        <header class="wks-side-head">
+                            <h2>Carga diária</h2>
+                            <span class="wks-side-hint">horas</span>
+                        </header>
+                        <div id="week-load" class="wks-load"></div>
+                    </section>
+
+                    <section class="wks-side-card">
+                        <header class="wks-side-head">
+                            <h2>Distribuição</h2>
+                            <span id="week-dist-count" class="wks-side-hint">—</span>
+                        </header>
+                        <div id="week-distribution" class="wks-dist"></div>
+                    </section>
+
+                    <section class="wks-side-card">
+                        <header class="wks-side-head">
+                            <h2>Aulas fixas</h2>
+                            <button id="week-add-fixed" type="button" class="wks-mini-btn" title="Adicionar aula fixa" aria-label="Adicionar aula fixa">
+                                <svg class="icon"><use href="#i-plus"/></svg>
+                            </button>
+                        </header>
+                        <div id="week-fixed-list" class="wks-fixed-list"></div>
+                    </section>
+
+                    <section class="wks-side-card wks-quick">
+                        <header class="wks-side-head">
+                            <h2>Ações rápidas</h2>
+                        </header>
+                        <div class="wks-quick-grid">
+                            <button type="button" class="wks-quick-btn" data-week-quick="aula">
+                                <svg class="icon"><use href="#i-plus"/></svg><span>Nova aula</span>
+                            </button>
+                            <button type="button" class="wks-quick-btn" data-week-quick="bloco">
+                                <svg class="icon"><use href="#i-target"/></svg><span>Bloco de estudo</span>
+                            </button>
+                            <button type="button" class="wks-quick-btn" id="week-quick-today">
+                                <svg class="icon"><use href="#i-calendar"/></svg><span>Ir para hoje</span>
+                            </button>
+                            <button type="button" class="wks-quick-btn" id="week-quick-edit">
+                                <svg class="icon"><use href="#i-pencil"/></svg><span>Editar horário</span>
+                            </button>
+                        </div>
+                    </section>
+                </aside>
             </div>
         </section>
 
@@ -1573,56 +1732,56 @@
         </div>
     </dialog>
 
-    <!-- Evento Semanal -->
-    <dialog id="week-form"
-        class="m-auto w-[min(28rem,94vw)] max-w-none overflow-hidden glass rounded-2xl border border-line bg-surface p-0 text-fg shadow-card backdrop:bg-black/70">
-        <form class="flex flex-col" novalidate>
-            <div class="flex items-center gap-3 border-b border-line px-4 py-2.5">
-                <h3 id="week-form-title" class="flex-1 text-sm font-semibold">Novo compromisso</h3>
+    <!-- Aula / bloco do Horário Semanal -->
+    <dialog id="week-form" class="wks-dialog">
+        <form novalidate>
+            <div class="wks-dialog-head">
+                <h3 id="week-form-title">Nova aula ou bloco</h3>
                 <button type="button" class="icon-btn" data-week-cancelar title="Fechar" aria-label="Fechar">
                     <svg class="icon h-4 w-4"><use href="#i-x"/></svg>
                 </button>
             </div>
 
-            <div class="flex flex-col gap-3.5 p-4">
-                <div class="grid grid-cols-2 gap-2" role="group" aria-label="Camada">
-                    <button type="button" data-week-layer="fixo" aria-pressed="true"
-                        class="week-kind">
-                        <svg class="icon h-4 w-4"><use href="#i-panel"/></svg>
-                        <span>Fixo (recorrente)</span>
-                    </button>
-                    <button type="button" data-week-layer="dinamico" aria-pressed="false"
-                        class="week-kind">
-                        <svg class="icon h-4 w-4"><use href="#i-week"/></svg>
-                        <span>Dinâmico (semanal)</span>
-                    </button>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="week-label" for="week-titulo">Título</label>
-                    <input id="week-titulo" type="text" placeholder="Ex.: Aula de Matemática A" class="field w-full" autocomplete="off">
-                </div>
-
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-dia">Dia</label>
-                        <select id="week-dia" class="field w-full">
-                            <option value="1">Segunda-feira</option>
-                            <option value="2">Terça-feira</option>
-                            <option value="3">Quarta-feira</option>
-                            <option value="4">Quinta-feira</option>
-                            <option value="5">Sexta-feira</option>
-                        </select>
+            <div class="wks-dialog-body">
+                <div>
+                    <span class="wks-field-label">Tipo</span>
+                    <div class="wks-layer-row" role="group" aria-label="Tipo de compromisso">
+                        <button type="button" data-week-layer="fixo" aria-pressed="true" class="wks-layer-opt">
+                            <svg class="icon"><use href="#i-week"/></svg>
+                            <span>
+                                <strong>Aula fixa</strong>
+                                <small>Repete todas as semanas</small>
+                            </span>
+                        </button>
+                        <button type="button" data-week-layer="dinamico" aria-pressed="false" class="wks-layer-opt">
+                            <svg class="icon"><use href="#i-target"/></svg>
+                            <span>
+                                <strong>Bloco dinâmico</strong>
+                                <small>Só nesta semana</small>
+                            </span>
+                        </button>
                     </div>
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-hora">Hora</label>
+                </div>
+
+                <div>
+                    <label class="wks-field-label" for="week-titulo">Título</label>
+                    <input id="week-titulo" type="text" placeholder="Ex.: Matemática A" class="field w-full" autocomplete="off">
+                </div>
+
+                <div class="wks-form-grid">
+                    <div>
+                        <label class="wks-field-label" for="week-dia">Dia</label>
+                        <select id="week-dia" class="field w-full"></select>
+                    </div>
+                    <div>
+                        <label class="wks-field-label" for="week-hora">Início</label>
                         <select id="week-hora" class="field w-full"></select>
                     </div>
                 </div>
 
-                <div class="grid gap-3 sm:grid-cols-2">
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-duracao">Duração</label>
+                <div class="wks-form-grid">
+                    <div>
+                        <label class="wks-field-label" for="week-duracao">Duração</label>
                         <select id="week-duracao" class="field w-full">
                             <option value="0.25">15 minutos</option>
                             <option value="0.5">30 minutos</option>
@@ -1636,29 +1795,44 @@
                             <option value="3">3 horas</option>
                             <option value="3.5">3 horas e 30</option>
                             <option value="4">4 horas</option>
+                            <option value="5">5 horas</option>
+                            <option value="6">6 horas</option>
+                            <option value="8">8 horas</option>
                         </select>
                     </div>
-                    <div class="flex flex-col gap-1.5">
-                        <label class="week-label" for="week-cor">Cor</label>
-                        <select id="week-cor" class="field w-full">
-                            <option value="brand">Brand</option>
-                            <option value="blue">Azul</option>
-                            <option value="green">Verde</option>
-                            <option value="yellow">Amarelo</option>
-                            <option value="cyan">Ciano</option>
-                            <option value="rose">Rosa</option>
-                            <option value="purple">Roxo</option>
-                        </select>
+                    <div>
+                        <span class="wks-field-label">Cor</span>
+                        <div class="wks-color-row" role="group" aria-label="Cor da aula">
+                            <button type="button" class="wks-color-swatch" data-week-color="brand" style="--swatch: var(--color-brand)" aria-label="Lavanda" aria-pressed="true"></button>
+                            <button type="button" class="wks-color-swatch" data-week-color="blue" style="--swatch: var(--color-subject-blue)" aria-label="Azul" aria-pressed="false"></button>
+                            <button type="button" class="wks-color-swatch" data-week-color="green" style="--swatch: var(--color-subject-green)" aria-label="Verde" aria-pressed="false"></button>
+                            <button type="button" class="wks-color-swatch" data-week-color="yellow" style="--swatch: var(--color-subject-yellow)" aria-label="Âmbar" aria-pressed="false"></button>
+                            <button type="button" class="wks-color-swatch" data-week-color="cyan" style="--swatch: var(--color-subject-cyan)" aria-label="Ciano" aria-pressed="false"></button>
+                            <button type="button" class="wks-color-swatch" data-week-color="rose" style="--swatch: var(--color-subject-rose)" aria-label="Rosa" aria-pressed="false"></button>
+                            <button type="button" class="wks-color-swatch" data-week-color="purple" style="--swatch: var(--color-subject-violet)" aria-label="Violeta" aria-pressed="false"></button>
+                        </div>
+                        <input id="week-cor" type="hidden" value="brand">
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-1.5">
-                    <label class="week-label" for="week-notas">Notas</label>
-                    <textarea id="week-notas" rows="2" placeholder="Opcional..." class="field w-full text-sm" autocomplete="off"></textarea>
+                <div class="wks-form-grid">
+                    <div>
+                        <label class="wks-field-label" for="week-sala">Sala</label>
+                        <input id="week-sala" type="text" placeholder="Ex.: B12" class="field w-full" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="wks-field-label" for="week-professor">Professor</label>
+                        <input id="week-professor" type="text" placeholder="Ex.: Dra. Silva" class="field w-full" autocomplete="off">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="wks-field-label" for="week-notas">Notas</label>
+                    <textarea id="week-notas" rows="2" placeholder="Uma nota rápida sobre esta aula…" class="field w-full text-sm" autocomplete="off"></textarea>
                 </div>
             </div>
 
-            <div class="flex justify-end gap-2 border-t border-line bg-surface-2 px-4 py-3">
+            <div class="wks-dialog-foot">
                 <button type="button" class="btn-soft" data-week-cancelar>Cancelar</button>
                 <button id="week-apagar" type="button" class="btn-soft btn-soft-danger" hidden>
                     <svg class="icon h-3.5 w-3.5"><use href="#i-trash"/></svg>
@@ -1668,9 +1842,10 @@
                     <svg class="icon h-3.5 w-3.5"><use href="#i-plus"/></svg>
                     <span>Duplicar</span>
                 </button>
+                <span class="spacer"></span>
                 <button id="week-salvar" type="button" class="btn-primary">
                     <svg class="icon h-3.5 w-3.5"><use href="#i-check"/></svg>
-                    <span>Salvar</span>
+                    <span>Guardar</span>
                 </button>
             </div>
         </form>
@@ -1855,7 +2030,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
     <script src="src/whiteboard.js?v=10"></script>
-    <script src="src/weekly.js?v=10"></script>
+    <script src="src/weekly.js?v=13"></script>
     <script src="src/github-sync.js?v=10"></script>
     <script src="src/conta-sync.js?v=10"></script>
     <script src="src/vault.js?v=10"></script>

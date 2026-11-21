@@ -2434,7 +2434,7 @@ const VIEW_LABELS = {
     estudar: 'Concentração',
     pdfs: 'Biblioteca',
     caderno: 'Caderno',
-    semanal: 'Planeamento',
+    semanal: 'Horário Semanal',
     exames: 'Exames Nacionais',
     definicoes: 'Definições',
     whiteboard: 'Quadro Branco',
