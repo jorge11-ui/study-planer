@@ -93,7 +93,10 @@ test('motor: plano diário respeita minutos, horas de sessão e não repete tóp
     id: `disc-mat:t${i}`, titulo: `Tema ${i}`, masteryPct: i * 10,
   }));
   const plano = engine.generate(topicos, EXAMES, { minutesPerDay: 60, sessionMinutes: 30 }, HOJE);
-  assert.equal(plano.daily.totalMinutes, 60);
+  // A duração adapta-se ao método (ex.: recuperação ativa 25 min), pelo que
+  // o dia fica dentro do orçamento sem precisar de encher até ao último minuto.
+  assert.ok(plano.daily.totalMinutes <= 60 && plano.daily.totalMinutes >= 45);
+  assert.ok(plano.daily.totalMinutes + 15 > 60, 'não sobra tempo para outra sessão');
   assert.ok(plano.daily.items.length <= 2);
   for (const item of plano.daily.items) {
     assert.ok(item.durationMin >= 15 && item.durationMin <= 30);
@@ -194,4 +197,114 @@ test('motor: aplicar sessão não aceita acertos acima das tentativas', () => {
   const r = engine.applySession(t, { exerciseCount: 5, correctCount: 99, confidence: 3 }, HOJE);
   assert.equal(r.accuracyPct, 100);
   assert.ok(t.masteryPct <= 100);
+});
+
+test('motor: recomendações escolhem método adequado e moderam tópicos dominados', () => {
+  const topicos = [
+    topico({
+      id: 'vencido', titulo: 'Vencido', estado: 'em_progresso', masteryPct: 30,
+      confidence: 2, nextReviewDate: '2026-11-10', lastStudiedAt: '2026-11-01T00:00:00Z',
+      exerciseCount: 2, accuracyPct: 40,
+    }),
+    topico({ id: 'novo', titulo: 'Novo' }),
+    topico({
+      id: 'dominado', titulo: 'Dominado', estado: 'concluido', masteryPct: 95,
+      masteryState: 'mastered', confidence: 5, lastStudiedAt: '2026-11-18T00:00:00Z',
+      exerciseCount: 25, accuracyPct: 90, nextReviewDate: '2026-12-20',
+    }),
+  ];
+  const recs = engine.recommendTopics(topicos, EXAMES, { minutesPerDay: 90, sessionMinutes: 45 }, { today: HOJE, limit: 10 });
+  assert.equal(recs[0].topic.id, 'vencido');
+  assert.equal(recs[0].method.id, 'spaced_repetition');
+  assert.equal(recs[0].dueState, 'overdue');
+  assert.ok(recs[0].reasons.some((r) => /atrasada/.test(r)));
+  const dominado = recs.find((r) => r.topic.id === 'dominado');
+  assert.equal(dominado.method.id, 'maintenance');
+  assert.ok(dominado.priority <= 55, `prioridade de manutenção ${dominado.priority}`);
+  assert.ok(dominado.reasons.some((r) => /consolidado/.test(r)));
+});
+
+test('motor: tópico abandonado com confiança baixa recebe reaprendizagem', () => {
+  const t = topico({
+    id: 'abandonado', estado: 'em_progresso', masteryPct: 55, confidence: 2,
+    lastStudiedAt: '2026-10-01T00:00:00Z', exerciseCount: 0,
+  });
+  const rec = engine.recommendTopics([t], EXAMES, {}, { today: HOJE })[0];
+  assert.equal(rec.method.id, 'relearn');
+  assert.ok(rec.reasons.some((r) => /confiança baixa/.test(r)));
+});
+
+test('motor: agenda contínua expõe próximo passo, dias e métodos', () => {
+  const topicos = [
+    topico({ id: 'a', nextReviewDate: '2026-11-10', lastStudiedAt: '2026-11-01T00:00:00Z', estado: 'em_progresso', masteryPct: 30 }),
+    topico({ id: 'b' }),
+  ];
+  const agenda = engine.buildStudyAgenda(topicos, EXAMES, { minutesPerDay: 60, sessionMinutes: 30 }, HOJE, 7);
+  assert.equal(agenda.days.length, 7);
+  assert.equal(agenda.startDate, HOJE);
+  assert.ok(agenda.items.length > 0);
+  assert.ok(agenda.next && agenda.next.topicId);
+  assert.ok(agenda.recommendations.length >= 1);
+  for (const item of agenda.items) {
+    assert.ok(item.method && item.method.id && item.method.label);
+    assert.ok(item.objective && item.reason);
+    assert.ok(Array.isArray(item.reasonCodes));
+  }
+  const plano = engine.generate(topicos, EXAMES, { minutesPerDay: 60, sessionMinutes: 30 }, HOJE);
+  assert.ok(plano.recommendations.length >= 1);
+  assert.ok(plano.nextBest && plano.nextBest.topicId);
+  assert.equal(plano.agenda.horizonDays, 7);
+});
+
+test('motor: tópicos adiados saem das recomendações e do plano até à data', () => {
+  const adiado = topico({ id: 'adiado', ignoredUntil: '2026-11-21', masteryPct: 30, estado: 'em_progresso' });
+  const livre = topico({ id: 'livre' });
+  const hoje = engine.recommendTopics([adiado, livre], EXAMES, {}, { today: HOJE, limit: 10 });
+  assert.deepEqual(hoje.map((r) => r.topic.id), ['livre']);
+  const plano = engine.generate([adiado, livre], EXAMES, { minutesPerDay: 60, sessionMinutes: 30 }, HOJE);
+  assert.ok(!plano.daily.items.some((i) => i.topicId === 'adiado'));
+  const semana = engine.generate([adiado, livre], EXAMES, { minutesPerDay: 60, sessionMinutes: 30 }, HOJE).week;
+  assert.ok(semana.some((d) => d.date === '2026-11-21' && d.items.some((i) => i.topicId === 'adiado')));
+  const amanha = engine.recommendTopics([adiado, livre], EXAMES, {}, { today: '2026-11-21', limit: 10 });
+  assert.ok(amanha.some((r) => r.topic.id === 'adiado'));
+});
+
+test('motor: pré-requisitos por consolidar reduzem prioridade e explicam bloqueio', () => {
+  const base = topico({ id: 'base', masteryPct: 20 });
+  const dependente = topico({ id: 'dependente', masteryPct: 90, estado: 'em_progresso', blockedBy: ['base'] });
+  const recs = engine.recommendTopics([base, dependente], EXAMES, {}, { today: HOJE, limit: 10 });
+  const r = recs.find((x) => x.topic.id === 'dependente');
+  assert.equal(r.blocked, true);
+  assert.ok(r.priority <= 45, `prioridade bloqueada ${r.priority}`);
+  assert.ok(r.reasons.some((x) => /pré-requisito/.test(x)));
+  assert.ok(r.reasonCodes.includes('blocked_prerequisite'));
+});
+
+test('motor: limite diário de manutenção é configurável', () => {
+  const dominado = topico({
+    id: 'dom', estado: 'concluido', masteryPct: 95, masteryState: 'mastered',
+    confidence: 5, exerciseCount: 20, accuracyPct: 90,
+    lastStudiedAt: '2026-11-18T00:00:00Z', nextReviewDate: '2026-12-20',
+  });
+  const novo = topico({ id: 'novo' });
+  const sem = engine.generate([dominado, novo], EXAMES, { minutesPerDay: 60, sessionMinutes: 30, maxMaintenancePerDay: 0 }, HOJE);
+  assert.ok(!sem.daily.items.some((i) => i.topicId === 'dom'));
+  const com = engine.generate([dominado, novo], EXAMES, { minutesPerDay: 60, sessionMinutes: 30, maxMaintenancePerDay: 1 }, HOJE);
+  assert.ok(com.daily.items.some((i) => i.topicId === 'dom'));
+  assert.equal(com.daily.items.find((i) => i.topicId === 'dom').actionType, 'maintenance');
+});
+
+test('motor: sessão guarda método, autoavaliação e lapsos', () => {
+  const t = topico({ masteryPct: 40 });
+  const r = engine.applySession(t, {
+    exerciseCount: 5, correctCount: 2, confidence: 2, difficulty: 4,
+    methodId: 'active_recall', selfRating: 2,
+  }, HOJE);
+  assert.equal(r.methodId, 'active_recall');
+  assert.equal(r.selfRating, 2);
+  assert.equal(t.lastMethod, 'active_recall');
+  assert.equal(t.lastSelfRating, 2);
+  assert.equal(t.reviewLapses, 1);
+  assert.equal(t.learningHistory.at(-1).methodId, 'active_recall');
+  assert.equal(t.learningHistory.at(-1).selfRating, 2);
 });
