@@ -230,6 +230,17 @@ function createStore(databaseUrl, options = {}) {
     });
   }
 
+  // Serializa atualizações do documento entre processos/instâncias do
+  // servidor. O lock de sessão mantém-se enquanto o chamador lê e grava o
+  // estado usando as operações existentes.
+  async function withSyncLock(fn) {
+    return withClient(async (client) => {
+      await client.query("SELECT pg_advisory_lock(hashtext('study-journal:sync-state'))");
+      try { return await fn(); }
+      finally { await client.query("SELECT pg_advisory_unlock(hashtext('study-journal:sync-state'))"); }
+    });
+  }
+
   async function readExamCenter() {
     const [meta, records] = await Promise.all([
       query("SELECT payload FROM exam_center_state WHERE id='main'"),
@@ -320,7 +331,7 @@ function createStore(databaseUrl, options = {}) {
   }
 
   return {
-    init, migrate, getState, putState,
+    init, migrate, getState, putState, withSyncLock,
     getSessions, putSession, deleteSession, putSessions,
     listFiles, getFile, putFile, deleteFile,
     close: () => pool.end(),

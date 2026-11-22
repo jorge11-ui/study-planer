@@ -510,6 +510,12 @@ async function apiSync(req, res) {
     if (!autorizarDados(req, res)) return;
 
     if (req.method === 'GET') {
+        // Render pode encaminhar pedidos consecutivos para processos
+        // diferentes. A memória de cada processo não é a fonte canónica.
+        if (pgStore) {
+            const atual = await pgStore.getState();
+            if (atual && typeof atual.rev === 'number') syncDoc = atual;
+        }
         json(res, 200, { ok: true, rev: syncDoc.rev, updatedAt: syncDoc.updatedAt, gid: syncDoc.gid, data: syncDoc.data });
         return;
     }
@@ -528,7 +534,14 @@ async function apiSync(req, res) {
         // e um push desatualizado nunca apaga minutos de outro aparelho.
         let resultado;
         try {
-            resultado = await comFilaSync(async () => {
+            const atualizar = async () => {
+                // Atualiza a revisão antes de comparar o push. Sem isto,
+                // uma instância secundária podia responder com um conflito
+                // baseado num estado antigo ou sobrescrever uma revisão nova.
+                if (pgStore) {
+                    const atual = await pgStore.getState();
+                    if (atual && typeof atual.rev === 'number') syncDoc = atual;
+                }
                 if (baseRev !== syncDoc.rev && body.forcar !== true) {
                     return {
                         conflito: true,
@@ -548,7 +561,8 @@ async function apiSync(req, res) {
                 await persistirSync(proximo);
                 syncDoc = proximo;
                 return { ok: true, doc: proximo };
-            });
+            };
+            resultado = await comFilaSync(() => pgStore ? pgStore.withSyncLock(atualizar) : atualizar());
         } catch {
             return json(res, 500, { ok: false, reason: 'erro' });
         }
