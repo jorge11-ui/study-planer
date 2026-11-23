@@ -7,6 +7,8 @@ window.Weekly = (() => {
     const CHAVE_FIM_SEMANA = 'study-journal-semanal-fim-semana';
     const CHAVE_INICIO = 'study-journal-semanal-inicio';
     const CHAVE_FIM = 'study-journal-semanal-fim';
+    const CHAVE_PREFS_TS = 'study-journal-semanal-prefs-ts';
+    const PREF_KEYS = new Set([CHAVE_PASSO, CHAVE_VISTA, CHAVE_FIM_SEMANA, CHAVE_INICIO, CHAVE_FIM]);
 
     const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
     const DIAS_COMPLETOS = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
@@ -82,6 +84,12 @@ window.Weekly = (() => {
     function guardar(chave, valor) {
         try {
             localStorage.setItem(chave, String(valor));
+            // Preferências do horário viajam com carimbo próprio para o
+            // outro aparelho não as repor com uma versão antiga.
+            if (PREF_KEYS.has(chave)) {
+                localStorage.setItem(CHAVE_PREFS_TS, String(Date.now()));
+                if (typeof pushDebounced === 'function') pushDebounced(1200);
+            }
         } catch { /* segue sem persistir */ }
     }
 
@@ -319,6 +327,7 @@ window.Weekly = (() => {
     function escreverDinamicos(key, data) {
         try {
             localStorage.setItem(key, JSON.stringify(data));
+            localStorage.setItem(`${key}-ts`, String(Date.now()));
             return true;
         } catch {
             return false;

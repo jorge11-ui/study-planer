@@ -82,6 +82,9 @@ let historyTimer = null;
 let lastHistoryJSON = '';
 let creatingBoardShape = false;
 const WHITEBOARD_DRAFT_KEY = 'study-journal-whiteboard-draft';
+const WHITEBOARD_DRAFT_TS_KEY = 'study-journal-whiteboard-draft-ts';
+const WHITEBOARD_GRID_KEY = 'study-journal-whiteboard-grid';
+const WHITEBOARD_GRID_TS_KEY = 'study-journal-whiteboard-grid-ts';
 let loadingBoard = false;
 let draftSaveTimer = null;
 let userChangedBoard = false;
@@ -216,7 +219,11 @@ function saveWhiteboardDraft() {
     draftSaveTimer = setTimeout(() => {
         try {
             localStorage.setItem(WHITEBOARD_DRAFT_KEY, JSON.stringify(canvas.toJSON()));
-            if (status) status.textContent = 'Rascunho guardado neste dispositivo.';
+            localStorage.setItem(WHITEBOARD_DRAFT_TS_KEY, String(Date.now()));
+            if (status) status.textContent = 'Rascunho guardado — a sincronizar…';
+            // O quadro também entra no documento de sync: no link oficial
+            // (Render) não existe pasta/vault para onde o botão Guardar escreva.
+            if (typeof pushDebounced === 'function') pushDebounced(2500);
         } catch (err) {
             console.warn('Não foi possível guardar o rascunho do quadro neste browser.', err);
             if (status) status.textContent = 'Não foi possível guardar neste dispositivo.';
@@ -643,8 +650,18 @@ function setBoardGrid(visible) {
 }
 
 function boardGridVisible() {
-    try { return localStorage.getItem('study-journal-whiteboard-grid') !== 'false'; }
+    try { return localStorage.getItem(WHITEBOARD_GRID_KEY) !== 'false'; }
     catch { return true; }
+}
+
+function aplicarGrelhaSync(grelhaVisivel) {
+    if (!canvas) return;
+    setBoardGrid(grelhaVisivel);
+    const gridToggle = document.getElementById('wb-grid-toggle');
+    if (gridToggle) {
+        gridToggle.setAttribute('aria-pressed', String(grelhaVisivel));
+        gridToggle.classList.toggle('bg-surface-3', grelhaVisivel);
+    }
 }
 
 function setupEvents() {
@@ -719,7 +736,11 @@ function setupEvents() {
             setBoardGrid(visible);
             gridToggle.setAttribute('aria-pressed', String(visible));
             gridToggle.classList.toggle('bg-surface-3', visible);
-            try { localStorage.setItem('study-journal-whiteboard-grid', String(visible)); } catch { /* só persiste nesta sessão */ }
+            try {
+                localStorage.setItem(WHITEBOARD_GRID_KEY, String(visible));
+                localStorage.setItem(WHITEBOARD_GRID_TS_KEY, String(Date.now()));
+                if (typeof pushDebounced === 'function') pushDebounced(1200);
+            } catch { /* só persiste nesta sessão */ }
         };
     }
 
@@ -781,7 +802,11 @@ function setupEvents() {
             updateZoomUI();
             canvas.renderAll();
             saveHistory();
-            try { localStorage.setItem(WHITEBOARD_DRAFT_KEY, JSON.stringify(canvas.toJSON())); } catch { /* o quadro continua disponível até sair da página */ }
+            try {
+                localStorage.setItem(WHITEBOARD_DRAFT_KEY, JSON.stringify(canvas.toJSON()));
+                localStorage.setItem(WHITEBOARD_DRAFT_TS_KEY, String(Date.now()));
+                if (typeof pushDebounced === 'function') pushDebounced(800);
+            } catch { /* o quadro continua disponível até sair da página */ }
             setBoardStatus('Quadro novo criado.');
         }
     };
@@ -821,7 +846,9 @@ async function saveWhiteboard() {
     let localSaved = false;
     try {
         localStorage.setItem(WHITEBOARD_DRAFT_KEY, data);
+        localStorage.setItem(WHITEBOARD_DRAFT_TS_KEY, String(Date.now()));
         localSaved = true;
+        if (typeof pushDebounced === 'function') pushDebounced(300);
     } catch { /* tenta guardar no servidor */ }
     setBoardStatus('A guardar o quadro…');
     try {
@@ -875,5 +902,25 @@ async function loadWhiteboard() {
         console.log('Nenhum arquivo de quadro encontrado.');
     }
 }
+
+/* O sync escreve o rascunho no localStorage e avisa por evento. Só se
+   recarrega o canvas quando o quadro remoto é mais recente do que o que
+   está aberto, para não apagar um desenho em curso. */
+window.addEventListener('studyjournal:whiteboard-sync', (event) => {
+    const detalhe = event && event.detail;
+    if (!canvas || loadingBoard || !detalhe || typeof detalhe.content !== 'string') return;
+    const localTs = Number(localStorage.getItem(WHITEBOARD_DRAFT_TS_KEY)) || 0;
+    if (detalhe.updatedAt && localTs > Number(detalhe.updatedAt)) return;
+    try {
+        loadWhiteboardData(JSON.parse(detalhe.content));
+        setBoardStatus('Quadro sincronizado de outro aparelho.');
+    } catch { /* rascunho remoto inválido: mantém o atual */ }
+});
+
+window.addEventListener('studyjournal:whiteboard-grid-sync', (event) => {
+    const detalhe = event && event.detail;
+    if (!detalhe || typeof detalhe.visible !== 'boolean') return;
+    aplicarGrelhaSync(detalhe.visible);
+});
 
 window.initWhiteboard = initWhiteboard;

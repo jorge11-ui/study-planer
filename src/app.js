@@ -4015,6 +4015,9 @@ function bind() {
             if (guardado) input.value = guardado;
             input.addEventListener('input', () => {
                 write('study-journal-session-goal', input.value.slice(0, 120));
+                try {
+                    localStorage.setItem('study-journal-session-goal-ts', String(Date.now()));
+                } catch { /* segue sem carimbo */ }
                 goalInputs.forEach((outro) => {
                     if (outro !== input && outro.value !== input.value) outro.value = input.value;
                 });
@@ -4497,6 +4500,10 @@ function bind() {
     }
 
     atualizarUIConta();
+    window.addEventListener('studyjournal:modo-link', () => {
+        atualizarUIConta();
+        atualizarUIEstados();
+    });
 
     document.addEventListener('keydown', (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -4612,6 +4619,9 @@ async function init() {
             if (!ok) return;
             window.ContaSync.iniciarAuto();
             puxarComRepeticao();
+            // A UI de Definições foi pintada antes de sabermos que o link
+            // está em modo aberto; repinta para não continuar a pedir login.
+            window.dispatchEvent(new CustomEvent('studyjournal:modo-link'));
         }).catch(() => {});
     }
     // Envia o que ficou pendente sem rede — já depois de o link de partilha

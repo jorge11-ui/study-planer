@@ -35,7 +35,7 @@ function portaVivre() {
   });
 }
 
-async function arrancar(dataDir, autenticado = false) {
+async function arrancar(dataDir, { autenticado = false, aberto = false } = {}) {
   const port = await portaVivre();
   const child = spawn(process.execPath, ['serve.js'], {
     cwd: RAIZ,
@@ -45,7 +45,7 @@ async function arrancar(dataDir, autenticado = false) {
       HOST: '127.0.0.1',
       DATA_DIR: dataDir,
       VAULT_DIR: '',
-      SYNC_OPEN: '1', // ignorado: sync anónimo foi desativado
+      SYNC_OPEN: aberto ? '1' : '',
       SYNC_USER: autenticado ? 'audit-user' : '',
       SYNC_PASS: autenticado ? 'audit-password' : '',
       DATABASE_URL: '',
@@ -74,7 +74,7 @@ async function arrancar(dataDir, autenticado = false) {
 
 test('APIs pessoais exigem sessão quando a conta está configurada', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sj-auth-'));
-  const server = await arrancar(dir, true);
+  const server = await arrancar(dir, { autenticado: true });
   t.after(async () => { await parar(server.child); fs.rmSync(dir, { recursive: true, force: true }); });
 
   for (const pathName of ['/api/data', '/api/ficheiros', '/api/vault']) {
@@ -90,6 +90,28 @@ test('APIs pessoais exigem sessão quando a conta está configurada', async (t) 
   assert.equal((await fetch(`${server.baseUrl}/api/data`, auth)).status, 200);
   assert.equal((await fetch(`${server.baseUrl}/api/ficheiros`, auth)).status, 200);
   assert.equal((await fetch(`${server.baseUrl}/api/vault`, auth)).status, 200);
+});
+
+test('modo link: SYNC_OPEN=1 aceita dados sem login mesmo com conta configurada', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sj-link-'));
+  const server = await arrancar(dir, { autenticado: true, aberto: true });
+  t.after(async () => { await parar(server.child); fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const estado = await (await fetch(`${server.baseUrl}/api/conta/estado`)).json();
+  assert.equal(estado.aberto, true);
+  assert.equal((await fetch(`${server.baseUrl}/api/data`)).status, 200, 'link aberto não pede sessão');
+  assert.equal((await fetch(`${server.baseUrl}/api/ficheiros`)).status, 200, 'ficheiros seguem o mesmo modo');
+  const push = await fetch(`${server.baseUrl}/api/data`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ baseRev: 0, data: { days: {} } }),
+  });
+  assert.equal(push.status, 200);
+});
+
+test('render.yaml liga o modo link no serviço publicado', () => {
+  const yaml = fs.readFileSync(path.join(RAIZ, 'render.yaml'), 'utf8');
+  assert.match(yaml, /key: SYNC_OPEN\s*\n\s*value: "1"/);
 });
 
 function parar(child) {

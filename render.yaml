@@ -1,8 +1,10 @@
 # StudyJournal no Render — PostgreSQL para dados persistentes.
 #
 # 1. No dashboard do Render: New → Blueprint → aponta para este repo.
-# 2. Define SYNC_USER e SYNC_PASS no dashboard (obrigatórios; a app falha
-#    no arranque sem autenticação para dados pessoais).
+# 2. SYNC_OPEN=1 liga o modo link: qualquer aparelho que abra o endereço
+#    lê e grava o mesmo documento sem login. Usa-o apenas com um link
+#    privado. Para exigir login, remove SYNC_OPEN e define SYNC_USER e
+#    SYNC_PASS no dashboard.
 # 3. Cria uma base PostgreSQL no Render e associa a variável DATABASE_URL.
 #    O serviço falha no arranque se o Render não tiver DATABASE_URL.
 
@@ -15,6 +17,8 @@ services:
     startCommand: npm start
     healthCheckPath: /
     envVars:
+      - key: SYNC_OPEN
+        value: "1"
       - key: SYNC_USER
         sync: false
       - key: SYNC_PASS

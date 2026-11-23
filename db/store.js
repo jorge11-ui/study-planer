@@ -291,6 +291,11 @@ function createStore(databaseUrl, options = {}) {
     return Object.fromEntries(result.rows.map((row) => [row.token, row.payload]));
   }
 
+  async function getSession(token) {
+    const result = await query('SELECT payload FROM app_sessions WHERE token=$1', [token]);
+    return result.rows[0]?.payload || null;
+  }
+
   async function putSession(token, payload) {
     await query(
       'INSERT INTO app_sessions(token,payload) VALUES($1,$2::jsonb) ON CONFLICT(token) DO UPDATE SET payload=EXCLUDED.payload',
@@ -332,7 +337,7 @@ function createStore(databaseUrl, options = {}) {
 
   return {
     init, migrate, getState, putState, withSyncLock,
-    getSessions, putSession, deleteSession, putSessions,
+    getSessions, getSession, putSession, deleteSession, putSessions,
     listFiles, getFile, putFile, deleteFile,
     close: () => pool.end(),
   };

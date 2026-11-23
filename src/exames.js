@@ -1510,9 +1510,9 @@ function renderPlano(){
     saveState(); miniToast('Sessão planeada.');
   });
 
-  $('#plan-minutes-day')?.addEventListener('change',e=>{state.settings.minutesPerDay=clamp(Number(e.target.value)||90,20,720);saveState();});
-  $('#plan-session-minutes')?.addEventListener('change',e=>{state.settings.sessionMinutes=clamp(Number(e.target.value)||45,15,120);saveState();});
-  $('#plan-maintenance-day')?.addEventListener('change',e=>{state.settings.maxMaintenancePerDay=clamp(Number(e.target.value)||0,0,3);saveState();});
+  $('#plan-minutes-day')?.addEventListener('change',e=>{state.settings.minutesPerDay=clamp(Number(e.target.value)||90,20,720);state.activePlan=null;saveState();});
+  $('#plan-session-minutes')?.addEventListener('change',e=>{state.settings.sessionMinutes=clamp(Number(e.target.value)||45,15,120);state.activePlan=null;saveState();});
+  $('#plan-maintenance-day')?.addEventListener('change',e=>{state.settings.maxMaintenancePerDay=clamp(Number(e.target.value)||0,0,3);state.activePlan=null;saveState();});
   wrap.querySelector('[data-plan-generate]')?.addEventListener('click',()=>generateStudyPlan(true));
   wrap.querySelector('[data-plan-mark-week]')?.addEventListener('click',marcarSemanaNoHorario);
   $all('[data-plan-range]',wrap).forEach(b=>b.addEventListener('click',()=>{ui.planRange=b.dataset.planRange;renderPlano();}));

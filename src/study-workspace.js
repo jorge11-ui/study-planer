@@ -289,6 +289,7 @@
         updatedAt: Date.now(),
       };
       writeFloat(data);
+      if (typeof pushDebounced === 'function') pushDebounced(1200);
       if (status) status.textContent = msg;
       setTimeout(() => { if (status && status.textContent === msg) status.textContent = ''; }, 2200);
       return data;
@@ -317,6 +318,7 @@
       if (subject) subject.value = 'Geral';
       if (category) category.value = 'resumo';
       writeFloat({ title: '', subject: 'Geral', category: 'resumo', text: '', updatedAt: Date.now() });
+      if (typeof pushDebounced === 'function') pushDebounced(1200);
       if (status) status.textContent = 'Nota flutuante limpa.';
       setTimeout(() => { if (status && status.textContent === 'Nota flutuante limpa.') status.textContent = ''; }, 2200);
       text?.focus();
@@ -364,6 +366,18 @@
 
     // carregar conteúdo existente (fica sempre ali)
     loadFloat();
+
+    // Quando outro aparelho altera a nota rápida, o sync avisa e os
+    // campos abertos atualizam sem fechar a janela.
+    window.addEventListener('studyjournal:floating-note-sync', (event) => {
+      const dados = event && event.detail && event.detail.data;
+      if (!dados || typeof dados !== 'object') return;
+      if (title && document.activeElement !== title) title.value = dados.title || '';
+      if (text && document.activeElement !== text) text.value = dados.text || '';
+      if (subject && document.activeElement !== subject) subject.value = dados.subject || 'Geral';
+      if (category && document.activeElement !== category) category.value = dados.category || 'resumo';
+      if (status) status.textContent = 'Nota sincronizada de outro aparelho.';
+    });
   }
 
   function boot() {

@@ -21,6 +21,8 @@ window.Assistente = (() => {
     function guardarHist(lista) {
         try {
             localStorage.setItem(CHAVE_HIST, JSON.stringify(lista.slice(-MAX_HIST)));
+            localStorage.setItem('study-journal-assistente-hist-ts', String(Date.now()));
+            if (typeof pushDebounced === 'function') pushDebounced(1200);
         } catch { /* segue */ }
     }
 
@@ -245,9 +247,9 @@ window.Assistente = (() => {
             limpar.dataset.assistenteBound = '1';
             limpar.addEventListener('click', async () => {
                 if (aGerar && abortarAtual) abortarAtual();
-                try {
-                    localStorage.removeItem(CHAVE_HIST);
-                } catch { /* segue */ }
+                // Guarda uma lista vazia (em vez de apagar a chave) para o
+                // "limpar" também chegar aos outros aparelhos.
+                guardarHist([]);
                 desenhar();
             });
         }
@@ -305,5 +307,5 @@ window.Assistente = (() => {
         } catch { /* segue sem math */ }
     }
 
-    return { ligar, enviar, verificar, renderMatematica, partirMatematica, formatarColagem };
+    return { ligar, enviar, verificar, recarregar: desenhar, renderMatematica, partirMatematica, formatarColagem };
 })();

@@ -88,6 +88,118 @@ test('sync: tombstones expirados deixam de esconder o documento', () => {
   assert.deepEqual(out.apagados, []);
 });
 
+test('sync: todas as semanas são preservadas e a mais recente ganha', () => {
+  const guardado = {
+    days: {},
+    semanalTodas: {
+      '2026-11-16': [{ id: 'a', titulo: 'Aula antiga' }],
+      '2026-11-09': [{ id: 'b', titulo: 'Semana anterior' }],
+    },
+    semanalTs: { '2026-11-16': 100, '2026-11-09': 50 },
+  };
+  const recebido = {
+    days: {},
+    semanalTodas: {
+      '2026-11-16': [{ id: 'a', titulo: 'Aula nova' }],
+    },
+    semanalTs: { '2026-11-16': 200 },
+  };
+  const out = fundirSyncData(guardado, recebido);
+  assert.deepEqual(out.semanalTodas['2026-11-16'], [{ id: 'a', titulo: 'Aula nova' }]);
+  assert.deepEqual(out.semanalTodas['2026-11-09'], [{ id: 'b', titulo: 'Semana anterior' }]);
+  assert.equal(out.semanalTs['2026-11-16'], 200);
+  assert.equal(out.semanalTs['2026-11-09'], 50);
+});
+
+test('sync: uma semana mais antiga no push não apaga a versão recente', () => {
+  const guardado = {
+    days: {},
+    semanalTodas: { '2026-11-16': [{ id: 'novo' }] },
+    semanalTs: { '2026-11-16': 300 },
+  };
+  const recebido = {
+    days: {},
+    semanalTodas: { '2026-11-16': [{ id: 'antigo' }] },
+    semanalTs: { '2026-11-16': 200 },
+  };
+  const out = fundirSyncData(guardado, recebido);
+  assert.deepEqual(out.semanalTodas['2026-11-16'], [{ id: 'novo' }]);
+  assert.equal(out.semanalTs['2026-11-16'], 300);
+});
+
+test('sync: apagar uma semana com carimbo novo é respeitado', () => {
+  const guardado = {
+    days: {},
+    semanalTodas: { '2026-11-16': [{ id: 'a' }] },
+    semanalTs: { '2026-11-16': 100 },
+  };
+  const recebido = {
+    days: {},
+    semanalTodas: { '2026-11-16': [] },
+    semanalTs: { '2026-11-16': 200 },
+  };
+  const out = fundirSyncData(guardado, recebido);
+  assert.deepEqual(out.semanalTodas['2026-11-16'], []);
+});
+
+test('sync: registo de sessões faz união sem duplicar', () => {
+  const guardado = {
+    days: {},
+    sessoesLog: [
+      { created: 2, subject: 'Mat', minutos: 30, day: '2026-11-20' },
+      { created: 1, subject: 'FQA', minutos: 15, day: '2026-11-20' },
+    ],
+  };
+  const recebido = {
+    days: {},
+    sessoesLog: [
+      { created: 2, subject: 'Mat', minutos: 30, day: '2026-11-20' },
+      { created: 3, subject: 'Port', minutos: 20, day: '2026-11-21' },
+    ],
+  };
+  const out = fundirSyncData(guardado, recebido);
+  assert.equal(out.sessoesLog.length, 3);
+  assert.deepEqual(out.sessoesLog.map((r) => r.created), [1, 2, 3]);
+});
+
+test('sync: quadro, assistente, objetivo e nota rápida usam o carimbo mais recente', () => {
+  const guardado = {
+    days: {},
+    whiteboardDraft: { content: '{"objects":[]}', updatedAt: 100 },
+    whiteboardGrid: { visible: true, updatedAt: 100 },
+    assistente: { hist: [{ papel: 'user', texto: 'antigo' }], updatedAt: 100 },
+    sessaoObjetivo: { valor: 'antigo', updatedAt: 100 },
+    floatingNote: { data: { text: 'antigo' }, updatedAt: 100 },
+  };
+  const recebido = {
+    days: {},
+    whiteboardDraft: { content: '{"objects":[1]}', updatedAt: 200 },
+    whiteboardGrid: { visible: false, updatedAt: 50 },
+    assistente: { hist: [{ papel: 'user', texto: 'novo' }], updatedAt: 200 },
+    sessaoObjetivo: { valor: 'novo', updatedAt: 200 },
+    floatingNote: { data: { text: 'novo' }, updatedAt: 200 },
+  };
+  const out = fundirSyncData(guardado, recebido);
+  assert.equal(out.whiteboardDraft.content, '{"objects":[1]}');
+  assert.equal(out.whiteboardGrid.visible, true, 'grelha antiga não sobrepõe');
+  assert.equal(out.assistente.hist[0].texto, 'novo');
+  assert.equal(out.sessaoObjetivo.valor, 'novo');
+  assert.equal(out.floatingNote.data.text, 'novo');
+});
+
+test('sync: push antigo sem secções novas não apaga o que o servidor já tem', () => {
+  const guardado = {
+    days: {},
+    assistente: { hist: [{ papel: 'user', texto: 'guardado' }], updatedAt: 100 },
+    whiteboardDraft: { content: '{"objects":[]}', updatedAt: 100 },
+    sessoesLog: [{ created: 1, subject: 'Mat', minutos: 30 }],
+  };
+  const out = fundirSyncData(guardado, { days: {} });
+  assert.deepEqual(out.assistente, guardado.assistente);
+  assert.deepEqual(out.whiteboardDraft, guardado.whiteboardDraft);
+  assert.deepEqual(out.sessoesLog, guardado.sessoesLog);
+});
+
 test('sync: merge não muta os objetos recebidos', () => {
   const guardado = { days: {}, pdfs: [{ id: 'a' }], pdfsApagados: [] };
   const recebido = { days: {}, pdfs: [{ id: 'b' }], pdfsApagados: [{ id: 'a', ts: Date.now() }] };

@@ -38,11 +38,20 @@ separada e configura `.env` a partir de `.env.example`; esse ficheiro é ignorad
 pelo Git. Sem `DATABASE_URL`, o modo de desenvolvimento existente usa `DATA_DIR`
 local, configurável e independente do disco efémero de produção.
 
-Em Render são obrigatórios `SYNC_USER` e `SYNC_PASS`. Sem eles o processo não
-arranca. APIs de dados, vault e ficheiros recusam chamadas sem sessão; no modo
-local sem conta só aceitam pedidos loopback. `SYNC_OPEN` é ignorado e sync
-anónimo está desativado. `/api/data` é o endpoint canónico de sync/versionamento;
-`/api/sync` permanece temporariamente como alias para clientes antigos.
+Há dois modos de acesso, escolhidos no arranque:
+
+- **Conta** (recomendado para um endereço partilhado): define `SYNC_USER` e
+  `SYNC_PASS`. Em Render, sem estes valores o processo não arranca. APIs de
+  dados, vault e ficheiros recusam chamadas sem sessão; no modo local sem conta
+  só aceitam pedidos loopback.
+- **Link privado** (`SYNC_OPEN=1`): qualquer aparelho que abra o endereço lê e
+  grava o mesmo documento sem login. É o modo usado pelo `render.yaml` para o
+  link pessoal sincronizar sozinho em todas as secções. Só o deves manter num
+  endereço que não partilhes: quem tiver o link passa a poder ver e alterar os
+  dados. Remove `SYNC_OPEN` (ou põe `0`) para voltares a exigir sessão.
+
+`/api/data` é o endpoint canónico de sync/versionamento; `/api/sync` permanece
+temporariamente como alias para clientes antigos.
 
 No arranque com PostgreSQL, `db/store.js` aplica migrations serializadas com
 advisory lock e semeia exames e nós curriculares por ID. `curriculum_items` é
@@ -66,10 +75,13 @@ TLS valida certificados por padrão. `PGSSL=disable` é só para PostgreSQL loca
 `PGSSL=no-verify` destina-se apenas a fornecedores cuja CA não esteja disponível.
 
 O browser ainda mantém uma cópia local para funcionamento offline. Depois de
-autenticar, o servidor é o armazenamento persistente e a cópia sincroniza com ele.
-As coleções fora do Exam Center ainda dependem do snapshot de sync; não removas o
-cache local até que notas, tarefas, calendário, flashcards e restantes dados tenham
-endpoints e migrações próprias.
+autenticar (ou de o link privado estar em `SYNC_OPEN=1`), o servidor é o
+armazenamento persistente e a cópia sincroniza com ele. O documento de sync já
+inclui as secções todas: notas e tarefas por dia, metadados/índice das notas,
+horário (todas as semanas e preferências), Exam Center e revisão, PDFs e Caderno
+(metadados e tombstones; bytes em `/api/ficheiros`), sessões/estatísticas e
+registo de sessões, objetivo, Assistente, Quadro Branco e nota rápida. O queue
+de ficheiros por aparelho (`*-enviados`) e o vault continuam locais.
 
 ## Verificação local
 

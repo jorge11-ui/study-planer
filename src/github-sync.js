@@ -243,9 +243,51 @@ window.GitHubSync = (() => {
             } catch { return fallback; }
         };
 
+        const lerTexto = (chave) => {
+            try { return localStorage.getItem(chave); } catch { return null; }
+        };
+
+        const lerTs = (chave) => {
+            try { return Number(localStorage.getItem(chave)) || 0; } catch { return 0; }
+        };
+
+        // Todas as semanas dinâmicas, não só a que está aberta: ao mudar de
+        // semana noutro aparelho o horário não pode desaparecer.
+        const semanalTodas = {};
+        const semanalTs = {};
+        try {
+            for (let i = 0; i < localStorage.length; i += 1) {
+                const chave = localStorage.key(i) || '';
+                const m = /^study-journal-semanal-dinamico-(\d{4}-\d{2}-\d{2})$/.exec(chave);
+                if (!m) continue;
+                const lista = lerJson(chave, null);
+                if (!Array.isArray(lista)) continue;
+                semanalTodas[m[1]] = lista;
+                semanalTs[m[1]] = Number(localStorage.getItem(`${chave}-ts`)) || 0;
+            }
+        } catch { /* segue com a semana atual apenas */ }
+
+        const semanalPrefs = lerTexto('study-journal-semanal-prefs-ts') === null ? null : {
+            passo: lerJson('study-journal-semanal-passo', null),
+            vista: lerJson('study-journal-semanal-vista', null),
+            fimSemana: lerJson('study-journal-semanal-fim-semana', null),
+            inicio: lerJson('study-journal-semanal-inicio', null),
+            fim: lerJson('study-journal-semanal-fim', null),
+            updatedAt: lerTs('study-journal-semanal-prefs-ts'),
+        };
+
+        const sessaoObjetivoRaw = lerTexto('study-journal-session-goal');
+        const assistenteRaw = lerTexto('study-journal-assistente-hist');
+        const whiteboardRaw = lerTexto('study-journal-whiteboard-draft');
+        const whiteboardGridRaw = lerTexto('study-journal-whiteboard-grid');
+        const floatingRaw = lerTexto('study-journal-floating-note');
+
         return {
             days,
             semanal,
+            semanalTodas,
+            semanalTs,
+            semanalPrefs,
             // Notas: metadados do Painel (título, disciplina, categoria,
             // tópico) e o índice das notas recentes. Sem isto o texto
             // viajava mas o Painel do outro aparelho ficava sem títulos.
@@ -280,6 +322,38 @@ window.GitHubSync = (() => {
             // Caderno (fotos): metadados + apagados, mesma fusão que PDFs.
             caderno: lerJson('study-journal-caderno', null),
             cadernoApagados: lerJson('study-journal-caderno-apagados', null),
+            // Estatísticas/Concentração: histórico de sessões (união) e
+            // objetivo atual (última escrita ganha).
+            sessoesLog: lerJson('study-journal-session-log', null),
+            sessaoObjetivo: sessaoObjetivoRaw === null ? null : {
+                valor: sessaoObjetivoRaw,
+                updatedAt: lerTs('study-journal-session-goal-ts'),
+            },
+            // Assistente: histórico da conversa (última escrita ganha).
+            assistente: assistenteRaw === null ? null : {
+                hist: (() => {
+                    const v = lerJson('study-journal-assistente-hist', []);
+                    return Array.isArray(v) ? v : [];
+                })(),
+                updatedAt: lerTs('study-journal-assistente-hist-ts'),
+            },
+            // Quadro Branco: rascunho e grelha, com carimbos separados.
+            whiteboardDraft: whiteboardRaw === null ? null : {
+                content: whiteboardRaw,
+                updatedAt: lerTs('study-journal-whiteboard-draft-ts'),
+            },
+            whiteboardGrid: whiteboardGridRaw === null ? null : {
+                visible: whiteboardGridRaw !== 'false',
+                updatedAt: lerTs('study-journal-whiteboard-grid-ts'),
+            },
+            // Nota rápida flutuante: conteúdo com updatedAt dentro do objeto.
+            floatingNote: floatingRaw === null ? null : {
+                data: lerJson('study-journal-floating-note', null),
+                updatedAt: (() => {
+                    const d = lerJson('study-journal-floating-note', null);
+                    return d && typeof d.updatedAt === 'number' ? d.updatedAt : 0;
+                })(),
+            },
         };
     }
 
@@ -313,6 +387,178 @@ window.GitHubSync = (() => {
                 if (valor !== null) localStorage.setItem(`${key}-sync`, valor);
             });
         } catch { /* segue sem bases */ }
+    }
+
+    /* ── Secções com carimbo próprio ──────────────────────
+       Chegam no mesmo documento, mas cada uma decide pela sua data para
+       não perder edições locais feitas depois do último push. */
+
+    const tsLocal = (chave) => {
+        try { return Number(localStorage.getItem(chave)) || 0; } catch { return 0; }
+    };
+
+    const guardarTs = (chave, ts) => {
+        try { localStorage.setItem(chave, String(Number(ts) || Date.now())); } catch { /* segue */ }
+    };
+
+    function aplicarSemanas(remoto) {
+        if (!remoto || !remoto.semanalTodas || typeof remoto.semanalTodas !== 'object') return;
+        const carimbos = remoto.semanalTs && typeof remoto.semanalTs === 'object' ? remoto.semanalTs : {};
+        let mudou = false;
+        Object.entries(remoto.semanalTodas).forEach(([semana, lista]) => {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(semana) || !Array.isArray(lista)) return;
+            const chave = `study-journal-semanal-dinamico-${semana}`;
+            const chaveTs = `${chave}-ts`;
+            const rTs = Number(carimbos[semana]) || 0;
+            const lTs = tsLocal(chaveTs);
+            if (rTs < lTs) return;
+            try {
+                localStorage.setItem(chave, JSON.stringify(lista));
+                guardarTs(chaveTs, rTs);
+                mudou = true;
+            } catch { /* segue */ }
+        });
+        if (mudou && window.Weekly && typeof window.Weekly.ligar === 'function') {
+            const vista = document.getElementById('view-semanal');
+            if (vista && !vista.hidden) window.Weekly.ligar();
+        }
+    }
+
+    function aplicarSemanalPrefs(remoto) {
+        const prefs = remoto && remoto.semanalPrefs;
+        if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) return;
+        const chaveTs = 'study-journal-semanal-prefs-ts';
+        if ((Number(prefs.updatedAt) || 0) < tsLocal(chaveTs)) return;
+        const valores = {
+            'study-journal-semanal-passo': prefs.passo,
+            'study-journal-semanal-vista': prefs.vista,
+            'study-journal-semanal-fim-semana': prefs.fimSemana,
+            'study-journal-semanal-inicio': prefs.inicio,
+            'study-journal-semanal-fim': prefs.fim,
+        };
+        try {
+            Object.entries(valores).forEach(([chave, valor]) => {
+                if (valor === null || valor === undefined) return;
+                localStorage.setItem(chave, String(valor));
+            });
+            guardarTs(chaveTs, prefs.updatedAt);
+        } catch { /* segue */ }
+        if (window.Weekly && typeof window.Weekly.ligar === 'function') {
+            const vista = document.getElementById('view-semanal');
+            if (vista && !vista.hidden) window.Weekly.ligar();
+        }
+    }
+
+    function chaveLogSessao(registo) {
+        if (!registo || typeof registo !== 'object') return '';
+        if (registo.id) return `id:${registo.id}`;
+        return [registo.created || '', registo.day || '', registo.subject || '',
+            registo.minutos || '', registo.goal || ''].join('|');
+    }
+
+    function aplicarLogSessoes(remoto) {
+        if (!Array.isArray(remoto.sessoesLog)) return;
+        const mapa = new Map();
+        const juntar = (lista) => {
+            if (!Array.isArray(lista)) return;
+            lista.forEach((registo) => {
+                const chave = chaveLogSessao(registo);
+                if (!chave || chave === '||||') return;
+                const anterior = mapa.get(chave);
+                if (!anterior || (Number(registo.created) || 0) >= (Number(anterior.created) || 0)) {
+                    mapa.set(chave, registo);
+                }
+            });
+        };
+        try {
+            juntar(JSON.parse(localStorage.getItem('study-journal-session-log') || '[]'));
+        } catch { /* segue só com o remoto */ }
+        juntar(remoto.sessoesLog);
+        const lista = [...mapa.values()]
+            .sort((a, b) => (Number(a.created) || 0) - (Number(b.created) || 0))
+            .slice(-200);
+        try { localStorage.setItem('study-journal-session-log', JSON.stringify(lista)); } catch { return; }
+        if (window.dispatchEvent) window.dispatchEvent(new CustomEvent('studyjournal:sessao-sync'));
+        if (window.SJDash && typeof window.SJDash.render === 'function') {
+            try { window.SJDash.render(); } catch { /* segue */ }
+        }
+    }
+
+    function aplicarObjetivoSessao(remoto) {
+        const obj = remoto.sessaoObjetivo;
+        if (!obj || typeof obj !== 'object' || typeof obj.valor !== 'string') return;
+        const chaveTs = 'study-journal-session-goal-ts';
+        if ((Number(obj.updatedAt) || 0) < tsLocal(chaveTs)) return;
+        try {
+            localStorage.setItem('study-journal-session-goal', obj.valor);
+            guardarTs(chaveTs, obj.updatedAt);
+        } catch { return; }
+        ['session-goal', 'estudar-goal'].forEach((id) => {
+            const input = document.getElementById(id);
+            if (input && document.activeElement !== input) input.value = obj.valor;
+        });
+    }
+
+    function aplicarAssistente(remoto) {
+        const secao = remoto.assistente;
+        if (!secao || typeof secao !== 'object' || !Array.isArray(secao.hist)) return;
+        const chaveTs = 'study-journal-assistente-hist-ts';
+        if ((Number(secao.updatedAt) || 0) < tsLocal(chaveTs)) return;
+        try {
+            localStorage.setItem('study-journal-assistente-hist', JSON.stringify(secao.hist.slice(-100)));
+            guardarTs(chaveTs, secao.updatedAt);
+        } catch { return; }
+        if (window.Assistente && typeof window.Assistente.recarregar === 'function') {
+            try { window.Assistente.recarregar(); } catch { /* segue */ }
+        }
+    }
+
+    function aplicarQuadro(remoto) {
+        const draft = remoto.whiteboardDraft;
+        if (draft && typeof draft === 'object' && typeof draft.content === 'string') {
+            const chaveTs = 'study-journal-whiteboard-draft-ts';
+            if ((Number(draft.updatedAt) || 0) >= tsLocal(chaveTs)) {
+                try {
+                    localStorage.setItem('study-journal-whiteboard-draft', draft.content);
+                    guardarTs(chaveTs, draft.updatedAt);
+                    if (window.dispatchEvent) {
+                        window.dispatchEvent(new CustomEvent('studyjournal:whiteboard-sync', {
+                            detail: { content: draft.content, updatedAt: Number(draft.updatedAt) || 0 },
+                        }));
+                    }
+                } catch { /* segue */ }
+            }
+        }
+        const grelha = remoto.whiteboardGrid;
+        if (grelha && typeof grelha === 'object' && typeof grelha.visible === 'boolean') {
+            const chaveTs = 'study-journal-whiteboard-grid-ts';
+            if ((Number(grelha.updatedAt) || 0) >= tsLocal(chaveTs)) {
+                try {
+                    localStorage.setItem('study-journal-whiteboard-grid', String(grelha.visible));
+                    guardarTs(chaveTs, grelha.updatedAt);
+                    if (window.dispatchEvent) {
+                        window.dispatchEvent(new CustomEvent('studyjournal:whiteboard-grid-sync', {
+                            detail: { visible: grelha.visible },
+                        }));
+                    }
+                } catch { /* segue */ }
+            }
+        }
+    }
+
+    function aplicarNotaFlutuante(remoto) {
+        const secao = remoto.floatingNote;
+        if (!secao || typeof secao !== 'object' || !secao.data || typeof secao.data !== 'object') return;
+        const local = (() => {
+            try { return JSON.parse(localStorage.getItem('study-journal-floating-note') || 'null'); } catch { return null; }
+        })();
+        const rTs = Number(secao.updatedAt) || 0;
+        const lTs = local && typeof local.updatedAt === 'number' ? local.updatedAt : 0;
+        if (rTs < lTs) return;
+        try { localStorage.setItem('study-journal-floating-note', JSON.stringify(secao.data)); } catch { return; }
+        if (window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('studyjournal:floating-note-sync', { detail: { data: secao.data } }));
+        }
     }
 
     function aplicarDadosRemotos(remoto, { protegeVazios = true } = {}) {
@@ -394,6 +640,15 @@ window.GitHubSync = (() => {
                 }
             }
         }
+        // Histórico de todas as semanas e preferências do horário.
+        aplicarSemanas(remoto);
+        aplicarSemanalPrefs(remoto);
+        // Concentração/estatísticas, Assistente, Quadro Branco e nota rápida.
+        aplicarLogSessoes(remoto);
+        aplicarObjetivoSessao(remoto);
+        aplicarAssistente(remoto);
+        aplicarQuadro(remoto);
+        aplicarNotaFlutuante(remoto);
         if (remoto.exames) {
             if (remoto.exames.foco && deveAplicar('study-journal-exames-foco', remoto.exames.foco)) localStorage.setItem('study-journal-exames-foco', JSON.stringify(remoto.exames.foco));
             if (Array.isArray(remoto.exames.recursos) && deveAplicar('study-journal-exames-recursos', remoto.exames.recursos)) localStorage.setItem('study-journal-exames-recursos', JSON.stringify(remoto.exames.recursos));

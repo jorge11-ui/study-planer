@@ -127,7 +127,7 @@ function readBody(req, limite = MAX_BODY) {
 }
 
 async function api(req, res, url) {
-    if (!autorizarDados(req, res)) return;
+    if (!(await autorizarDados(req, res))) return;
 
     const route = url.pathname.slice('/api/vault'.length);
 
@@ -222,16 +222,20 @@ const SYNC_PASS_HASH = SYNC_USER && process.env.SYNC_PASS
     ? crypto.createHash('sha256').update(String(process.env.SYNC_PASS), 'utf8').digest()
     : null;
 const contaAtiva = Boolean(SYNC_USER && SYNC_PASS_HASH);
-// Dados pessoais já não podem ser sincronizados anonimamente.
-const SYNC_ABERTO = false;
+/* Modo link (SYNC_OPEN=1): qualquer aparelho que abra este endereço lê e
+   grava o mesmo documento, sem login. É o que faz o link privado do site
+   sincronizar sozinho entre o portátil e o telemóvel. Só deve ser ligado
+   quando o endereço é privado: quem tiver o link passa a poder ver e
+   alterar todos os dados. Desligar = remover SYNC_OPEN (ou pôr 0). */
+const SYNC_ABERTO = process.env.SYNC_OPEN === '1';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const pgStore = createStore(process.env.DATABASE_URL);
 if (process.env.RENDER && !process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL é obrigatório no Render para persistir os dados.');
 }
-if (process.env.RENDER && (!SYNC_USER || !process.env.SYNC_PASS)) {
-    throw new Error('SYNC_USER e SYNC_PASS são obrigatórios no Render para proteger os dados pessoais.');
+if (process.env.RENDER && !SYNC_ABERTO && (!SYNC_USER || !process.env.SYNC_PASS)) {
+    throw new Error('SYNC_USER e SYNC_PASS são obrigatórios no Render para proteger os dados pessoais (ou define SYNC_OPEN=1 para um link privado).');
 }
 const SYNC_FILE = path.join(DATA_DIR, 'sync.json');
 const SESSOES_FILE = path.join(DATA_DIR, 'sessoes.json');
@@ -336,9 +340,12 @@ function pedidoLoopback(req) {
     return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
-function autorizarDados(req, res) {
+async function autorizarDados(req, res) {
+    // O modo link tem prioridade: a conta continua a existir para gerir
+    // partilhas, mas qualquer aparelho no endereço sincroniza sem login.
+    if (SYNC_ABERTO) return true;
     if (contaAtiva) {
-        if (sessaoValida(tokenDaSessao(req))) return true;
+        if (await sessaoValida(tokenDaSessao(req))) return true;
         json(res, 401, { ok: false, reason: 'sessao' });
         return false;
     }
@@ -347,14 +354,17 @@ function autorizarDados(req, res) {
     return false;
 }
 
-function sessaoValida(token) {
-    const s = sessoes[token];
+async function sessaoValida(token) {
+    if (!token) return false;
+    // Sessões partilhadas no PostgreSQL têm de ser reconhecidas por todas
+    // as instâncias (e revogações têm de valer imediatamente em todas).
+    const s = pgStore ? await pgStore.getSession(token) : sessoes[token];
     if (!s) return false;
     // Links de partilha não expiram com a sessão (são revogados à mão).
     if (s.partilha) return true;
     if (Date.now() - Number(s.criadoEm || 0) > SESSAO_MS) {
         delete sessoes[token];
-        apagarSessao(token).catch(() => { /* segue */ });
+        await apagarSessao(token).catch(() => { /* segue */ });
         return false;
     }
     return true;
@@ -362,10 +372,10 @@ function sessaoValida(token) {
 
 /* Só a sessão completa (login) gere partilhas; um link partilhado não
    cria mais links. */
-function sessaoCompleta(token) {
-    const s = sessoes[token];
+async function sessaoCompleta(token) {
+    const s = pgStore ? await pgStore.getSession(token) : sessoes[token];
     if (!s || s.partilha) return false;
-    return sessaoValida(token);
+    return await sessaoValida(token);
 }
 
 function podeTentarLogin(req) {
@@ -447,8 +457,8 @@ async function apiConta(req, res, url) {
     if (route === '/partilha' && req.method === 'POST') {
         if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
         const token = tokenDaSessao(req);
-        if (!sessaoCompleta(token)) {
-            const soLeitura = sessaoValida(token);
+        if (!await sessaoCompleta(token)) {
+            const soLeitura = await sessaoValida(token);
             return json(res, soLeitura ? 403 : 401,
                 { ok: false, reason: soLeitura ? 'sem-permissao' : 'sessao' });
         }
@@ -470,8 +480,8 @@ async function apiConta(req, res, url) {
     if (route === '/partilhas' && req.method === 'GET') {
         if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
         const token = tokenDaSessao(req);
-        if (!sessaoCompleta(token)) {
-            const soLeitura = sessaoValida(token);
+        if (!await sessaoCompleta(token)) {
+            const soLeitura = await sessaoValida(token);
             return json(res, soLeitura ? 403 : 401,
                 { ok: false, reason: soLeitura ? 'sem-permissao' : 'sessao' });
         }
@@ -486,8 +496,8 @@ async function apiConta(req, res, url) {
     if (route === '/partilha' && req.method === 'DELETE') {
         if (!contaAtiva) return json(res, 503, { ok: false, reason: 'sem-conta' });
         const token = tokenDaSessao(req);
-        if (!sessaoCompleta(token)) {
-            const soLeitura = sessaoValida(token);
+        if (!await sessaoCompleta(token)) {
+            const soLeitura = await sessaoValida(token);
             return json(res, soLeitura ? 403 : 401,
                 { ok: false, reason: soLeitura ? 'sem-permissao' : 'sessao' });
         }
@@ -507,7 +517,7 @@ async function apiConta(req, res, url) {
 }
 
 async function apiSync(req, res) {
-    if (!autorizarDados(req, res)) return;
+    if (!(await autorizarDados(req, res))) return;
 
     if (req.method === 'GET') {
         // Render pode encaminhar pedidos consecutivos para processos
@@ -583,11 +593,13 @@ async function apiSync(req, res) {
 }
 
 /* Canal de eventos: o cliente puxa assim que a revisão muda. */
-function apiSyncEventos(req, res, url) {
+async function apiSyncEventos(req, res, url) {
     // EventSource não permite cabeçalhos: o token pode vir no query.
     const token = tokenDaSessao(req) || url.searchParams.get('token') || '';
-    if (contaAtiva && !sessaoValida(token)) return json(res, 401, { ok: false, reason: 'sessao' });
-    if (!contaAtiva && !pedidoLoopback(req)) return json(res, 503, { ok: false, reason: 'sem-conta' });
+    if (!SYNC_ABERTO) {
+        if (contaAtiva && !(await sessaoValida(token))) return json(res, 401, { ok: false, reason: 'sessao' });
+        if (!contaAtiva && !pedidoLoopback(req)) return json(res, 503, { ok: false, reason: 'sem-conta' });
+    }
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -661,7 +673,7 @@ async function lerFicheiroGuardado(id) {
 }
 
 async function apiFicheiros(req, res, url) {
-    if (!autorizarDados(req, res)) return;
+    if (!(await autorizarDados(req, res))) return;
 
     if (req.method === 'GET' && url.pathname === '/api/ficheiros') {
         // Lista leve (sem bytes) para os aparelhos verificarem o que o
@@ -774,9 +786,9 @@ const LLM_MAX_MSGS = 50;
 const LLM_TIMEOUT_MS = 10 * 60 * 1000;
 const LLM_MAX_IMAGEM = 20 * 1024 * 1024;
 
-function llmAutorizado(req) {
+async function llmAutorizado(req) {
     const token = tokenDaSessao(req);
-    if (token && sessaoValida(token)) return true;
+    if (token && await sessaoValida(token)) return true;
     return pedidoLoopback(req);
 }
 
@@ -800,13 +812,13 @@ async function ollamaModelos() {
 
 async function apiLlm(req, res, url) {
     if (url.pathname === '/api/llm/estado' && req.method === 'GET') {
-        if (!llmAutorizado(req)) return json(res, contaAtiva ? 401 : 503, { ok: false, reason: contaAtiva ? 'sessao' : 'sem-conta' });
+        if (!await llmAutorizado(req)) return json(res, contaAtiva ? 401 : 503, { ok: false, reason: contaAtiva ? 'sessao' : 'sem-conta' });
         const modelos = await ollamaModelos();
         json(res, 200, { ok: true, ollama: modelos !== null, modelos: modelos || [] });
         return;
     }
 
-    if (!llmAutorizado(req)) {
+    if (!await llmAutorizado(req)) {
         const token = tokenDaSessao(req);
         return json(res, token ? 403 : 401, { ok: false, reason: 'sessao' });
     }
@@ -1023,7 +1035,7 @@ async function handle(req, res) {
 
     if (url.pathname === '/api/sync/eventos' || url.pathname === '/api/data/events') {
         try {
-            apiSyncEventos(req, res, url);
+            await apiSyncEventos(req, res, url);
         } catch {
             try { res.end(); } catch { /* segue */ }
         }
@@ -1138,7 +1150,12 @@ async function iniciarServidor() {
     } else {
         console.log('  Conta: por configurar — define SYNC_USER e SYNC_PASS para sync entre aparelhos.');
     }
-    console.log(`  Dados pessoais: ${contaAtiva ? 'protegidos por sessão' : 'modo local loopback'}`);
+    if (SYNC_ABERTO) {
+        console.log('  Dados pessoais: MODO LINK — qualquer aparelho com este endereço lê e grava sem login.');
+        console.log('    Mantém o link privado. Para voltar a exigir login, remove SYNC_OPEN.');
+    } else {
+        console.log(`  Dados pessoais: ${contaAtiva ? 'protegidos por sessão' : 'modo local loopback'}`);
+    }
     console.log(`  LLM: ${contaAtiva ? 'só com sessão' : 'modo local loopback'} via ${OLLAMA_URL}`);
 
     if (HOST === '0.0.0.0') {

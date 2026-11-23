@@ -147,13 +147,17 @@
     const daysSince = t.lastStudiedAt ? lastDays(t, today) : null;
     const masteryPct = mastery(t);
     const sessionMin = clamp(Number(ctx.settings?.sessionMinutes || 45), 15, 120);
+    const lapses = Math.max(0, Number(t.reviewLapses) || 0);
+    const selfRating = clamp(Number(t.lastSelfRating) || 0, 0, 5);
 
     let id;
     if (isMasteredTopic(t)) id = 'maintenance';
     else if (dueState === 'overdue' || dueState === 'due_today') id = 'spaced_repetition';
     else if (t.estado === 'nao_iniciado' && !t.lastStudiedAt && masteryPct < 15) id = 'new_learning';
+    else if (lapses >= 2) id = 'relearn';
     else if (accuracy != null && accuracy < .65) id = 'practice';
-    else if (daysSince != null && daysSince >= 14 && confidence <= 2) id = 'relearn';
+    else if (daysSince != null && daysSince >= 14 && (confidence <= 2 || selfRating <= 2)) id = 'relearn';
+    else if (selfRating > 0 && selfRating <= 2) id = 'relearn';
     else if (exercises === 0 && masteryPct >= 15) id = 'active_recall';
     else if (dueState === 'due_soon') id = 'spaced_repetition';
     else if (scored.daysLeft != null && scored.daysLeft <= 30) id = 'practice';
@@ -242,7 +246,9 @@
           suggestedDurationMin: method.estimatedMin,
         };
       })
-      .sort((a, b) => b.priority - a.priority || a.topic.id.localeCompare(b.topic.id))
+      // Tópicos com pré-requisitos por consolidar nunca passam à frente de
+      // uma ação que o aluno pode executar já.
+      .sort((a, b) => (Number(a.blocked) - Number(b.blocked)) || b.priority - a.priority || a.topic.id.localeCompare(b.topic.id))
       .slice(0, limit);
   }
 
@@ -292,7 +298,16 @@
     const risk = confidenceRisk(t);
     const evidenceGap = evidenceGapOf(t);
     const maintenance = isMasteredTopic(t);
-    const moderation = 4 * risk + 3 * evidenceGap - (maintenance ? 12 : 0);
+    const lapses = Math.max(0, Number(t.reviewLapses) || 0);
+    const lapseRisk = clamp(lapses / 3, 0, 1);
+    const selfRating = clamp(Number(t.lastSelfRating) || 0, 0, 5);
+    const lowSelfRating = selfRating > 0 && selfRating <= 2;
+    const recent = Array.isArray(t.performanceHistory)
+      ? t.performanceHistory.filter(x => x && Number.isFinite(Number(x.accuracyPct))).slice(-4)
+      : [];
+    const declining = recent.length >= 3
+      && Number(recent[recent.length - 1].accuracyPct) <= Number(recent[0].accuracyPct) - 10;
+    const moderation = 4 * risk + 3 * evidenceGap + 3 * lapseRisk + (lowSelfRating ? 2 : 0) + (declining ? 2 : 0) - (maintenance ? 12 : 0);
     const dueState = dueStateOf(t, today);
     const reasonCodes = [];
     const reasons = [];
@@ -313,6 +328,18 @@
     if (confidence <= 2 && (t.lastStudiedAt || t.exerciseCount)) {
       reasons.push(`confiança baixa (${confidence}/5)`);
       reasonCodes.push('low_confidence');
+    }
+    if (lapses >= 2) {
+      reasons.push(`${lapses} falhas em revisões`);
+      reasonCodes.push('repeated_lapses');
+    }
+    if (lowSelfRating) {
+      reasons.push(`autoavaliação baixa na última sessão (${selfRating}/5)`);
+      reasonCodes.push('low_self_rating');
+    }
+    if (declining) {
+      reasons.push('desempenho recente em queda');
+      reasonCodes.push('declining_performance');
     }
     if (t.difficulty >= 4) { reasons.push('dificuldade elevada'); reasonCodes.push('high_difficulty'); }
     if (t.difficultyTags?.length) { reasons.push(`dificuldades registadas: ${t.difficultyTags.slice(0,2).join(', ')}`); reasonCodes.push('difficulty_tags'); }

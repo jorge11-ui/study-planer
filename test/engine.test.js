@@ -234,6 +234,34 @@ test('motor: tópico abandonado com confiança baixa recebe reaprendizagem', () 
   assert.ok(rec.reasons.some((r) => /confiança baixa/.test(r)));
 });
 
+test('motor: falhas repetidas e autoavaliação baixa reforçam reaprendizagem', () => {
+  const t = topico({
+    id: 'lapsos', estado: 'em_progresso', masteryPct: 50, confidence: 3,
+    exerciseCount: 10, accuracyPct: 70, reviewLapses: 2, lastSelfRating: 2,
+    lastStudiedAt: '2026-11-18T00:00:00Z',
+  });
+  const rec = engine.recommendTopics([t], EXAMES, {}, { today: HOJE })[0];
+  assert.equal(rec.method.id, 'relearn');
+  assert.ok(rec.reasons.some((r) => /falhas em revisões/.test(r)));
+  assert.ok(rec.reasons.some((r) => /autoavaliação baixa/.test(r)));
+  assert.ok(rec.reasonCodes.includes('repeated_lapses'));
+  assert.ok(rec.reasonCodes.includes('low_self_rating'));
+});
+
+test('motor: desempenho recente em queda é sinalizado', () => {
+  const t = topico({
+    id: 'queda', estado: 'em_progresso', masteryPct: 60,
+    performanceHistory: [{ accuracyPct: 80 }, { accuracyPct: 75 }, { accuracyPct: 60 }],
+  });
+  const scored = engine.scoreTopic(t, { today: HOJE, examDate: '2027-06-18' });
+  assert.ok(scored.reasonCodes.includes('declining_performance'));
+  assert.ok(scored.reasons.some((r) => /queda/.test(r)));
+  const semQueda = engine.scoreTopic(topico({ id: 'estavel', estado: 'em_progresso', masteryPct: 60 }), {
+    today: HOJE, examDate: '2027-06-18',
+  });
+  assert.ok(scored.score > semQueda.score);
+});
+
 test('motor: agenda contínua expõe próximo passo, dias e métodos', () => {
   const topicos = [
     topico({ id: 'a', nextReviewDate: '2026-11-10', lastStudiedAt: '2026-11-01T00:00:00Z', estado: 'em_progresso', masteryPct: 30 }),
