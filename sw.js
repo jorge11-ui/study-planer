@@ -69,6 +69,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
+    if (url.origin !== self.location.origin) return;
     if (event.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
 
     if (event.request.mode === 'navigate') {
@@ -98,7 +99,7 @@ self.addEventListener('fetch', (event) => {
                     }
                     return resp;
                 })
-                .catch(() => caches.match(event.request).then((r) => r || caches.match('/index.html')))
+                .catch(() => caches.match(event.request).then((r) => r || caches.match('/index.html')).then((r) => r || new Response('', { status: 504 })))
         );
         return;
     }
@@ -118,7 +119,7 @@ self.addEventListener('fetch', (event) => {
                     }
                     return resp;
                 }).catch(() => hit);
-                return hit || rede;
+                return (hit || rede) || new Response('', { status: 504 });
             })
         );
         return;
@@ -134,5 +135,6 @@ self.addEventListener('fetch', (event) => {
             }
             return resp;
         }).catch(() => caches.match(event.request, { ignoreSearch: true }))
+        .then((r) => r || new Response('', { status: 504 }))
     );
 });
