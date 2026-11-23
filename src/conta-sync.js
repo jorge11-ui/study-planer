@@ -395,6 +395,26 @@ window.ContaSync = (() => {
         return { ok: true };
     }
 
+    let volumeInicialFeito = false;
+
+    async function sincronizarInicialVolume() {
+        if (volumeInicialFeito) return;
+        volumeInicialFeito = true;
+        notificar('sync-start');
+        try {
+            const r = await api('/api/sync/volume', { method: 'PUT', body: { baseRev: lerRev(), data: coletar() } });
+            if (!r.data || !r.data.ok) throw new Error((r.data && r.data.reason) || `HTTP ${r.status}`);
+            const decision = r.data.decision;
+            if (decision === 'from_remote' || decision === 'merged') {
+                if (r.data.state) aplicar(r.data.state.data || r.data.state);
+                if (r.data.state && r.data.state.rev) guardarRev(Number(r.data.state.rev) || lerRev(), r.data.state.gid || null);
+            }
+            notificar('sync-volume', { decision });
+        } catch (err) {
+            notificar('sync-error', { error: String((err && err.message) || err) });
+        }
+    }
+
     async function sync(pullFirst = true) {
         if (await precisoDeConta()) return { ok: false, reason: 'sem-conta' };
         if (aSyncando) return { ok: false, reason: 'a-syncar' };
@@ -402,6 +422,7 @@ window.ContaSync = (() => {
         notificar('sync-start');
         try {
             let puxou = { atualizou: false };
+            if (!volumeInicialFeito) await sincronizarInicialVolume();
             if (pullFirst) puxou = await fazerPull();
             await fazerPush();
             notificar('sync-done', { success: true, ...puxou });

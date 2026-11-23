@@ -156,7 +156,9 @@ window.Caderno = (() => {
 
     async function buscarRemota(foto) {
         try {
+            if (window.FicheirosIndisponivel) return null;
             const resp = await fetch(`/api/ficheiros/${encodeURIComponent(foto.id)}`, { headers: window.ContaSync?.requestHeaders?.() || {} });
+            if (resp.status === 503) { window.FicheirosIndisponivel = true; return null; }
             if (!resp.ok) {
                 if (resp.status === 404) {
                     const enviados = lerEnviados();
@@ -732,7 +734,9 @@ window.Caderno = (() => {
         const enviados = lerEnviados();
         let presentes = null;
         try {
+            if (window.FicheirosIndisponivel) return;
             const resp = await fetch('/api/ficheiros', { cache: 'no-store', headers: window.ContaSync?.requestHeaders?.() || {} });
+            if (resp.status === 503) { window.FicheirosIndisponivel = true; return; }
             const r = await resp.json().catch(() => null);
             if (r && r.ok && Array.isArray(r.ficheiros)) {
                 presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));

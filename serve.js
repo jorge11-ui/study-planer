@@ -1042,6 +1042,20 @@ async function handle(req, res) {
         return;
     }
 
+    if (url.pathname === '/api/sync/volume') {
+        try {
+            if (!(await autorizarDados(req, res))) return;
+            if (req.method !== 'PUT') return json(res, 405, { ok: false, reason: 'metodo' });
+            const body = await lerJsonBody(req, res, SYNC_MAX_BODY);
+            if (!body || !dadosSyncValidos(body.data)) return json(res, 400, { ok: false, reason: 'conteudo' });
+            const result = await (pgStore ? pgStore.syncStateByVolume(body) : (async () => ({ decision: 'from_local' }))());
+            json(res, 200, { ok: true, ...result });
+        } catch {
+            erroInterno(res);
+        }
+        return;
+    }
+
     if (url.pathname === '/api/sync' || url.pathname === '/api/data') {
         try {
             await apiSync(req, res);

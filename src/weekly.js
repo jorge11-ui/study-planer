@@ -1035,6 +1035,25 @@ window.Weekly = (() => {
 
     /* ── Importação do Exam Center ───────────────────────── */
 
+    function freeWindowsForDay(dia) {
+        const blocos = [...fixos, ...dinamicos].filter((e) => e.dia === dia).sort((a, b) => a.hora - b.hora);
+        const ocupados = blocos.map((e) => ({ start: Math.round(e.hora * 60), end: Math.round((e.hora + e.duracao) * 60) }));
+        const windows = [];
+        let cursor = 6 * 60;
+        for (const o of ocupados) {
+            if (o.start > cursor) windows.push({ day: dia - 1, startMin: cursor, endMin: o.start, source: 'gap', weight: 1 });
+            cursor = Math.max(cursor, o.end);
+        }
+        if (cursor < 23 * 60) windows.push({ day: dia - 1, startMin: cursor, endMin: 23 * 60, source: 'gap', weight: 1 });
+        return windows.filter((w) => w.endMin - w.startMin >= 15);
+    }
+
+    function freeWindows() {
+        const out = [];
+        for (let dia = 1; dia <= 7; dia++) out.push(...freeWindowsForDay(dia));
+        return out;
+    }
+
     function importarPlanoExames(events, options = {}) {
         const base = options.monday || semanaAtual;
         const week = semanaKey(dataDaSemana(base));
@@ -1055,6 +1074,9 @@ window.Weekly = (() => {
 
         for (const item of ordenados) {
             if (completed.has(item.id)) continue;
+            const existing = [...fixos, ...dinamicos].find((e) => e.id === `exam_${item.id}` || e.examPlanItemId === item.id);
+            if (existing && (existing.locked || existing.status === 'done')) continue;
+            if (existing) continue;
             const d = new Date(`${item.date}T12:00:00`);
             const dia = ((d.getDay() + 6) % 7) + 1;
             const duracaoMin = Math.max(15, Number(item.durationMin) || 45);
@@ -1918,5 +1940,7 @@ window.Weekly = (() => {
         semanaSeguinte,
         irParaSemanaAtual,
         importarPlanoExames,
+        freeWindows,
     };
 })();
+

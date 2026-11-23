@@ -158,7 +158,10 @@ window.Vault = (() => {
 
         try {
             const data = await response.json();
-            return data.ok ? 'ok' : 'sem-vault';
+            if (response.status === 503) { vaultDisponivel = false; return 'sem-vault'; }
+            if (data.ok) { vaultDisponivel = true; return 'ok'; }
+            vaultDisponivel = false;
+            return 'sem-vault';
         } catch {
             return 'offline';
         }
@@ -171,10 +174,12 @@ window.Vault = (() => {
         return probe;
     }
 
+    let vaultDisponivel = false;
     async function remoteRead(name) {
+        if (!vaultDisponivel) return null;
         const response = await fetch(`${API}/file?name=${encodeURIComponent(name)}`, { cache: 'no-store', headers: authHeaders() });
+        if (response.status === 503) { vaultDisponivel = false; return null; }
         if (!response.ok) return null;
-
         const data = await response.json();
         if (!data.ok || !data.existe) return null;
         return data.content;
@@ -351,6 +356,7 @@ window.Vault = (() => {
             return { ok: true, path: `${FOLDER}/${name}`, pendente: true };
         }
 
+        if (response.status === 503) { vaultDisponivel = false; return { ok: false, reason: 'desligado' }; }
         if (!response.ok) return { ok: false, reason: 'erro', error: new Error(`HTTP ${response.status}`) };
 
         const data = await response.json();
@@ -451,5 +457,6 @@ window.Vault = (() => {
         mark,
         pendingCount,
         flushPending,
+        disponivel: () => vaultDisponivel,
     };
 })();

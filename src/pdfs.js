@@ -304,7 +304,9 @@ window.Pdfs = (() => {
 
     async function buscarFicheiroRemoto(doc) {
         try {
+            if (window.FicheirosIndisponivel) return null;
             const resp = await fetch(`/api/ficheiros/${encodeURIComponent(doc.id)}`, { headers: window.ContaSync?.requestHeaders?.() || {} });
+            if (resp.status === 503) { window.FicheirosIndisponivel = true; return null; }
             if (!resp.ok) {
                 // 404 após wipe: esquecer o registo para o backfill voltar
                 // a subir os bytes que ainda vivem neste browser.
@@ -1321,7 +1323,9 @@ window.Pdfs = (() => {
         const enviados = lerEnviados();
         let presentes = null;
         try {
+            if (window.FicheirosIndisponivel) return;
             const resp = await fetch('/api/ficheiros', { cache: 'no-store', headers: window.ContaSync?.requestHeaders?.() || {} });
+            if (resp.status === 503) { window.FicheirosIndisponivel = true; return; }
             const r = await resp.json().catch(() => null);
             if (r && r.ok && Array.isArray(r.ficheiros)) {
                 presentes = new Set(r.ficheiros.map((f) => f && f.id).filter(Boolean));

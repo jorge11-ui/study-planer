@@ -335,8 +335,41 @@ function createStore(databaseUrl, options = {}) {
     await query('DELETE FROM user_files WHERE id=$1', [id]);
   }
 
+  function computeDataVolume(doc) {
+    if (!doc || typeof doc !== 'object') return 0;
+    const data = doc.data && typeof doc.data === 'object' ? doc.data : {};
+    let n = 0;
+    for (const v of Object.values(data)) {
+      if (Array.isArray(v)) n += v.length;
+      else if (v && typeof v === 'object') n += Object.keys(v).length;
+      else if (v != null) n += 1;
+    }
+    const exam = data.examesV2;
+    if (exam && typeof exam === 'object') {
+      for (const c of EXAM_COLLECTIONS) if (Array.isArray(exam[c])) n += exam[c].length;
+    }
+    return n;
+  }
+
+  async function syncStateByVolume(incoming) {
+    return withSyncLock(async () => {
+      const remote = await getState();
+      const vLocal = computeDataVolume(incoming);
+      const vRemote = computeDataVolume(remote);
+      if (!remote || vRemote === 0) {
+        if (vLocal > 0) { await putState(incoming); return { decision: 'from_local', volumeLocal: vLocal, volumeRemote: vRemote }; }
+        return { decision: 'synced', volumeLocal: vLocal, volumeRemote: vRemote };
+      }
+      if (vLocal === 0) return { decision: 'from_remote', state: remote, volumeLocal: vLocal, volumeRemote: vRemote };
+      if (vLocal > vRemote) { await putState(incoming); return { decision: 'from_local', volumeLocal: vLocal, volumeRemote: vRemote }; }
+      if (vRemote > vLocal) return { decision: 'from_remote', state: remote, volumeLocal: vLocal, volumeRemote: vRemote };
+      await putState(incoming); return { decision: 'merged', volumeLocal: vLocal, volumeRemote: vRemote };
+    });
+  }
+
   return {
     init, migrate, getState, putState, withSyncLock,
+    computeDataVolume, syncStateByVolume,
     getSessions, getSession, putSession, deleteSession, putSessions,
     listFiles, getFile, putFile, deleteFile,
     close: () => pool.end(),
