@@ -2331,7 +2331,21 @@ async function persistToVault(force = false) {
         return;
     }
 
+    // A nota é a fonte principal: grava já no browser e sincroniza.
     commitNotes();
+
+    // A pasta local (Obsidian) é só um espelho opcional. Sem a File System
+    // Access API (fora de localhost/HTTPS, ou browser sem suporte) a nota
+    // fica guardada na mesma — não faz sentido bloqueá-la com um erro.
+    const estado = await Vault.status();
+    if (estado === 'incompativel' || estado === 'pendente') {
+        const sincronizada = contaSyncPronta()
+            || !!(window.GitHubSync && window.GitHubSync.configurado && window.GitHubSync.configurado());
+        toast(sincronizada
+            ? 'Nota guardada e sincronizada (a pasta local só funciona em localhost/HTTPS).'
+            : 'Nota guardada neste aparelho (a pasta local só funciona em localhost/HTTPS).', 'success');
+        return;
+    }
 
     if (!(await ensureVault())) return;
 
