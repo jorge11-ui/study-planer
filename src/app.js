@@ -4289,6 +4289,7 @@ function bind() {
     const contaLastSync = document.getElementById('conta-last-sync');
     const contaSyncNow = document.getElementById('conta-sync-now');
     const contaSair = document.getElementById('conta-sair');
+    const contaPartilha = document.getElementById('conta-partilha');
     const partilhaNome = document.getElementById('partilha-nome');
     const partilhaCriar = document.getElementById('partilha-criar');
     const partilhaLista = document.getElementById('partilha-lista');
@@ -4303,7 +4304,7 @@ function bind() {
             return `Ligado como ${window.ContaSync.getUser()}`;
         }
         if (window.ContaSync.emAberto && window.ContaSync.emAberto()) {
-            return 'Espaço comum do site (todos os visitantes)';
+            return 'Link privado — sincronização automática';
         }
         return 'Desligado';
     }
@@ -4322,26 +4323,57 @@ function bind() {
         }
     }
 
-    async function atualizarUIConta() {
-        if (!window.ContaSync) return;
-        const cfg = window.ContaSync.configurado();
-        const anonimo = !cfg && window.ContaSync.emAberto && window.ContaSync.emAberto();
+    function pintarConta(cfg, anonimo) {
         if (contaLogin) contaLogin.hidden = cfg || anonimo;
         if (contaAtiva) contaAtiva.hidden = !(cfg || anonimo);
         if (contaSair) contaSair.hidden = !cfg;
+        // O link privado não precisa de partilhas: esconde a criação de
+        // links para a secção ficar reduzida ao essencial.
+        if (contaPartilha) contaPartilha.hidden = anonimo;
+        if (partilhaCompleta) partilhaCompleta.hidden = anonimo;
+        if (contaStatus) contaStatus.textContent = textoEstadoConta();
+        if (contaDica) {
+            if (anonimo) {
+                contaDica.textContent = 'Este endereço sincroniza sozinho: abre o link em qualquer aparelho e edita normalmente, sem entrar com conta.';
+            } else if (cfg) {
+                contaDica.textContent = '';
+            }
+        }
+        pintarHoraConta();
+        pintarPartilha();
+    }
+
+    async function atualizarUIConta() {
+        if (!window.ContaSync) return;
+        const cfg = window.ContaSync.configurado();
+        let anonimo = !cfg && !!(window.ContaSync.emAberto && window.ContaSync.emAberto());
         if (cfg || anonimo) {
-            if (contaStatus) contaStatus.textContent = textoEstadoConta();
-            pintarHoraConta();
-            pintarPartilha();
-        } else if (contaDica) {
-            contaDica.textContent = 'A verificar o servidor…';
-            try {
-                const est = await window.ContaSync.estado();
+            pintarConta(cfg, anonimo);
+            return;
+        }
+        // Ainda não sabemos se o servidor está em modo link. Perguntar
+        // antes de mostrar o formulário evita o flash de "entra na conta"
+        // em cada aparelho novo.
+        if (contaDica) contaDica.textContent = 'A verificar o servidor…';
+        let est = null;
+        try {
+            est = await window.ContaSync.estado();
+        } catch { /* offline: mostra o formulário */ }
+        if (est && est.aberto) {
+            await window.ContaSync.verificarAberto();
+            anonimo = !!(window.ContaSync.emAberto && window.ContaSync.emAberto());
+            if (anonimo) {
+                pintarConta(false, true);
+                return;
+            }
+        }
+        if (contaDica) {
+            if (!est || est.offline) {
+                contaDica.textContent = 'Sem ligação ao servidor.';
+            } else {
                 contaDica.textContent = est.contaAtiva
                     ? 'Servidor pronto — entra com a tua conta uma vez em cada aparelho.'
                     : 'O servidor ainda não tem conta: define SYNC_USER e SYNC_PASS ao arrancar o servidor.';
-            } catch {
-                contaDica.textContent = 'Sem ligação ao servidor.';
             }
         }
     }

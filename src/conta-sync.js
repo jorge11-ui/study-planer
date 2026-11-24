@@ -169,6 +169,14 @@ window.ContaSync = (() => {
         persistirCredenciais();
         pararAuto();
         if (window.GitHubSync?.configurado?.()) window.GitHubSync.iniciarAutoSync?.();
+        // Um token antigo pode deixar de valer (servidor passou a modo link
+        // ou a conta mudou). Nesse caso continua sem conta, em vez de ficar
+        // parado à espera de um login que já não é necessário.
+        verificarAberto().then((ok) => {
+            if (!ok) return;
+            window.GitHubSync?.pararAutoSync?.();
+            iniciarAuto();
+        }).catch(() => { /* segue offline */ });
         return motivo;
     }
 
