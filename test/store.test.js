@@ -258,3 +258,59 @@ test('store: sem DATABASE_URL não há store', () => {
   assert.equal(createStore(''), null);
   assert.equal(createStore(undefined), null);
 });
+
+test('sync por volume: servidor vazio é semeado pelo dispositivo (from_local) com rev novo', async (t) => {
+  const base = criarBase();
+  t.after(() => base.fechar());
+  await base.store.init(CATALOGO);
+
+  const local = { baseRev: 0, data: { days: { '2026-02-01': { notes: '"a"', updatedAt: 1 } } } };
+  const r = await base.store.syncStateByVolume(local);
+
+  assert.equal(r.decision, 'from_local');
+  const estado = await base.store.getState();
+  assert.equal(estado.rev, 1, 'rev começa em 1 e é numérico');
+  assert.deepEqual(estado.data.days, local.data.days);
+});
+
+test('sync por volume: dispositivo vazio recebe do servidor (from_remote) sem o sobrescrever', async (t) => {
+  const base = criarBase();
+  t.after(() => base.fechar());
+  await base.store.init(CATALOGO);
+  await base.store.putState({ rev: 4, gid: 'g1', data: { days: { '2026-02-01': { notes: '"x"' } } } });
+
+  const r = await base.store.syncStateByVolume({ baseRev: 0, data: { days: {} } });
+
+  assert.equal(r.decision, 'from_remote');
+  assert.deepEqual(r.state.data.days, { '2026-02-01': { notes: '"x"' } });
+  assert.equal((await base.store.getState()).rev, 4, 'servidor intacto');
+});
+
+test('sync por volume: nunca sobrescreve nem ressuscita dados apagados', async (t) => {
+  const base = criarBase();
+  t.after(() => base.fechar());
+  await base.store.init(CATALOGO);
+  // Servidor já só tem o dia A (o dia B foi apagado por outro aparelho).
+  await base.store.putState({ rev: 7, gid: 'g1', data: { days: { A: { notes: '"a"' } } } });
+
+  // Dispositivo desatualizado ainda tem A e B (mais volume).
+  const r = await base.store.syncStateByVolume({ baseRev: 5, data: { days: { A: { notes: '"a"' }, B: { notes: '"b"' } } } });
+
+  assert.equal(r.decision, 'synced', 'não promove por volume quando o servidor já tem dados');
+  const estado = await base.store.getState();
+  assert.equal(estado.rev, 7, 'rev do servidor não muda');
+  assert.deepEqual(Object.keys(estado.data.days), ['A'], 'o dia apagado não regressa');
+});
+
+test('sync por volume: dois dispositivos com dias diferentes não se apagam', async (t) => {
+  const base = criarBase();
+  t.after(() => base.fechar());
+  await base.store.init(CATALOGO);
+  await base.store.putState({ rev: 2, gid: 'g1', data: { days: { X: { notes: '"x"' } } } });
+
+  const r = await base.store.syncStateByVolume({ baseRev: 2, data: { days: { Y: { notes: '"y"' } } } });
+
+  assert.equal(r.decision, 'synced');
+  const estado = await base.store.getState();
+  assert.deepEqual(Object.keys(estado.data.days), ['X'], 'o dia do servidor não é apagado pelo volume');
+});

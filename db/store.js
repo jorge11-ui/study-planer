@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -356,14 +357,31 @@ function createStore(databaseUrl, options = {}) {
       const remote = await getState();
       const vLocal = computeDataVolume(incoming);
       const vRemote = computeDataVolume(remote);
+      // Servidor vazio (arranque/deploy novo): promove o dispositivo com
+      // dados, semeando o documento com uma revisão nova e um gid estável.
       if (!remote || vRemote === 0) {
-        if (vLocal > 0) { await putState(incoming); return { decision: 'from_local', volumeLocal: vLocal, volumeRemote: vRemote }; }
+        if (vLocal > 0) {
+          const gid = (remote && remote.gid) || crypto.randomBytes(8).toString('hex');
+          const seed = {
+            rev: (remote && Number(remote.rev) || 0) + 1,
+            updatedAt: new Date().toISOString(),
+            gid,
+            data: incoming.data,
+          };
+          await putState(seed);
+          return { decision: 'from_local', state: seed, volumeLocal: vLocal, volumeRemote: vRemote };
+        }
         return { decision: 'synced', volumeLocal: vLocal, volumeRemote: vRemote };
       }
-      if (vLocal === 0) return { decision: 'from_remote', state: remote, volumeLocal: vLocal, volumeRemote: vRemote };
-      if (vLocal > vRemote) { await putState(incoming); return { decision: 'from_local', volumeLocal: vLocal, volumeRemote: vRemote }; }
-      if (vRemote > vLocal) return { decision: 'from_remote', state: remote, volumeLocal: vLocal, volumeRemote: vRemote };
-      await putState(incoming); return { decision: 'merged', volumeLocal: vLocal, volumeRemote: vRemote };
+      // Servidor já tem dados: NUNCA sobrescrever por volume. Fazer
+      // putState(incoming) aqui ressuscitava dados que outro aparelho tinha
+      // apagado e apagava os que este ainda não conhecia — era o "problema
+      // de sempre" (adicionar/remover não sincronizava). A reconciliação
+      // fica a cargo da sincronização normal (rev + fusão por secção).
+      if (vLocal === 0) {
+        return { decision: 'from_remote', state: remote, volumeLocal: vLocal, volumeRemote: vRemote };
+      }
+      return { decision: 'synced', state: remote, volumeLocal: vLocal, volumeRemote: vRemote };
     });
   }
 

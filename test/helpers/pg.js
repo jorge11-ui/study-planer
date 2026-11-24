@@ -20,6 +20,18 @@ function criarBase() {
     implementation: () => 1,
   });
   db.public.registerFunction({
+    name: 'pg_advisory_lock',
+    args: [DataType.integer],
+    returns: DataType.integer,
+    implementation: () => 1,
+  });
+  db.public.registerFunction({
+    name: 'pg_advisory_unlock',
+    args: [DataType.integer],
+    returns: DataType.integer,
+    implementation: () => 1,
+  });
+  db.public.registerFunction({
     name: 'hashtext',
     args: [DataType.text],
     returns: DataType.integer,
