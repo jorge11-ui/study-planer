@@ -999,6 +999,10 @@ function contaSyncPronta() {
 }
 
 function sincronizarDispositivos() {
+    if (window.WorkspaceSync && window.WorkspaceSync.ativo()) {
+        window.WorkspaceSync.enviar().catch(() => {});
+        return;
+    }
     if (contaSyncPronta()) {
         window.ContaSync.push().then(anotarResultadoPush).catch(() => marcarSyncPendente());
         return;
@@ -1093,6 +1097,10 @@ setInterval(verificarVersaoWeb, 5 * 60 * 1000);
 let flushSyncTimer = null;
 
 async function descarregarSyncPendente() {
+    if (window.WorkspaceSync && window.WorkspaceSync.ativo()) {
+        await window.WorkspaceSync.enviar().catch(() => {});
+        return;
+    }
     if (!temSyncPendente()) return;
     try {
         if (contaSyncPronta()) {
@@ -3903,6 +3911,10 @@ function responderReviewFocus(grade) {
 // falhar, por isso o pull inicial repete-se com pausas crescentes.
 function puxarComRepeticao(tentativas = [15000, 45000, 120000]) {
     if (!window.ContaSync) return;
+    if (window.WorkspaceSync && window.WorkspaceSync.ativo()) {
+        window.WorkspaceSync.puxar().catch(() => {});
+        return;
+    }
     const reagendar = () => {
         if (!tentativas.length) return;
         const [espera, ...resto] = tentativas;
@@ -4223,6 +4235,13 @@ function bind() {
 
     if (githubSyncNow) {
         githubSyncNow.addEventListener('click', async () => {
+            if (window.WorkspaceSync && window.WorkspaceSync.ativo()) {
+                await window.WorkspaceSync.enviar();
+                await window.WorkspaceSync.puxar();
+                toast('Sincronizado.', 'success');
+                atualizarUIEstados();
+                return;
+            }
             if (window.ContaSync?.configurado?.()) {
                 toast('A sincronização GitHub está suspensa enquanto a conta StudyJournal está ligada.', 'info');
                 atualizarUIEstados();
@@ -4416,6 +4435,13 @@ function bind() {
 
     if (contaSyncNow) {
         contaSyncNow.addEventListener('click', async () => {
+            if (window.WorkspaceSync && window.WorkspaceSync.ativo()) {
+                await window.WorkspaceSync.enviar();
+                await window.WorkspaceSync.puxar();
+                toast('Sincronizado.', 'success');
+                atualizarUIConta();
+                return;
+            }
             if (!window.ContaSync) return;
             const res = await window.ContaSync.sync(true);
             if (res.ok) {
@@ -4514,6 +4540,14 @@ function bind() {
         });
     }
 
+    // O workspace central emite o estado do seu próprio ciclo. Reutiliza
+    // o mesmo indicador do cabeçalho que a conta usava.
+    window.addEventListener('studyjournal:sync-estado', (evento) => {
+        const tipo = evento && evento.detail && evento.detail.tipo;
+        if (!tipo) return;
+        registarSyncEvento(tipo, tipo !== 'sync-error');
+    });
+
     if (window.ContaSync && window.ContaSync.onSync) {
         window.ContaSync.onSync((tipo, detalhes = {}) => {
             registarSyncEvento(tipo);
@@ -4563,10 +4597,20 @@ function bind() {
         }
     });
 
+    window.addEventListener('beforeunload', () => { window.__sjASair = true; });
+    window.addEventListener('pagehide', () => { window.__sjASair = true; });
     window.addEventListener('beforeunload', commitNotes);
     window.addEventListener('beforeunload', saveSessionState);
     window.addEventListener('beforeunload', guardarSessaoAoSair);
     window.addEventListener('pagehide', guardarSessaoAoSair);
+    // Depois de commitNotes/saveSessionState terem escrito o estado final,
+    // envia o que ficou na fila do workspace (keepalive sobrevive ao unload).
+    window.addEventListener('beforeunload', () => {
+        try { window.WorkspaceSync?.flush?.(); } catch { /* segue */ }
+    });
+    window.addEventListener('pagehide', () => {
+        try { window.WorkspaceSync?.flush?.(); } catch { /* segue */ }
+    });
     iniciarFlushSync();
 
     document.addEventListener('visibilitychange', () => {

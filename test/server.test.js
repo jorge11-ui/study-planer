@@ -77,7 +77,7 @@ test('APIs pessoais exigem sessão quando a conta está configurada', async (t) 
   const server = await arrancar(dir, { autenticado: true });
   t.after(async () => { await parar(server.child); fs.rmSync(dir, { recursive: true, force: true }); });
 
-  for (const pathName of ['/api/data', '/api/ficheiros', '/api/vault']) {
+  for (const pathName of ['/api/data', '/api/ficheiros', '/api/vault', '/api/workspace/snapshot']) {
     assert.equal((await fetch(`${server.baseUrl}${pathName}`)).status, 401, `${pathName} deve exigir sessão`);
   }
   const login = await fetch(`${server.baseUrl}/api/conta/login`, {
@@ -107,6 +107,93 @@ test('modo link: SYNC_OPEN=1 aceita dados sem login mesmo com conta configurada'
     body: JSON.stringify({ baseRev: 0, data: { days: {} } }),
   });
   assert.equal(push.status, 200);
+});
+
+test('workspace central: operações, deltas e ficheiros em modo link', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sj-workspace-api-'));
+  const server = await arrancar(dir, { aberto: true });
+  t.after(async () => { await parar(server.child); fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const inicial = await (await fetch(`${server.baseUrl}/api/workspace/snapshot`)).json();
+  assert.equal(inicial.ok, true);
+  assert.equal(inicial.persistente, false, 'sem DATABASE_URL usa o armazenamento do servidor');
+  const revInicial = Number(inicial.revision) || 0;
+
+  const push = await fetch(`${server.baseUrl}/api/workspace/ops`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-client-id': 'teste-1' },
+    body: JSON.stringify({
+      ops: [
+        { key: 'study-journal-notes-2026-05-01', value: 'nota central' },
+        { key: 'study-journal-tasks-2026-05-01', value: JSON.stringify([{ id: 't1', texto: 'estudar' }]) },
+      ],
+    }),
+  });
+  assert.equal(push.status, 200);
+  const resultado = await push.json();
+  assert.equal(resultado.ok, true);
+  assert.equal(resultado.keys.length, 2);
+  assert.ok(Number(resultado.revision) > revInicial);
+
+  const delta = await (await fetch(`${server.baseUrl}/api/workspace/changes?since=${revInicial}`)).json();
+  assert.equal(delta.ok, true);
+  assert.equal(delta.reset, false);
+  assert.equal(delta.keys.length, 2);
+  const nota = delta.keys.find((k) => k.key === 'study-journal-notes-2026-05-01');
+  assert.equal(nota.value, 'nota central');
+
+  const segundo = await fetch(`${server.baseUrl}/api/workspace/ops`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ops: [{ key: 'study-journal-notes-2026-05-01', deleted: true }] }),
+  });
+  assert.equal(segundo.status, 200);
+  const aposApagar = await (await fetch(`${server.baseUrl}/api/workspace/snapshot`)).json();
+  assert.equal(aposApagar.keys.find((k) => k.key === 'study-journal-notes-2026-05-01').deleted, true);
+
+  const invalida = await fetch(`${server.baseUrl}/api/workspace/ops`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ops: [{ key: 'study-journal-conta-token', value: 'segredo' }] }),
+  });
+  assert.equal(invalida.status, 400, 'chaves do aparelho nunca entram no workspace');
+
+  const dados = Buffer.from('%PDF-1.4 ficheiro central').toString('base64');
+  const upload = await fetch(`${server.baseUrl}/api/ficheiros`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'pdf-teste-1', nome: 'resumo.pdf', tipo: 'application/pdf', dados }),
+  });
+  assert.equal(upload.status, 200);
+  const lista = await (await fetch(`${server.baseUrl}/api/ficheiros`)).json();
+  assert.ok(lista.ficheiros.some((f) => f.id === 'pdf-teste-1' && f.nome === 'resumo.pdf'));
+
+  const download = await fetch(`${server.baseUrl}/api/ficheiros/pdf-teste-1`);
+  assert.equal(download.status, 200);
+  assert.equal(Buffer.from(await download.arrayBuffer()).toString(), '%PDF-1.4 ficheiro central');
+
+  const remover = await fetch(`${server.baseUrl}/api/ficheiros/pdf-teste-1`, { method: 'DELETE' });
+  assert.equal(remover.status, 200);
+  const depois = await (await fetch(`${server.baseUrl}/api/ficheiros`)).json();
+  assert.equal(depois.ficheiros.some((f) => f.id === 'pdf-teste-1'), false);
+});
+
+test('workspace central: migra o snapshot antigo no arranque', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sj-workspace-migra-'));
+  fs.writeFileSync(path.join(dir, 'sync.json'), JSON.stringify({
+    rev: 3,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    gid: 'g',
+    data: { days: { '2026-06-01': { notes: 'nota antiga', updatedAt: 42 } } },
+  }));
+  const server = await arrancar(dir, { aberto: true });
+  t.after(async () => { await parar(server.child); fs.rmSync(dir, { recursive: true, force: true }); });
+
+  const snap = await (await fetch(`${server.baseUrl}/api/workspace/snapshot`)).json();
+  assert.equal(snap.ok, true);
+  const nota = snap.keys.find((k) => k.key === 'study-journal-notes-2026-06-01');
+  assert.equal(nota.value, 'nota antiga');
+  assert.equal(snap.keys.find((k) => k.key === 'study-journal-notes-2026-06-01-ts').value, '42');
 });
 
 test('render.yaml liga o modo link no serviço publicado', () => {

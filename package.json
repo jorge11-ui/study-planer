@@ -9,7 +9,7 @@
     "dev": "tailwindcss -i src/input.css -o app.css --watch",
     "test": "node --test test/",
     "syllabus": "node scripts/build-syllabus.js",
-    "check": "node --check serve.js && node --check db/store.js && node --check lib/sync-merge.js && node --check scripts/build-syllabus.js && node --check src/app.js && node --check src/vault.js && node --check src/pdfs.js && node --check src/weekly.js && node --check src/github-sync.js && node --check src/conta-sync.js && node --check src/exames.js && node --check src/exam-engine.js && node --check src/weekly-review.js && node --check src/notas.js && node --check src/imagens.js"
+    "check": "node --check serve.js && node --check db/store.js && node --check db/workspace-local.js && node --check lib/workspace.js && node --check lib/workspace-protocol.js && node --check lib/sync-merge.js && node --check scripts/build-syllabus.js && node --check src/app.js && node --check src/vault.js && node --check src/pdfs.js && node --check src/weekly.js && node --check src/github-sync.js && node --check src/conta-sync.js && node --check src/workspace-sync.js && node --check src/exames.js && node --check src/exam-engine.js && node --check src/weekly-review.js && node --check src/notas.js && node --check src/imagens.js"
   },
   "keywords": [],
   "author": "",

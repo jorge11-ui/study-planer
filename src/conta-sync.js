@@ -29,6 +29,15 @@ window.ContaSync = (() => {
     // Servidor em modo aberto (SYNC_OPEN=1): sync anónimo, sem login.
     let aberto = false;
 
+    /* O workspace central substitui o documento agregado. Enquanto está
+       ativo, este módulo só trata de autenticação/partilhas. */
+    function workspacePresente() {
+        // O WorkspaceSync é o único motor de dados nesta versão. Mesmo
+        // antes de o servidor confirmar o modo, não deixamos o documento
+        // antigo arrancar em paralelo (evita pull/push a competir).
+        return typeof window !== 'undefined' && !!window.WorkspaceSync;
+    }
+
     try {
         token = localStorage.getItem(K_TOKEN) || '';
         user = localStorage.getItem(K_USER) || '';
@@ -168,6 +177,13 @@ window.ContaSync = (() => {
         user = '';
         persistirCredenciais();
         pararAuto();
+        // O workspace usava o token que acabou de sair: para e volta a
+        // sondar. Em modo link reativa-se sem conta; em modo conta fica
+        // parado até haver login.
+        if (window.WorkspaceSync) {
+            try { window.WorkspaceSync.parar(); } catch { /* segue */ }
+            window.WorkspaceSync.iniciar().catch(() => {});
+        }
         if (window.GitHubSync?.configurado?.()) window.GitHubSync.iniciarAutoSync?.();
         // Um token antigo pode deixar de valer (servidor passou a modo link
         // ou a conta mudou). Nesse caso continua sem conta, em vez de ficar
@@ -208,6 +224,10 @@ window.ContaSync = (() => {
             // O canal de eventos usa o token no URL: ao entrar de novo tem
             // de ser reaberto com o token novo (outro utilizador/sessão).
             pararEventos();
+            if (window.WorkspaceSync) {
+                await window.WorkspaceSync.reiniciar();
+                return { ok: true };
+            }
             const r = await sync(true);
             if (r.ok) iniciarAuto();
             return r.ok ? { ok: true } : r;
@@ -252,6 +272,10 @@ window.ContaSync = (() => {
             }
             persistirCredenciais();
             pararEventos();
+            if (window.WorkspaceSync) {
+                await window.WorkspaceSync.reiniciar();
+                return { ok: true };
+            }
             const r = await sync(true);
             if (r.ok) iniciarAuto();
             return r.ok ? { ok: true } : r;
@@ -424,6 +448,7 @@ window.ContaSync = (() => {
     }
 
     async function sync(pullFirst = true) {
+        if (workspacePresente()) return { ok: true, reason: 'workspace' };
         if (await precisoDeConta()) return { ok: false, reason: 'sem-conta' };
         if (aSyncando) return { ok: false, reason: 'a-syncar' };
         aSyncando = true;
@@ -451,6 +476,7 @@ window.ContaSync = (() => {
     }
 
     async function pullAuto() {
+        if (workspacePresente()) return;
         if ((!token && !aberto) || aSyncando) return;
         const agora = Date.now();
         if (agora - ultimoPullAuto < AUTO_MIN_GAP_MS) return;
@@ -461,6 +487,7 @@ window.ContaSync = (() => {
     }
 
     async function pull() {
+        if (workspacePresente()) return { ok: true, reason: 'workspace' };
         if (await precisoDeConta()) return { ok: false, reason: 'sem-conta' };
         if (aSyncando) return { ok: false, reason: 'a-syncar' };
         aSyncando = true;
@@ -498,6 +525,7 @@ window.ContaSync = (() => {
     }
 
     function ligarEventos() {
+        if (workspacePresente()) return;
         if (typeof EventSource === 'undefined' || (!token && !aberto)) return;
         if (eventos) return;
         clearTimeout(eventosReabrir);
@@ -533,6 +561,7 @@ window.ContaSync = (() => {
     }
 
     function iniciarAuto() {
+        if (workspacePresente()) return;
         if (!token && !aberto) return;
         // A conta StudyJournal é a única via de sync ativa quando ligada.
         // Suspende o Gist para evitar dois servidores a disputar o mesmo estado.

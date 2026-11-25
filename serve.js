@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createStore } = require('./db/store');
+const { createWorkspace } = require('./lib/workspace');
 const { dadosSyncValidos, fundirSyncData } = require('./lib/sync-merge');
 
 const PORT = Number(process.env.PORT) || 4321;
@@ -230,7 +231,9 @@ const contaAtiva = Boolean(SYNC_USER && SYNC_PASS_HASH);
 const SYNC_ABERTO = process.env.SYNC_OPEN === '1';
 
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
+const WORKSPACE_ID = String(process.env.WORKSPACE_ID || 'default');
 const pgStore = createStore(process.env.DATABASE_URL);
+const workspace = createWorkspace({ pgStore, dataDir: DATA_DIR, workspaceId: WORKSPACE_ID });
 if (process.env.RENDER && !process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL é obrigatório no Render para persistir os dados.');
 }
@@ -306,11 +309,26 @@ function comFilaSync(fn) {
    nova e puxam logo — sem esperar pelo poll de 15s. Serve também de
    keep-alive: o servidor do Render não adormece com a app aberta. */
 const syncOuvintes = new Set();
+const workspaceOuvintes = new Set();
 
 function transmitirSync() {
     const payload = `data: ${JSON.stringify({ rev: syncDoc.rev, updatedAt: syncDoc.updatedAt })}\n\n`;
     for (const res of syncOuvintes) {
         try { res.write(payload); } catch { syncOuvintes.delete(res); }
+    }
+}
+
+/* Avisa todos os dispositivos do workspace. O evento leva só a revisão e
+   a origem; cada cliente pede as chaves alteradas desde a sua revisão. */
+function transmitirWorkspace(revision, origin = '', tipo = 'workspace') {
+    const payload = `data: ${JSON.stringify({
+        type: tipo,
+        revision: Number(revision) || 0,
+        origin: String(origin || '').slice(0, 100),
+        workspaceId: WORKSPACE_ID,
+    })}\n\n`;
+    for (const res of workspaceOuvintes) {
+        try { res.write(payload); } catch { workspaceOuvintes.delete(res); }
     }
 }
 
@@ -592,6 +610,92 @@ async function apiSync(req, res) {
     json(res, 404, { ok: false, reason: 'rota' });
 }
 
+/* ── Workspace central (nova arquitetura) ─────────────────
+   A UI lê/escreve chaves. O servidor guarda-as na base de dados e avisa
+   os outros dispositivos por SSE. Não há documento por aparelho. */
+
+async function apiWorkspace(req, res, url) {
+    if (!(await autorizarDados(req, res))) return;
+    const rota = url.pathname.slice('/api/workspace'.length);
+
+    if ((rota === '' || rota === '/snapshot') && req.method === 'GET') {
+        const snap = await workspace.snapshot();
+        return json(res, 200, { ok: true, persistente: workspace.persistente, ...snap });
+    }
+
+    if (rota === '/changes' && req.method === 'GET') {
+        const since = Number(url.searchParams.get('since')) || 0;
+        const mudancas = await workspace.changesSince(since);
+        return json(res, 200, { ok: true, persistente: workspace.persistente, ...mudancas });
+    }
+
+    if (rota === '/ops' && req.method === 'POST') {
+        const body = await lerJsonBody(req, res, SYNC_MAX_BODY);
+        if (!body) return;
+        const clientId = String(body.clientId || req.headers['x-client-id'] || '').slice(0, 100);
+        try {
+            const resultado = await workspace.applyOps(body.ops, clientId);
+            if (resultado.keys.length) transmitirWorkspace(resultado.revision, clientId);
+            return json(res, 200, { ok: true, ...resultado });
+        } catch (error) {
+            if (error && error.code === 'OPS_INVALIDAS') {
+                return json(res, 400, { ok: false, reason: error.message });
+            }
+            throw error;
+        }
+    }
+
+    if (rota === '/estado' && req.method === 'GET') {
+        const info = await workspace.changesSince(Number.MAX_SAFE_INTEGER);
+        return json(res, 200, {
+            ok: true,
+            workspaceId: workspace.id,
+            persistente: workspace.persistente,
+            revision: Number(info.revision) || 0,
+        });
+    }
+
+    return json(res, 404, { ok: false, reason: 'rota' });
+}
+
+async function apiWorkspaceEventos(req, res, url) {
+    const token = tokenDaSessao(req) || url.searchParams.get('token') || '';
+    if (!SYNC_ABERTO) {
+        if (contaAtiva && !(await sessaoValida(token))) return json(res, 401, { ok: false, reason: 'sessao' });
+        if (!contaAtiva && !pedidoLoopback(req)) return json(res, 503, { ok: false, reason: 'sem-conta' });
+    }
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 3000\n\n');
+    try {
+        const info = await workspace.changesSince(Number.MAX_SAFE_INTEGER);
+        res.write(`data: ${JSON.stringify({ type: 'hello', revision: Number(info.revision) || 0, workspaceId: WORKSPACE_ID })}\n\n`);
+    } catch { /* o primeiro poll do cliente cobre */ }
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    workspaceOuvintes.add(res);
+    const ping = setInterval(() => {
+        try { res.write(': ping\n\n'); } catch { /* a ligação caiu */ }
+    }, 25000);
+
+    let fechado = false;
+    const fechar = () => {
+        if (fechado) return;
+        fechado = true;
+        clearInterval(ping);
+        workspaceOuvintes.delete(res);
+        try { res.end(); } catch { /* segue */ }
+    };
+    req.on('close', fechar);
+    req.on('error', fechar);
+    res.on('close', fechar);
+}
+
 /* Canal de eventos: o cliente puxa assim que a revisão muda. */
 async function apiSyncEventos(req, res, url) {
     // EventSource não permite cabeçalhos: o token pode vir no query.
@@ -653,54 +757,28 @@ function nomeCabecalho(nome) {
     return String(nome || 'ficheiro.pdf').replace(/[\r\n"]/g, '').slice(0, 200) || 'ficheiro.pdf';
 }
 
-/* Lê os bytes tanto do PostgreSQL como do disco legado. */
+/* Lê os bytes do workspace central (PostgreSQL ou disco do servidor). */
 async function lerFicheiroGuardado(id) {
-    if (pgStore) {
-        const row = await pgStore.getFile(id);
-        if (!row) return null;
-        return { meta: row.metadata || {}, bytes: row.content };
-    }
-    let meta = { nome: 'ficheiro.pdf', tipo: 'application/pdf' };
-    try {
-        meta = { ...meta, ...JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8')) };
-    } catch { /* segue com o genérico */ }
-    try {
-        return { meta, bytes: fs.readFileSync(caminhoFicheiro(id)) };
-    } catch (error) {
-        if (error.code === 'ENOENT') return null;
-        throw error;
-    }
+    const row = await workspace.getFile(id);
+    if (!row) return null;
+    return {
+        meta: { ...(row.metadata || {}), nome: row.nome, tipo: row.tipo, tamanho: row.tamanho },
+        bytes: row.content,
+    };
 }
 
 async function apiFicheiros(req, res, url) {
     if (!(await autorizarDados(req, res))) return;
 
     if (req.method === 'GET' && url.pathname === '/api/ficheiros') {
-        // Lista leve (sem bytes) para os aparelhos verificarem o que o
-        // servidor tem e reporem o que faltar após um wipe do disco efémero.
-        let lista = [];
-        if (pgStore) {
-            lista = (await pgStore.listFiles()).map((f) => ({ id: f.id, nome: f.metadata?.nome || 'ficheiro.pdf', tipo: f.metadata?.tipo || 'application/pdf', tamanho: Number(f.tamanho) || 0 }));
-            json(res, 200, { ok: true, ficheiros: lista });
-            return;
-        }
-        try {
-            lista = fs.readdirSync(FICHEIROS_DIR)
-                .filter((f) => FICHEIRO_ID.test(f) && !f.endsWith('.meta.json'))
-                .map((id) => {
-                    let meta = { nome: 'ficheiro.pdf', tipo: 'application/pdf' };
-                    try {
-                        meta = { ...meta, ...JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8')) };
-                    } catch { /* segue com o genérico */ }
-                    let tamanho = Number(meta.tamanho) || 0;
-                    if (!tamanho) {
-                        try {
-                            tamanho = fs.statSync(caminhoFicheiro(id)).size;
-                        } catch { /* segue a 0 */ }
-                    }
-                    return { id, nome: String(meta.nome || 'ficheiro.pdf'), tipo: String(meta.tipo || 'application/pdf'), tamanho };
-                });
-        } catch { /* diretório em falta: lista vazia */ }
+        // Lista leve (sem bytes). Os bytes vivem no workspace central; a
+        // lista serve para a galeria saber o que já existe em cada aparelho.
+        const lista = (await workspace.listFiles()).map((f) => ({
+            id: f.id,
+            nome: f.nome || 'ficheiro.pdf',
+            tipo: f.tipo || 'application/pdf',
+            tamanho: Number(f.tamanho) || 0,
+        }));
         json(res, 200, { ok: true, ficheiros: lista });
         return;
     }
@@ -726,16 +804,14 @@ async function apiFicheiros(req, res, url) {
         if (!bytes.length || bytes.length > FICHEIROS_MAX_BYTES) {
             return json(res, 413, { ok: false, reason: 'demasiado-grande' });
         }
+        let resultado;
         try {
-            if (pgStore) await pgStore.putFile(id, { nome, tipo, tamanho: bytes.length }, bytes);
-            else {
-                fs.writeFileSync(caminhoFicheiro(id), bytes, { mode: 0o600 });
-                fs.writeFileSync(`${caminhoFicheiro(id)}.meta.json`, JSON.stringify({ nome, tipo, tamanho: bytes.length }), { mode: 0o600 });
-            }
+            resultado = await workspace.putFile(id, { nome, tipo, tamanho: bytes.length }, bytes);
         } catch {
             return json(res, 500, { ok: false, reason: 'erro' });
         }
-        json(res, 200, { ok: true, id, tamanho: bytes.length });
+        transmitirWorkspace(resultado.revision, String(req.headers['x-client-id'] || ''), 'files');
+        json(res, 200, { ok: true, id, tamanho: bytes.length, revision: resultado.revision });
         return;
     }
 
@@ -760,12 +836,11 @@ async function apiFicheiros(req, res, url) {
     }
 
     if (req.method === 'DELETE') {
-        if (pgStore) await pgStore.deleteFile(id);
-        else {
-            try { fs.unlinkSync(caminhoFicheiro(id)); } catch { /* já não existe */ }
-            try { fs.unlinkSync(`${caminhoFicheiro(id)}.meta.json`); } catch { /* já não existe */ }
+        const resultado = await workspace.deleteFile(id);
+        if (resultado.deleted) {
+            transmitirWorkspace(resultado.revision, String(req.headers['x-client-id'] || ''), 'files');
         }
-        json(res, 200, { ok: true, id });
+        json(res, 200, { ok: true, id, revision: resultado.revision });
         return;
     }
 
@@ -1033,6 +1108,24 @@ async function handle(req, res) {
         return;
     }
 
+    if (url.pathname === '/api/workspace/events') {
+        try {
+            await apiWorkspaceEventos(req, res, url);
+        } catch {
+            try { res.end(); } catch { /* segue */ }
+        }
+        return;
+    }
+
+    if (url.pathname === '/api/workspace' || url.pathname.startsWith('/api/workspace/')) {
+        try {
+            await apiWorkspace(req, res, url);
+        } catch {
+            erroInterno(res);
+        }
+        return;
+    }
+
     if (url.pathname === '/api/sync/eventos' || url.pathname === '/api/data/events') {
         try {
             await apiSyncEventos(req, res, url);
@@ -1136,17 +1229,35 @@ async function iniciarServidor() {
             await pgStore.putState(syncDoc);
         }
         sessoes = await pgStore.getSessions();
-        let legados = [];
-        try {
-            legados = fs.readdirSync(FICHEIROS_DIR).filter((f) => FICHEIRO_ID.test(f) && !f.endsWith('.meta.json'));
-        } catch { /* diretório ainda não existe */ }
-        for (const id of legados) {
-            if (await pgStore.getFile(id)) continue;
-            try {
-                const metadata = JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8'));
-                await pgStore.putFile(id, metadata, fs.readFileSync(caminhoFicheiro(id)));
-            } catch { /* mantém os ficheiros legados intactos */ }
+    }
+    // Migração única do documento/snapshot antigo e dos ficheiros legados
+    // para o workspace central. Idempotente: não toca em chaves existentes.
+    try {
+        const migrado = await workspace.init();
+        if (migrado && (migrado.keys || migrado.files)) {
+            console.log(`  Workspace: ${migrado.keys || 0} chaves e ${migrado.files || 0} ficheiros migrados do formato antigo.`);
         }
+        if (pgStore) {
+            // Ficheiros que só existam no disco desta máquina entram também
+            // no PostgreSQL, para ficarem acessíveis em qualquer aparelho.
+            let legados = [];
+            try {
+                legados = fs.readdirSync(FICHEIROS_DIR).filter((f) => FICHEIRO_ID.test(f) && !f.endsWith('.meta.json'));
+            } catch { /* diretório ainda não existe */ }
+            if (legados.length) {
+                const existentes = new Set((await workspace.listFiles()).map((f) => f.id));
+                for (const id of legados) {
+                    if (existentes.has(id)) continue;
+                    try {
+                        const metadata = JSON.parse(fs.readFileSync(`${caminhoFicheiro(id)}.meta.json`, 'utf8'));
+                        await workspace.putFile(id, metadata, fs.readFileSync(caminhoFicheiro(id)));
+                    } catch { /* mantém os ficheiros legados intactos */ }
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`  ! Falha ao preparar o workspace: ${error.message}`);
+        throw error;
     }
     server.listen(PORT, HOST, () => {
     const scheme = secure ? 'https' : 'http';

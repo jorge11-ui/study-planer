@@ -24,7 +24,7 @@ test('store: init cria o schema e é idempotente', async (t) => {
   assert.equal(primeira.nodes, CATALOGO.nodes.length);
 
   const migracoes = contar(base, 'SELECT version FROM schema_migrations');
-  assert.deepEqual(migracoes.map((m) => m.version), ['001_initial', '002_exam_center_records']);
+  assert.deepEqual(migracoes.map((m) => m.version), ['001_initial', '002_exam_center_records', '003_workspace']);
 });
 
 test('store: semeia todos os nós ativos com o pai correto, sem duplicados', async (t) => {

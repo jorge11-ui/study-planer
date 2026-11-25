@@ -3,7 +3,7 @@
    JS/CSS = rede-primeiro (para apanhar deploys novos assim que há rede);
    fontes/imagens/vendor = cache-primeiro; /api/* nunca passa pela cache.
    Ao mudar ficheiros, subir CACHE para forçar atualização. */
-const CACHE = 'study-journal-v51';
+const CACHE = 'study-journal-v53';
 
 const NUCLEO = [
     '/',
@@ -20,6 +20,7 @@ const NUCLEO = [
     '/src/weekly.js',
     '/src/github-sync.js',
     '/src/conta-sync.js',
+    '/src/workspace-sync.js',
     '/src/exames.js',
     '/src/exam-engine.js',
     '/src/weekly-review.js',

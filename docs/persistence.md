@@ -50,21 +50,38 @@ Há dois modos de acesso, escolhidos no arranque:
   endereço que não partilhes: quem tiver o link passa a poder ver e alterar os
   dados. Remove `SYNC_OPEN` (ou põe `0`) para voltares a exigir sessão.
 
-`/api/data` é o endpoint canónico de sync/versionamento; `/api/sync` permanece
-temporariamente como alias para clientes antigos.
+`/api/workspace` é agora o endpoint canónico de dados: a UI escreve chaves
+(`study-journal-*`) e o servidor guarda-as em `workspace_keys`, com uma revisão
+global por workspace. `/api/data` e `/api/sync` mantêm-se temporariamente como
+alias do documento antigo para clientes em cache; o cliente novo já não os usa.
+Os bytes dos ficheiros vivem em `workspace_files` e são servidos por
+`/api/ficheiros` (a mesma API de upload/download/remoção de antes).
+
+### Workspace central
+
+- `workspaces` / `workspace_revisions`: um único workspace partilhado
+  (`WORKSPACE_ID`, por omissão `default`) e a revisão global.
+- `workspace_keys`: uma linha por chave, com `value` textual, `deleted`
+  (tombstone), `version` e `updated_by`. O valor é exatamente o que o browser
+  usa em `localStorage`, pelo que a UI continua síncrona.
+- `workspace_files`: metadados + bytes (BYTEA), versão e tombstone. A remoção
+  central apaga os bytes e propaga-se a todos os aparelhos.
+- `GET /api/workspace/snapshot` devolve o estado completo;
+  `GET /api/workspace/changes?since=N` devolve só o delta;
+  `POST /api/workspace/ops` aplica operações `{key,value}` ou `{key,deleted}`;
+  `GET /api/workspace/events` é o SSE que avisa os outros aparelhos.
+- A última escrita de uma chave ganha. Chaves do aparelho (token da conta,
+  Gist, vault, vista, aba, estado do cronómetro, ids internos) nunca viajam.
 
 No arranque com PostgreSQL, `db/store.js` aplica migrations serializadas com
 advisory lock e semeia exames e nós curriculares por ID. `curriculum_items` é
 derivável do JSON; o progresso pessoal fica separado. A migration 002 move as
 coleções do Exam Center (`topics`, `sessions`, `practice`, `reviews`, etc.) para
 `exam_records`, com uma linha por registo, chave `(collection,id)` e payload
-JSONB. A API continua a devolver `examesV2` no formato anterior para manter
-compatibilidade; a estrutura relacional e os endpoints por coleção continuam
-a ser trabalho futuro.
-Os restantes dados pessoais ainda estão no snapshot JSONB `app_state` e serão
-migrados por fases. Sessões de autenticação e bytes de ficheiros têm tabelas
-próprias. O primeiro arranque importa ficheiros legados locais quando existem;
-os originais não são eliminados.
+JSONB. A migration 003 cria o workspace central.
+O primeiro arranque importa o documento antigo (`app_state`) e os ficheiros
+legados (`user_files` ou `DATA_DIR/ficheiros`) para o workspace, sem apagar os
+originais. A importação é idempotente e não volta a correr quando já há chaves.
 
 Antes de apontar produção para uma base nova, exporta `DATA_DIR/sync.json`,
 `sessoes.json` e PDFs disponíveis. Dados que já desapareceram do filesystem
@@ -74,14 +91,14 @@ efémero não podem ser recuperados por uma migração. Migrações de schema vi
 TLS valida certificados por padrão. `PGSSL=disable` é só para PostgreSQL local;
 `PGSSL=no-verify` destina-se apenas a fornecedores cuja CA não esteja disponível.
 
-O browser ainda mantém uma cópia local para funcionamento offline. Depois de
-autenticar (ou de o link privado estar em `SYNC_OPEN=1`), o servidor é o
-armazenamento persistente e a cópia sincroniza com ele. O documento de sync já
-inclui as secções todas: notas e tarefas por dia, metadados/índice das notas,
-horário (todas as semanas e preferências), Exam Center e revisão, PDFs e Caderno
-(metadados e tombstones; bytes em `/api/ficheiros`), sessões/estatísticas e
-registo de sessões, objetivo, Assistente, Quadro Branco e nota rápida. O queue
-de ficheiros por aparelho (`*-enviados`) e o vault continuam locais.
+O browser mantém `localStorage` apenas como cópia local para arranque e
+funcionamento offline. `src/workspace-sync.js` interceta as escritas nas chaves
+sincronizáveis, envia-as como operações, recebe deltas por SSE e repõe o cache
+local; a fonte de verdade é sempre o servidor. Ao voltar à app, ao recuperar
+rede ou a cada 15 s há um novo pedido de alterações. O documento agregado
+antigo, o Gist e o motor de sync da conta ficam desativados quando o workspace
+está presente, para não haver dois donos do mesmo estado.
+
 
 ## Verificação local
 

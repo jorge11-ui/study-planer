@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { validarOps, chavesDoDocumentoLegado, fundirRegistoSessoes } = require('../lib/workspace-protocol');
 
 const MIGRATION_FILE = /^\d+_[a-z0-9_-]+\.sql$/i;
 const EXAM_COLLECTIONS = ['exams', 'topics', 'materials', 'sessions', 'issues', 'practice', 'reviews', 'planHistory'];
@@ -336,6 +337,263 @@ function createStore(databaseUrl, options = {}) {
     await query('DELETE FROM user_files WHERE id=$1', [id]);
   }
 
+  /* ── Workspace central ─────────────────────────────────
+     A UI escreve chaves (notas, tarefas, horário, exames, ...). Cada
+     operação é persistida aqui e recebe a revisão global do workspace.
+     Vários processos podem escrever em paralelo: o advisory lock por
+     workspace serializa leitura+escrita e evita revisões duplicadas. */
+
+  async function workspaceEnsure(client, workspaceId) {
+    await client.query('INSERT INTO workspaces(id) VALUES($1) ON CONFLICT(id) DO NOTHING', [workspaceId]);
+    await client.query(
+      'INSERT INTO workspace_revisions(workspace_id,revision) VALUES($1,0) ON CONFLICT(workspace_id) DO NOTHING',
+      [workspaceId],
+    );
+  }
+
+  function chaveDaLinha(row) {
+    return {
+      key: row.key,
+      value: row.value,
+      deleted: Boolean(row.deleted),
+      version: Number(row.version) || 0,
+      updatedAt: row.updated_at || null,
+    };
+  }
+
+  function ficheiroDaLinha(row) {
+    return {
+      id: row.id,
+      nome: row.nome,
+      tipo: row.tipo,
+      tamanho: Number(row.tamanho) || 0,
+      metadata: row.metadata || {},
+      version: Number(row.version) || 0,
+      updatedAt: row.updated_at || null,
+      deleted: Boolean(row.deleted_at),
+    };
+  }
+
+  async function workspaceRevision(workspaceId) {
+    const row = await query('SELECT revision FROM workspace_revisions WHERE workspace_id=$1', [workspaceId]);
+    return Number(row.rows[0]?.revision) || 0;
+  }
+
+  async function workspaceSnapshot(workspaceId) {
+    const [rev, keys, files] = await Promise.all([
+      workspaceRevision(workspaceId),
+      query('SELECT key,value,deleted,version,updated_at FROM workspace_keys WHERE workspace_id=$1 ORDER BY key', [workspaceId]),
+      query('SELECT id,nome,tipo,tamanho,metadata,version,updated_at,deleted_at FROM workspace_files WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY id', [workspaceId]),
+    ]);
+    return {
+      workspaceId,
+      revision: rev,
+      keys: keys.rows.map(chaveDaLinha),
+      files: files.rows.map(ficheiroDaLinha),
+    };
+  }
+
+  async function workspaceChangesSince(workspaceId, since) {
+    const rev = await workspaceRevision(workspaceId);
+    const desde = Math.max(0, Number(since) || 0);
+    if (desde > rev) return { reset: true, revision: rev, keys: [], files: [] };
+    const [keys, files] = await Promise.all([
+      query(
+        'SELECT key,value,deleted,version,updated_at FROM workspace_keys WHERE workspace_id=$1 AND version>$2 ORDER BY key',
+        [workspaceId, desde],
+      ),
+      query(
+        'SELECT id,nome,tipo,tamanho,metadata,version,updated_at,deleted_at FROM workspace_files WHERE workspace_id=$1 AND version>$2 ORDER BY id',
+        [workspaceId, desde],
+      ),
+    ]);
+    return {
+      reset: false,
+      revision: rev,
+      keys: keys.rows.map(chaveDaLinha),
+      files: files.rows.map(ficheiroDaLinha),
+    };
+  }
+
+  async function workspaceApplyOps(workspaceId, ops, updatedBy = '') {
+    const validado = validarOps(ops);
+    if (validado.erro) {
+      const error = new Error(validado.erro);
+      error.code = 'OPS_INVALIDAS';
+      throw error;
+    }
+    return withTransaction(async (client) => {
+      await workspaceEnsure(client, workspaceId);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`study-journal:workspace:${workspaceId}`]);
+      const atual = Number((await client.query(
+        'SELECT revision FROM workspace_revisions WHERE workspace_id=$1',
+        [workspaceId],
+      )).rows[0]?.revision) || 0;
+      const proxima = atual + 1;
+      const alteradas = [];
+      for (const op of validado.ops) {
+        // Lê primeiro para não criar revisão quando o valor não mudou.
+        // (IS DISTINCT FROM no ON CONFLICT não é suportado pelo pg-mem,
+        // usado nos testes; esta forma funciona em ambos.)
+        const anterior = await client.query(
+          'SELECT value,deleted FROM workspace_keys WHERE workspace_id=$1 AND key=$2',
+          [workspaceId, op.chave],
+        );
+        const linha = anterior.rows[0];
+        let valor = op.valor;
+        if (!op.apagada && op.chave === 'study-journal-session-log' && linha) {
+          valor = fundirRegistoSessoes(linha.value, valor);
+        }
+        if (linha && Boolean(linha.deleted) === op.apagada && (op.apagada || linha.value === valor)) continue;
+        const resultado = await client.query(
+          `INSERT INTO workspace_keys(workspace_id,key,value,deleted,version,updated_by)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(workspace_id,key) DO UPDATE SET
+             value=EXCLUDED.value, deleted=EXCLUDED.deleted,
+             version=EXCLUDED.version, updated_at=now(), updated_by=EXCLUDED.updated_by
+           RETURNING key,value,deleted,version,updated_at`,
+          [workspaceId, op.chave, valor, op.apagada, proxima, updatedBy || null],
+        );
+        for (const row of resultado.rows) alteradas.push(chaveDaLinha(row));
+      }
+      if (alteradas.length) {
+        await client.query(
+          'UPDATE workspace_revisions SET revision=$2, updated_at=now() WHERE workspace_id=$1',
+          [workspaceId, proxima],
+        );
+      }
+      return { revision: alteradas.length ? proxima : atual, keys: alteradas, files: [] };
+    });
+  }
+
+  async function workspaceTouch(workspaceId) {
+    return withTransaction(async (client) => {
+      await workspaceEnsure(client, workspaceId);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`study-journal:workspace:${workspaceId}`]);
+      const atual = Number((await client.query(
+        'SELECT revision FROM workspace_revisions WHERE workspace_id=$1',
+        [workspaceId],
+      )).rows[0]?.revision) || 0;
+      const proxima = atual + 1;
+      await client.query('UPDATE workspace_revisions SET revision=$2, updated_at=now() WHERE workspace_id=$1', [workspaceId, proxima]);
+      return proxima;
+    });
+  }
+
+  async function workspaceListFiles(workspaceId) {
+    const rows = await query(
+      'SELECT id,nome,tipo,tamanho,metadata,version,updated_at,deleted_at FROM workspace_files WHERE workspace_id=$1 AND deleted_at IS NULL ORDER BY created_at',
+      [workspaceId],
+    );
+    return rows.rows.map(ficheiroDaLinha);
+  }
+
+  async function workspaceGetFile(workspaceId, id) {
+    const row = await query(
+      'SELECT id,nome,tipo,tamanho,metadata,content,version,updated_at,deleted_at FROM workspace_files WHERE workspace_id=$1 AND id=$2',
+      [workspaceId, id],
+    );
+    const item = row.rows[0];
+    if (!item || item.deleted_at) return null;
+    return { ...ficheiroDaLinha(item), content: item.content };
+  }
+
+  async function workspacePutFile(workspaceId, id, metadata, content) {
+    const meta = metadata && typeof metadata === 'object' ? metadata : {};
+    const nome = String(meta.nome || 'ficheiro.pdf').slice(0, 200);
+    const tipo = String(meta.tipo || 'application/pdf').slice(0, 100);
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content || []);
+    return withTransaction(async (client) => {
+      await workspaceEnsure(client, workspaceId);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`study-journal:workspace:${workspaceId}`]);
+      const atual = Number((await client.query(
+        'SELECT revision FROM workspace_revisions WHERE workspace_id=$1',
+        [workspaceId],
+      )).rows[0]?.revision) || 0;
+      const proxima = atual + 1;
+      await client.query(
+        `INSERT INTO workspace_files(workspace_id,id,nome,tipo,tamanho,metadata,content,version)
+         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+         ON CONFLICT(workspace_id,id) DO UPDATE SET
+           nome=EXCLUDED.nome, tipo=EXCLUDED.tipo, tamanho=EXCLUDED.tamanho,
+           metadata=EXCLUDED.metadata, content=EXCLUDED.content,
+           version=EXCLUDED.version, updated_at=now(), deleted_at=NULL`,
+        [workspaceId, id, nome, tipo, bytes.length, JSON.stringify(meta), bytes, proxima],
+      );
+      await client.query('UPDATE workspace_revisions SET revision=$2, updated_at=now() WHERE workspace_id=$1', [workspaceId, proxima]);
+      return { revision: proxima, id, tamanho: bytes.length };
+    });
+  }
+
+  async function workspaceDeleteFile(workspaceId, id) {
+    return withTransaction(async (client) => {
+      await workspaceEnsure(client, workspaceId);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`study-journal:workspace:${workspaceId}`]);
+      const atual = Number((await client.query(
+        'SELECT revision FROM workspace_revisions WHERE workspace_id=$1',
+        [workspaceId],
+      )).rows[0]?.revision) || 0;
+      const proxima = atual + 1;
+      const apagado = await client.query(
+        `UPDATE workspace_files SET deleted_at=now(), version=$3, content=''::bytea, updated_at=now()
+         WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL`,
+        [workspaceId, id, proxima],
+      );
+      if (!apagado.rowCount) return { revision: atual, id, deleted: false };
+      await client.query('UPDATE workspace_revisions SET revision=$2, updated_at=now() WHERE workspace_id=$1', [workspaceId, proxima]);
+      return { revision: proxima, id, deleted: true };
+    });
+  }
+
+  /* Migração única do snapshot antigo e dos ficheiros legados. */
+  async function workspaceImportLegacy(workspaceId) {
+    return withTransaction(async (client) => {
+      await workspaceEnsure(client, workspaceId);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`study-journal:workspace:${workspaceId}`]);
+      const conta = await client.query('SELECT count(*)::int AS n FROM workspace_keys WHERE workspace_id=$1', [workspaceId]);
+      let importadas = 0;
+      let versao = Number((await client.query(
+        'SELECT revision FROM workspace_revisions WHERE workspace_id=$1',
+        [workspaceId],
+      )).rows[0]?.revision) || 0;
+      if (!Number(conta.rows[0]?.n)) {
+        const legado = await client.query("SELECT payload FROM app_state WHERE id='sync'");
+        const chaves = chavesDoDocumentoLegado(legado.rows[0]?.payload?.data);
+        const entradas = Object.entries(chaves);
+        if (entradas.length) {
+          versao = Math.max(1, versao + 1);
+          for (const [key, value] of entradas) {
+            await client.query(
+              `INSERT INTO workspace_keys(workspace_id,key,value,deleted,version,updated_by)
+               VALUES($1,$2,$3,false,$4,'migracao')
+               ON CONFLICT(workspace_id,key) DO NOTHING`,
+              [workspaceId, key, value, versao],
+            );
+            importadas += 1;
+          }
+          await client.query('UPDATE workspace_revisions SET revision=$2, updated_at=now() WHERE workspace_id=$1', [workspaceId, versao]);
+        }
+      }
+      const ficheiros = await client.query('SELECT count(*)::int AS n FROM workspace_files WHERE workspace_id=$1', [workspaceId]);
+      let ficheirosImportados = 0;
+      if (!Number(ficheiros.rows[0]?.n)) {
+        const legados = await client.query('SELECT id,metadata,content FROM user_files');
+        for (const row of legados.rows) {
+          const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+          const bytes = Buffer.isBuffer(row.content) ? row.content : Buffer.from(row.content || []);
+          await client.query(
+            `INSERT INTO workspace_files(workspace_id,id,nome,tipo,tamanho,metadata,content,version)
+             VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+             ON CONFLICT(workspace_id,id) DO NOTHING`,
+            [workspaceId, row.id, String(meta.nome || 'ficheiro.pdf'), String(meta.tipo || 'application/pdf'), bytes.length, JSON.stringify(meta), bytes, Math.max(1, versao)],
+          );
+          ficheirosImportados += 1;
+        }
+      }
+      return { keys: importadas, files: ficheirosImportados, revision: versao };
+    });
+  }
+
   function computeDataVolume(doc) {
     if (!doc || typeof doc !== 'object') return 0;
     const data = doc.data && typeof doc.data === 'object' ? doc.data : {};
@@ -390,6 +648,9 @@ function createStore(databaseUrl, options = {}) {
     computeDataVolume, syncStateByVolume,
     getSessions, getSession, putSession, deleteSession, putSessions,
     listFiles, getFile, putFile, deleteFile,
+    workspaceSnapshot, workspaceChangesSince, workspaceApplyOps, workspaceTouch,
+    workspaceListFiles, workspaceGetFile, workspacePutFile, workspaceDeleteFile,
+    workspaceImportLegacy,
     close: () => pool.end(),
   };
 }
