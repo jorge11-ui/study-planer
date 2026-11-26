@@ -352,6 +352,50 @@ test('servidor: sync faz merge de sessões e PDFs em vez de os apagar', async ()
   assert.deepEqual(final.data.pdfs.map((p) => p.id), ['a']);
 });
 
+test('servidor: um push antigo chega ao workspace sem apagar dados mais recentes', async () => {
+  // Aparelho com código antigo em cache grava a nota no documento agregado.
+  let estado = await (await fetch(`${servidor.baseUrl}/api/data`)).json();
+  let push = await fetch(`${servidor.baseUrl}/api/data`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      baseRev: estado.rev,
+      data: { days: { '2026-02-02': { notes: 'do aparelho antigo', updatedAt: 100 } } },
+    }),
+  });
+  assert.equal(push.status, 200);
+
+  const lerNota = async () => {
+    const snap = await (await fetch(`${servidor.baseUrl}/api/workspace/snapshot`)).json();
+    const nota = snap.keys.find((k) => k.key === 'study-journal-notes-2026-02-02');
+    return nota ? nota.value : null;
+  };
+  assert.equal(await lerNota(), 'do aparelho antigo', 'a escrita antiga entra no workspace');
+
+  // Um aparelho novo grava a mesma nota, mais recente, no workspace.
+  const ops = await fetch(`${servidor.baseUrl}/api/workspace/ops`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      ops: [
+        { key: 'study-journal-notes-2026-02-02', value: 'do aparelho novo' },
+        { key: 'study-journal-notes-2026-02-02-ts', value: '300' },
+      ],
+    }),
+  });
+  assert.equal(ops.status, 200);
+
+  // O aparelho antigo volta a gravar uma versão intermédia: não pode ganhar.
+  estado = await (await fetch(`${servidor.baseUrl}/api/data`)).json();
+  push = await fetch(`${servidor.baseUrl}/api/data`, {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      baseRev: estado.rev,
+      data: { days: { '2026-02-02': { notes: 'versão intermédia', updatedAt: 200 } } },
+    }),
+  });
+  assert.equal(push.status, 200);
+  assert.equal(await lerNota(), 'do aparelho novo', 'a versão mais recente do workspace prevalece');
+});
+
 test('servidor: estado sobrevive a um reinício (nada em memória apenas)', async () => {
   const antes = await (await fetch(`${servidor.baseUrl}/api/data`)).json();
   await parar(servidor.child);

@@ -79,6 +79,71 @@ test('protocolo: converte o documento antigo em chaves do workspace', () => {
   assert.equal(chaves['study-journal-whiteboard-draft-ts'], '99');
 });
 
+test('protocolo: ponte do documento antigo só aplica o que é mais recente', () => {
+  const antes = {
+    days: {
+      '2026-03-04': { notes: 'antiga', updatedAt: 10, tasks: [{ id: 't1' }], tasksUpdatedAt: 10 },
+    },
+    pdfs: [{ id: 'p1' }],
+    pdfsApagados: [],
+    sessoes: { Mat: 10 },
+    sessoesLog: [{ subject: 'Mat', minutos: 10, created: 1 }],
+  };
+  const depois = {
+    days: {
+      '2026-03-04': { notes: 'nova', updatedAt: 20, tasks: [{ id: 't1' }], tasksUpdatedAt: 10 },
+    },
+    pdfs: [{ id: 'p1' }, { id: 'p2' }],
+    pdfsApagados: [],
+    sessoes: { Mat: 20, Fis: 5 },
+    sessoesLog: [{ subject: 'Mat', minutos: 10, created: 1 }, { subject: 'Fis', minutos: 5, created: 2 }],
+  };
+  const servidor = new Map([
+    ['study-journal-notes-2026-03-04', 'servidor'],
+    ['study-journal-notes-2026-03-04-ts', '15'],
+    ['study-journal-tasks-2026-03-04', JSON.stringify([{ id: 't1' }])],
+    ['study-journal-tasks-2026-03-04-ts', '10'],
+    ['study-journal-pdfs', JSON.stringify([{ id: 'p1' }, { id: 'p3' }])],
+    ['study-journal-pdfs-apagados', JSON.stringify([])],
+    ['study-journal-sessions', JSON.stringify({ Mat: 30, Qui: 7 })],
+    ['study-journal-session-log', JSON.stringify([{ subject: 'Mat', minutos: 10, created: 1 }])],
+  ]);
+
+  const ops = protocolo.opsDoDocumentoLegado(antes, depois, servidor);
+  const mapa = new Map(ops.map((op) => [op.key, op.value]));
+
+  // A nota local é mais recente (20 > 15) e viaja com o carimbo.
+  assert.equal(mapa.get('study-journal-notes-2026-03-04'), 'nova');
+  assert.equal(mapa.get('study-journal-notes-2026-03-04-ts'), '20');
+  // As tarefas não mudaram neste push: não são reenviadas.
+  assert.equal(mapa.has('study-journal-tasks-2026-03-04'), false);
+  // PDFs são unidos, preservando o que só existe no workspace.
+  assert.deepEqual(
+    JSON.parse(mapa.get('study-journal-pdfs')).map((p) => p.id).sort(),
+    ['p1', 'p2', 'p3'],
+  );
+  // Minutos de estudo nunca diminuem.
+  assert.deepEqual(JSON.parse(mapa.get('study-journal-sessions')), { Mat: 30, Qui: 7, Fis: 5 });
+  // O registo de sessões é sempre enviado (o servidor une).
+  assert.deepEqual(JSON.parse(mapa.get('study-journal-session-log')).map((s) => s.subject), ['Mat', 'Fis']);
+});
+
+test('protocolo: ponte do documento antigo recusa uma nota mais velha do que o workspace', () => {
+  const antes = { days: { '2026-03-04': { notes: 'antiga', updatedAt: 10 } } };
+  const depois = { days: { '2026-03-04': { notes: 'push atrasado', updatedAt: 12 } } };
+  const servidor = new Map([
+    ['study-journal-notes-2026-03-04', 'mais nova'],
+    ['study-journal-notes-2026-03-04-ts', '99'],
+  ]);
+  assert.deepEqual(protocolo.opsDoDocumentoLegado(antes, depois, servidor), []);
+});
+
+test('protocolo: ponte do documento antigo ignora um push sem alterações', () => {
+  const doc = { days: { '2026-03-04': { notes: 'igual', updatedAt: 10 } }, pdfs: [{ id: 'p1' }] };
+  const servidor = new Map([['study-journal-notes-2026-03-04', 'outra'], ['study-journal-pdfs', '[]']]);
+  assert.deepEqual(protocolo.opsDoDocumentoLegado(doc, doc, servidor), []);
+});
+
 test('workspace local: operações, revisões e tombstones', async (t) => {
   const dir = tempDir(t);
   const ws = createLocalWorkspace(dir);

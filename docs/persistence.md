@@ -54,8 +54,15 @@ Há dois modos de acesso, escolhidos no arranque:
 (`study-journal-*`) e o servidor guarda-as em `workspace_keys`, com uma revisão
 global por workspace. `/api/data` e `/api/sync` mantêm-se temporariamente como
 alias do documento antigo para clientes em cache; o cliente novo já não os usa.
+Um push antigo para `/api/data` é convertido em operações para o workspace
+(`lib/workspace-protocol.js`): só viajam as chaves que esse push mudou, uma
+chave com carimbo `-ts` só ganha se for mais recente do que a versão central,
+e listas com tombstones/minutos de estudo são unidas. Assim um separador com
+código em cache não perde nem reverte dados novos enquanto não recarrega.
 Os bytes dos ficheiros vivem em `workspace_files` e são servidos por
-`/api/ficheiros` (a mesma API de upload/download/remoção de antes).
+`/api/ficheiros` (a mesma API de upload/download/remoção de antes), com
+`cache-control: private, no-store` para uma remoção central valer logo em todos
+os aparelhos.
 
 ### Workspace central
 

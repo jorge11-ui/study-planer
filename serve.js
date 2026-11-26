@@ -18,6 +18,7 @@ const path = require('node:path');
 const { createStore } = require('./db/store');
 const { createWorkspace } = require('./lib/workspace');
 const { dadosSyncValidos, fundirSyncData } = require('./lib/sync-merge');
+const { opsDoDocumentoLegado } = require('./lib/workspace-protocol');
 
 const PORT = Number(process.env.PORT) || 4321;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -570,6 +571,7 @@ async function apiSync(req, res) {
                     const atual = await pgStore.getState();
                     if (atual && typeof atual.rev === 'number') syncDoc = atual;
                 }
+                const docAnterior = syncDoc.data;
                 if (baseRev !== syncDoc.rev && body.forcar !== true) {
                     return {
                         conflito: true,
@@ -588,7 +590,7 @@ async function apiSync(req, res) {
                 // Só avança a memória depois de a persistência ter sucesso.
                 await persistirSync(proximo);
                 syncDoc = proximo;
-                return { ok: true, doc: proximo };
+                return { ok: true, doc: proximo, antes: docAnterior };
             };
             resultado = await comFilaSync(() => pgStore ? pgStore.withSyncLock(atualizar) : atualizar());
         } catch {
@@ -603,6 +605,24 @@ async function apiSync(req, res) {
         }
         // Avisa já os outros aparelhos (pull imediato no cliente).
         transmitirSync();
+        // Aparelhos com código antigo em cache ainda gravam o documento
+        // agregado: leva as chaves que este push mudou para o workspace,
+        // sem sobrescrever versões mais recentes. Nunca falha o push antigo.
+        try {
+            const snap = await workspace.snapshot();
+            const servidor = new Map(
+                snap.keys
+                    .filter((k) => k && !k.deleted && typeof k.value === 'string')
+                    .map((k) => [k.key, k.value]),
+            );
+            const ops = opsDoDocumentoLegado(resultado.antes, resultado.doc.data, servidor);
+            if (ops.length) {
+                const aplicado = await workspace.applyOps(ops, 'legacy');
+                if (aplicado.keys.length) transmitirWorkspace(aplicado.revision, 'legacy');
+            }
+        } catch (error) {
+            console.error(`Ponte legacy → workspace falhou: ${error.message}`);
+        }
         json(res, 200, { ok: true, rev: resultado.doc.rev, updatedAt: resultado.doc.updatedAt, gid: resultado.doc.gid });
         return;
     }
@@ -829,7 +849,9 @@ async function apiFicheiros(req, res, url) {
             'content-type': String(meta.tipo || 'application/pdf'),
             'content-length': bytes.length,
             'content-disposition': `attachment; filename="${nomeCabecalho(meta.nome)}"`,
-            'cache-control': 'private, max-age=86400',
+            // Uma remoção central tem de valer logo em todos os aparelhos;
+            // os bytes ficam em IndexedDB para não voltar a descarregar.
+            'cache-control': 'private, no-store',
             'x-content-type-options': 'nosniff',
         }).end(bytes);
         return;

@@ -374,13 +374,37 @@ window.WorkspaceSync = (() => {
         const { status, data } = await pedir('/api/workspace/snapshot');
         if (status !== 200 || !data || !data.ok) throw new Error(data?.reason || `http-${status}`);
         const chaves = Array.isArray(data.keys) ? data.keys : [];
-        const servidor = new Set(chaves.map((k) => k.key));
+        const servidor = new Map();
+        for (const item of chaves) {
+            if (item && typeof item.key === 'string' && !item.deleted) servidor.set(item.key, item.value);
+        }
+        const locais = chavesLocais();
+        // Uma escrita local com carimbo mais recente do que o servidor
+        // (aparelho que esteve offline ou com código antigo em cache) entra
+        // antes de o snapshot a substituir. Sem carimbo, o servidor
+        // prevalece: não se deixa um cache velho ganhar dados novos.
+        for (const chave of locais) {
+            if (!servidor.has(chave) || chave.endsWith('-ts') || pendentes.has(chave)) continue;
+            const localTs = Number(lerLocal(`${chave}-ts`)) || 0;
+            if (!localTs) continue;
+            const remotoTs = Number(servidor.get(`${chave}-ts`)) || 0;
+            if (localTs <= remotoTs) continue;
+            const valor = lerLocal(chave);
+            if (typeof valor !== 'string' || valor === servidor.get(chave)) continue;
+            pendentes.set(chave, { key: chave, value: valor });
+            outbox[chave] = { key: chave, value: valor };
+            const ts = lerLocal(`${chave}-ts`);
+            if (typeof ts === 'string') {
+                pendentes.set(`${chave}-ts`, { key: `${chave}-ts`, value: ts });
+                outbox[`${chave}-ts`] = { key: `${chave}-ts`, value: ts };
+            }
+        }
         aplicar(chaves);
         // Dados que só existem neste aparelho entram no workspace. Nunca
         // se reenvia uma chave que o servidor já tem: o servidor é a
         // fonte de verdade e pode ter a versão mais recente de outro
         // aparelho.
-        for (const chave of chavesLocais()) {
+        for (const chave of locais) {
             if (servidor.has(chave) || pendentes.has(chave)) continue;
             const valor = lerLocal(chave);
             if (typeof valor === 'string') {
